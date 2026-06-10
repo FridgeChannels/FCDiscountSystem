@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ritual | Exclusive Rewards</title>
+  <link rel="stylesheet" href="fc-style.css">
+  <link rel="stylesheet" href="fc-coupons.css">
+</head>
+<body>
+  <div class="mobile-viewport" data-screen-label="优惠券首页">
+    <canvas id="confetti-canvas"></canvas>
+
+    <!-- Header -->
+    <header class="brand-header">
+      <div class="brand-info">
+        <svg class="brand-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round"></path>
+        </svg>
+        <span class="brand-name">Ritual</span>
+      </div>
+    </header>
+
+    <main class="content-area">
+      <!-- 1. Urgency countdown -->
+      <section class="urgency-banner" id="urgency-banner" data-screen-label="倒计时">
+        <div class="ub-label">
+          <span class="live-pulse"></span>
+          <span id="ub-label-text">Limited offer ends in</span>
+        </div>
+        <div class="clock">
+          <div class="clock-unit">
+            <span class="digit" id="timer-days">02</span>
+            <span class="unit-label">Days</span>
+          </div>
+          <span class="clock-colon">:</span>
+          <div class="clock-unit">
+            <span class="digit" id="timer-hours">04</span>
+            <span class="unit-label">Hours</span>
+          </div>
+          <span class="clock-colon">:</span>
+          <div class="clock-unit">
+            <span class="digit" id="timer-mins">55</span>
+            <span class="unit-label">Min</span>
+          </div>
+          <span class="clock-colon">:</span>
+          <div class="clock-unit">
+            <span class="digit" id="timer-secs">30</span>
+            <span class="unit-label">Sec</span>
+          </div>
+        </div>
+        <div class="deplete-track">
+          <div class="deplete-fill" id="deplete-fill"></div>
+        </div>
+        <p class="ub-sub" id="ub-sub">Your <b id="ub-discount">15% OFF</b> disappears at zero</p>
+      </section>
+
+      <!-- 2. Coupon wallet: current → target -->
+      <section class="wallet" id="wallet" data-screen-label="优惠券">
+        <div class="section-head">
+          <span class="section-tag" id="wallet-tag">Your coupon</span>
+        </div>
+
+        <div class="coupon-route" aria-hidden="true">
+          <div class="route-point">
+            <span class="route-code">NOW</span>
+            <span class="route-label">Can use</span>
+          </div>
+          <div class="route-arc-container">
+            <svg class="route-arc" viewBox="0 0 178 70" preserveAspectRatio="none">
+              <path class="route-arc-shadow" d="M8 58 C52 2 124 2 170 58"></path>
+              <path class="route-arc-line" d="M8 58 C52 2 124 2 170 58"></path>
+            </svg>
+            <span class="route-coin" id="route-coin">¢</span>
+          </div>
+          <span class="route-progress" id="progress-ratio-text">72 / 90</span>
+          <div class="route-point align-right">
+            <span class="route-code">NEXT</span>
+            <span class="route-label">To unlock</span>
+          </div>
+        </div>
+
+        <!-- Celebration Banner (Completed State) -->
+        <div class="completed-banner" id="completed-banner" style="display: none;">
+          <div class="completed-banner-title">🎉 你已解锁本轮最大折扣</div>
+          <div class="completed-banner-desc">现在是本轮最低价，建议马上使用</div>
+        </div>
+
+        <div class="coupon-pair">
+          <!-- Current coupon (unlocked) -->
+          <div class="coupon-wrap current" id="current-wrap">
+            <div class="coupon coupon-current" id="current-coupon">
+              <div class="coupon-face">
+                <span class="coupon-kicker" id="current-kicker">From coupon</span>
+                <span class="stub-value" id="current-stub-value">15<small>%</small></span>
+                <span class="stub-off" id="current-stub-off">COUPON</span>
+                <span class="coupon-title" id="current-title">Sitewide · No minimum</span>
+                <span class="max-discount-label" id="max-discount-label" style="display: none;">本轮最低折扣</span>
+                <span class="coupon-title" id="current-expiry-title" style="display: none; margin-top: 4px; opacity: 0.85; font-weight: 700;">00:00:00 后结束</span>
+              </div>
+              <button class="btn-use" id="use-now-btn" aria-label="Use current coupon">
+                <span>Use now</span>
+                <span class="use-arrow"></span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Target coupon (locked, charges up) -->
+          <div class="coupon-wrap target" id="target-wrap">
+            <div class="coupon coupon-target" id="target-coupon">
+              <div class="coupon-face">
+                <span class="coupon-kicker">To coupon</span>
+                <span class="stub-value" id="target-stub-value">20<small>%</small></span>
+                <span class="stub-off">COUPON</span>
+                <span class="coupon-title">Orders $75+</span>
+              </div>
+              <div class="locked-floor">
+                <div class="coupon-fill" id="coupon-fill"></div>
+                <span>Locked</span>
+                <span>Need <b id="rail-needed">18</b> pts</span>
+              </div>
+            </div>
+            <div class="lock-badge" id="lock-badge">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                <rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor" stroke="none"></rect>
+                <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"></path>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Challenges -->
+      <section class="earn-progress-section" id="tasks-section" data-screen-label="挑战任务">
+        <div class="section-head stacked">
+          <span class="section-tag">Play &amp; Earn</span>
+        </div>
+        <div class="challenges-swiper">
+          <div class="challenge-card" id="task-game-tap">
+            <span class="challenge-badge">Game 1</span>
+            <div class="challenge-icon-wrapper">🎮</div>
+            <h4 class="challenge-title">Tap Target</h4>
+            <p class="challenge-desc">Tap as fast as you can in 5s</p>
+            <span class="challenge-reward">+12 PTS</span>
+            <button class="btn btn-outline" id="play-game-btn">Play Now</button>
+          </div>
+
+          <div class="challenge-card" id="task-game-memory">
+            <span class="challenge-badge">Game 2</span>
+            <div class="challenge-icon-wrapper">🃏</div>
+            <h4 class="challenge-title">Card Match</h4>
+            <p class="challenge-desc">Match 2 pairs of cards</p>
+            <span class="challenge-reward">+15 PTS</span>
+            <button class="btn btn-outline" id="play-memory-btn">Play Now</button>
+          </div>
+
+          <div class="challenge-card" id="task-game-spin">
+            <span class="challenge-badge">Game 3</span>
+            <div class="challenge-icon-wrapper">🎡</div>
+            <h4 class="challenge-title">Lucky Spin</h4>
+            <p class="challenge-desc">Spin the wheel for points</p>
+            <span class="challenge-reward">+10 PTS</span>
+            <button class="btn btn-outline" id="play-spin-btn">Play Now</button>
+          </div>
+
+          <div class="challenge-card" id="task-survey">
+            <span class="challenge-badge">Survey</span>
+            <div class="challenge-icon-wrapper">📝</div>
+            <h4 class="challenge-title">Preferences</h4>
+            <p class="challenge-desc">Share habits for rewards</p>
+            <span class="challenge-reward">+10 PTS</span>
+            <button class="btn btn-outline" id="take-survey-btn">Start</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Next Round Card (Completed State) -->
+      <div class="next-round-card" id="next-round-card" style="display: none;">
+        <div class="next-round-title">下一轮即将开启</div>
+        <div class="next-round-timer" id="next-round-timer">00:00:00</div>
+        <div class="next-round-desc">倒计时结束后，新的折扣挑战开始</div>
+      </div>
+
+      <!-- 4. Rules accordion -->
+      <footer class="rules-footer">
+        <div class="accordion-item">
+          <button class="accordion-trigger" id="rules-trigger">
+            <span>How does it work?</span>
+            <span class="accordion-icon">+</span>
+          </button>
+          <div class="accordion-content" id="rules-content">
+            <ol class="rules-list">
+              <li>Complete the quick games or surveys to earn points.</li>
+              <li>Once the locked coupon fills up, it unlocks automatically.</li>
+              <li>Copy your coupon code and shop before the countdown expires.</li>
+              <li>Your progression resets once you place an order, starting a new cycle.</li>
+            </ol>
+          </div>
+        </div>
+      </footer>
+    </main>
+
+    <!-- Coupon drawer -->
+    <div class="drawer-overlay" id="drawer-overlay"></div>
+    <div class="bottom-drawer" id="coupon-drawer">
+      <div class="drawer-drag-handle"></div>
+      <div class="drawer-header">
+        <h3 class="drawer-title">Claim Your Coupon</h3>
+        <button class="close-drawer-btn" id="close-drawer-btn">&times;</button>
+      </div>
+      <div class="drawer-body">
+        <div class="coupon-value" id="drawer-coupon-value">15% OFF</div>
+        <p class="coupon-desc">Coupon claimed. Use this code at checkout on the brand site.</p>
+        <div class="coupon-code-container">
+          <span class="coupon-code" id="coupon-code-text">FC15RITUAL</span>
+          <button class="copy-btn" id="copy-code-btn">Copy</button>
+        </div>
+        <button class="btn btn-primary btn-block" id="shop-now-btn">Use at Store</button>
+        <p class="drawer-footer-timer">Expires in <span class="drawer-timer-text" id="drawer-timer-text">2d 04h</span></p>
+      </div>
+    </div>
+
+    <!-- Game 1: Tap Target -->
+    <div class="modal-overlay" id="game-modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Challenge: Tap the Target</h3>
+          <button class="close-modal-btn" id="close-game-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="game-instructions">Tap the circle as many times as possible in 5 seconds!</p>
+          <div class="game-stage">
+            <div class="game-timer" id="game-timer">05.00</div>
+            <div class="game-score" id="game-score">Taps: 0</div>
+            <button class="game-tap-circle" id="game-tap-target">Tap Me!</button>
+          </div>
+          <button class="btn btn-primary btn-block" id="start-game-btn">Start Game</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game 2: Memory Match -->
+    <div class="modal-overlay" id="memory-modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Challenge: Memory Match</h3>
+          <button class="close-modal-btn" id="close-memory-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="game-instructions">Match the pairs of identical icons below!</p>
+          <div class="memory-grid">
+            <div class="memory-card" data-card-id="1"><span>❓</span></div>
+            <div class="memory-card" data-card-id="2"><span>❓</span></div>
+            <div class="memory-card" data-card-id="3"><span>❓</span></div>
+            <div class="memory-card" data-card-id="4"><span>❓</span></div>
+          </div>
+          <button class="btn btn-primary btn-block" id="start-memory-btn">Start Match</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game 3: Lucky Spin -->
+    <div class="modal-overlay" id="spin-modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Challenge: Lucky Spin</h3>
+          <button class="close-modal-btn" id="close-spin-btn">&times;</button>
+        </div>
+        <div class="modal-body text-center">
+          <p class="game-instructions">Spin the wheel to earn points towards your discount!</p>
+          <div class="wheel-stage">
+            <div class="wheel-pointer">▼</div>
+            <div class="wheel-outer" id="wheel-outer">
+              <div class="wheel-inner">
+                <div class="wheel-segment" style="--i:0; --clr:#7a8c75;">+5</div>
+                <div class="wheel-segment" style="--i:1; --clr:#b89855;">+10</div>
+                <div class="wheel-segment" style="--i:2; --clr:#6b7e65;">+15</div>
+                <div class="wheel-segment" style="--i:3; --clr:#a08447;">+8</div>
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-block" id="start-spin-btn">Spin Now</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Survey -->
+    <div class="modal-overlay" id="survey-modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Quick Preferences Survey</h3>
+          <button class="close-modal-btn" id="close-survey-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="survey-progress-bar">
+            <div class="survey-progress-fill" id="survey-step-progress" style="width: 33%;"></div>
+          </div>
+          <div class="survey-questions">
+            <div class="survey-question-step active" data-step="1">
+              <h4>1. How often do you take health supplements?</h4>
+              <div class="survey-options">
+                <button class="survey-option-btn">Daily</button>
+                <button class="survey-option-btn">Few times a week</button>
+                <button class="survey-option-btn">Rarely</button>
+              </div>
+            </div>
+            <div class="survey-question-step" data-step="2">
+              <h4>2. What is most important to you when choosing supplements?</h4>
+              <div class="survey-options">
+                <button class="survey-option-btn">Ingredient quality</button>
+                <button class="survey-option-btn">Price &amp; value</button>
+                <button class="survey-option-btn">Brand reputation</button>
+              </div>
+            </div>
+            <div class="survey-question-step" data-step="3">
+              <h4>3. Would you recommend Ritual to a friend?</h4>
+              <div class="survey-options">
+                <button class="survey-option-btn">Yes, definitely</button>
+                <button class="survey-option-btn">Maybe</button>
+                <button class="survey-option-btn">No</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Unified notification -->
+    <div class="modal-overlay" id="notification-modal">
+      <div class="modal-content text-center">
+        <div class="modal-header">
+          <h3 id="notification-title">Success!</h3>
+          <button class="close-modal-btn" id="close-notification-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="notification-icon" id="notification-icon">✨</div>
+          <p class="notification-message" id="notification-message">Your message goes here.</p>
+          <button class="btn btn-primary btn-block" id="notification-confirm-btn">Understood</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="fc-app.js"></script>
+</body>
+</html>

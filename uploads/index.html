@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ritual | Exclusive Rewards</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="mobile-viewport">
+    <!-- Canvas for celebration confetti -->
+    <canvas id="confetti-canvas"></canvas>
+
+    <!-- Top Brand Header -->
+    <header class="brand-header">
+      <div class="brand-info">
+        <svg class="brand-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="brand-name">Ritual</span>
+      </div>
+    </header>
+
+    <main class="content-area">
+      <!-- 1. Centered Countdown Urgency Clock -->
+      <div class="urgency-timer-banner" id="urgency-timer-banner">
+        <div class="timer-header">
+          <span class="live-pulse"></span>
+          <span class="timer-tag">⌛ Limited Offer Expires In</span>
+        </div>
+        <div class="timer-clock">
+          <span class="timer-segment" id="timer-days">02</span><span class="timer-colon">:</span>
+          <span class="timer-segment" id="timer-hours">04</span><span class="timer-colon">:</span>
+          <span class="timer-segment" id="timer-mins">55</span><span class="timer-colon">:</span>
+          <span class="timer-segment" id="timer-secs">30</span>
+        </div>
+        <div class="timer-progress-track">
+          <div class="timer-progress-bar" id="timer-progress-bar" style="width: 100%;"></div>
+        </div>
+      </div>
+
+      <!-- Welcome Message & Tap Reward Notification (Optional/Dismissible) -->
+      <div class="tap-reward-alert" id="tap-reward-banner">
+        <div class="alert-body">
+          <span class="alert-icon">✨</span>
+          <div class="alert-text">
+            <h4>Tap Reward Added!</h4>
+            <p>You received +5 points for scanning the FC magnet.</p>
+          </div>
+        </div>
+        <button class="alert-close" id="close-alert-btn">&times;</button>
+      </div>
+
+      <!-- 2. Hero: Unified Progression Card -->
+      <section class="progression-section">
+        <div class="progression-card" id="progression-card">
+          <!-- Horizontal Timeline Track -->
+          <div class="timeline-track">
+            <!-- Current Unlocked Node -->
+            <div class="timeline-node unlocked" id="node-current">
+              <span class="node-value" id="current-discount-value">15% OFF</span>
+              <span class="node-label">Unlocked</span>
+            </div>
+            
+            <!-- Progress Connecting Line -->
+            <div class="timeline-progress-wrapper">
+              <div class="timeline-progress-fill" id="progress-bar-fill" style="width: 80%;">
+                <!-- Sliding gold coin representing progress -->
+                <div class="progress-coin" id="progress-coin"></div>
+              </div>
+            </div>
+            
+            <!-- Target Locked Node -->
+            <div class="timeline-node locked" id="node-target">
+              <div class="sparkle-decoration">✨</div>
+              <span class="node-value" id="target-value">20% OFF</span>
+              <span class="node-label" id="target-status">🔒 Target</span>
+              <div class="target-tooltip" id="target-tooltip">Tap to preview target!</div>
+            </div>
+          </div>
+          
+          <!-- Progression Details -->
+          <div class="progression-details">
+            <span class="points-ratio-badge" id="progress-ratio-text">72 / 90 Pts</span>
+            <p class="progress-helper-text" id="progress-helper">
+              You are only <strong id="points-needed">18</strong> points away from unlocking <strong id="target-highlight">20% OFF</strong>!
+            </p>
+          </div>
+          
+          <!-- Actions: Only one prominent use button as Upgrade Discount button is removed -->
+          <div class="progression-actions">
+            <button class="btn btn-primary btn-block" id="use-now-btn">Use Unlocked Discount Now</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Earn Progress (Interactive Mixed Tasks: 3 Games + 1 Survey) -->
+      <section class="earn-progress-section" id="tasks-section">
+        <div class="section-title-wrapper">
+          <span class="section-tag">Play & Earn</span>
+          <h3 class="section-subtitle">Today's Challenges</h3>
+        </div>
+        <div class="challenges-swiper">
+          <!-- Game 1: Tap Speed Challenge -->
+          <div class="challenge-card" id="task-game-tap">
+            <span class="challenge-badge">Game 1</span>
+            <div class="challenge-icon-wrapper">🎮</div>
+            <h4 class="challenge-title">Tap Target</h4>
+            <p class="challenge-desc">Tap as fast as you can in 5s</p>
+            <span class="challenge-reward">+12 Pts</span>
+            <button class="btn btn-outline btn-block" id="play-game-btn">Play Now</button>
+          </div>
+
+          <!-- Game 2: Memory Card Match -->
+          <div class="challenge-card" id="task-game-memory">
+            <span class="challenge-badge">Game 2</span>
+            <div class="challenge-icon-wrapper">🃏</div>
+            <h4 class="challenge-title">Card Match</h4>
+            <p class="challenge-desc">Match 2 pairs of cards</p>
+            <span class="challenge-reward">+15 Pts</span>
+            <button class="btn btn-outline btn-block" id="play-memory-btn">Play Now</button>
+          </div>
+
+          <!-- Game 3: Lucky Spin -->
+          <div class="challenge-card" id="task-game-spin">
+            <span class="challenge-badge">Game 3</span>
+            <div class="challenge-icon-wrapper">🎡</div>
+            <h4 class="challenge-title">Lucky Spin</h4>
+            <p class="challenge-desc">Spin the wheel for points</p>
+            <span class="challenge-reward">+10 Pts</span>
+            <button class="btn btn-outline btn-block" id="play-spin-btn">Play Now</button>
+          </div>
+
+          <!-- Survey Challenge -->
+          <div class="challenge-card" id="task-survey">
+            <span class="challenge-badge">Survey</span>
+            <div class="challenge-icon-wrapper">📝</div>
+            <h4 class="challenge-title">Preferences</h4>
+            <p class="challenge-desc">Share habits for rewards</p>
+            <span class="challenge-reward">+10 Pts</span>
+            <button class="btn btn-outline btn-block" id="take-survey-btn">Start</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. Collapsible Rules Accordion -->
+      <footer class="rules-footer">
+        <div class="accordion-item">
+          <button class="accordion-trigger" id="rules-trigger">
+            <span>How does it work?</span>
+            <span class="accordion-icon">+</span>
+          </button>
+          <div class="accordion-content" id="rules-content">
+            <ol class="rules-list">
+              <li>Complete the quick games or surveys to earn points.</li>
+              <li>Once you fill the progress bar, you automatically unlock a deeper discount!</li>
+              <li>Copy your coupon code and shop before the countdown timer expires.</li>
+              <li>Your progression resets once you place an order, starting a new cycle.</li>
+            </ol>
+          </div>
+        </div>
+      </footer>
+    </main>
+
+    <!-- Bottom Sheet Coupon Drawer -->
+    <div class="drawer-overlay" id="drawer-overlay"></div>
+    <div class="bottom-drawer" id="coupon-drawer">
+      <div class="drawer-drag-handle"></div>
+      <div class="drawer-header">
+        <h3 class="drawer-title">Your Unlocked Offer</h3>
+        <button class="close-drawer-btn" id="close-drawer-btn">&times;</button>
+      </div>
+      <div class="drawer-body">
+        <div class="coupon-value" id="drawer-coupon-value">15% OFF</div>
+        <p class="coupon-desc">Use this coupon code at checkout on the brand site.</p>
+        
+        <div class="coupon-code-container">
+          <span class="coupon-code" id="coupon-code-text">FC15RITUAL</span>
+          <button class="copy-btn" id="copy-code-btn">Copy</button>
+        </div>
+        
+        <button class="btn btn-primary btn-block" id="shop-now-btn">Shop Now</button>
+        <p class="drawer-footer-timer">Expires in <span class="drawer-timer-text" id="drawer-timer-text">2d 04h</span></p>
+      </div>
+    </div>
+
+    <!-- Mini-Game Modal 1: Tap Target -->
+    <div class="modal-overlay" id="game-modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Challenge: Tap the Target</h3>
+          <button class="close-modal-btn" id="close-game-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="game-instructions">Tap the circle as many times as possible in 5 seconds!</p>
+          <div class="game-stage">
+            <div class="game-timer" id="game-timer">05.00</div>
+            <div class="game-score" id="game-score">Taps: 0</div>
+            <button class="game-tap-circle" id="game-tap-target">Tap Me!</button>
+          </div>
+          <button class="btn btn-primary btn-block" id="start-game-btn">Start Game</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mini-Game Modal 2: Memory Card Match -->
+    <div class="modal-overlay" id="memory-modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Challenge: Memory Match</h3>
+          <button class="close-modal-btn" id="close-memory-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="game-instructions">Match the pairs of identical icons below!</p>
+          <div class="memory-grid">
+            <div class="memory-card" data-card-id="1"><span>❓</span></div>
+            <div class="memory-card" data-card-id="2"><span>❓</span></div>
+            <div class="memory-card" data-card-id="3"><span>❓</span></div>
+            <div class="memory-card" data-card-id="4"><span>❓</span></div>
+          </div>
+          <button class="btn btn-primary btn-block" id="start-memory-btn">Start Match</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mini-Game Modal 3: Lucky Spin -->
+    <div class="modal-overlay" id="spin-modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Challenge: Lucky Spin</h3>
+          <button class="close-modal-btn" id="close-spin-btn">&times;</button>
+        </div>
+        <div class="modal-body text-center">
+          <p class="game-instructions">Spin the wheel to earn points towards your discount!</p>
+          <div class="wheel-stage">
+            <div class="wheel-pointer">▼</div>
+            <div class="wheel-outer" id="wheel-outer">
+              <div class="wheel-inner">
+                <div class="wheel-segment" style="--i:0; --clr:#7a8c75;">+5</div>
+                <div class="wheel-segment" style="--i:1; --clr:#b89855;">+10</div>
+                <div class="wheel-segment" style="--i:2; --clr:#6b7e65;">+15</div>
+                <div class="wheel-segment" style="--i:3; --clr:#a08447;">+8</div>
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-block" id="start-spin-btn">Spin Now</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Survey Modal Simulator -->
+    <div class="modal-overlay" id="survey-modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Quick Preferences Survey</h3>
+          <button class="close-modal-btn" id="close-survey-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="survey-progress-bar">
+            <div class="survey-progress-fill" id="survey-step-progress" style="width: 33%;"></div>
+          </div>
+          
+          <div class="survey-questions">
+            <!-- Question 1 -->
+            <div class="survey-question-step active" data-step="1">
+              <h4>1. How often do you take health supplements?</h4>
+              <div class="survey-options">
+                <button class="survey-option-btn">Daily</button>
+                <button class="survey-option-btn">Few times a week</button>
+                <button class="survey-option-btn">Rarely</button>
+              </div>
+            </div>
+            
+            <!-- Question 2 -->
+            <div class="survey-question-step" data-step="2">
+              <h4>2. What is most important to you when choosing supplements?</h4>
+              <div class="survey-options">
+                <button class="survey-option-btn">Ingredient quality</button>
+                <button class="survey-option-btn">Price & value</button>
+                <button class="survey-option-btn">Brand reputation</button>
+              </div>
+            </div>
+
+            <!-- Question 3 -->
+            <div class="survey-question-step" data-step="3">
+              <h4>3. Would you recommend Ritual to a friend?</h4>
+              <div class="survey-options">
+                <button class="survey-option-btn">Yes, definitely</button>
+                <button class="survey-option-btn">Maybe</button>
+                <button class="survey-option-btn">No</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Unified Custom Notification Modal -->
+    <div class="modal-overlay" id="notification-modal">
+      <div class="modal-content text-center">
+        <div class="modal-header">
+          <h3 id="notification-title">Success!</h3>
+          <button class="close-modal-btn" id="close-notification-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="notification-icon" id="notification-icon">✨</div>
+          <p class="notification-message" id="notification-message">Your message goes here.</p>
+          <button class="btn btn-primary btn-block" id="notification-confirm-btn">Understood</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

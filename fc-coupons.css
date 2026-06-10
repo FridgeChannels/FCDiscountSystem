@@ -1,0 +1,1680 @@
+/* ============================================================
+   FC Coupon Wallet - flight route pairing
+   ============================================================ */
+
+.wallet {
+  display: flex;
+  flex-direction: column;
+}
+
+.coupon-route {
+  position: relative;
+  height: 84px;
+  margin: 0 4px -8px;
+}
+
+.route-point {
+  position: absolute;
+  left: 8px;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 2;
+}
+
+.route-point::after {
+  content: '';
+  width: 11px;
+  height: 11px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: #fdfbf5;
+  border: 2px solid #d9c279;
+  box-shadow: 0 0 0 4px rgba(217, 194, 121, 0.16);
+}
+
+.route-point.align-right {
+  left: auto;
+  right: 8px;
+  align-items: flex-end;
+}
+
+.route-code {
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: 1.8px;
+  color: var(--text-primary);
+}
+
+.route-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.route-arc-container {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 72%;
+  height: 72px;
+  transform: translateX(-50%);
+  overflow: visible;
+}
+
+.route-arc {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.route-arc-line,
+.route-arc-shadow {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.route-arc-shadow {
+  stroke: rgba(45, 51, 43, 0.1);
+  stroke-width: 5;
+}
+
+.route-arc-line {
+  stroke: #f9f4e7;
+  stroke-width: 2.4;
+  stroke-dasharray: 6 7;
+  filter: drop-shadow(0 1px 1px rgba(45, 51, 43, 0.25));
+  animation: route-dash 1.35s linear infinite;
+}
+
+@keyframes route-dash {
+  to { stroke-dashoffset: -13; }
+}
+
+.route-coin {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #6b4a16;
+  background:
+    radial-gradient(circle at 32% 26%, #fff8da 0%, #f3d472 32%, #e0b251 56%, #c2913c 78%, #9c6f2b 100%);
+  box-shadow:
+    0 8px 18px rgba(150, 108, 40, 0.4),
+    inset 0 2px 2px rgba(255, 255, 255, 0.8),
+    inset 0 -3px 5px rgba(120, 84, 26, 0.45);
+  font-size: 0.86rem;
+  font-weight: 900;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55), 0 -1px 0 rgba(120, 84, 26, 0.35);
+  overflow: hidden;
+  z-index: 2;
+}
+
+/* engraved inner ring for a minted-coin look */
+.route-coin::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: inherit;
+  border: 1.4px solid rgba(120, 84, 26, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  z-index: 1;
+}
+
+/* glossy shine that sweeps across — gamified shimmer */
+.route-coin::before {
+  content: '';
+  position: absolute;
+  top: -40%;
+  left: -60%;
+  width: 60%;
+  height: 180%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.85), transparent);
+  transform: rotate(18deg);
+  animation: coin-shine 2.8s ease-in-out infinite;
+  z-index: 2;
+}
+
+@keyframes coin-shine {
+  0%, 100% { left: -60%; }
+  45%, 55% { left: 120%; }
+}
+
+.route-progress {
+  position: absolute;
+  left: 50%;
+  top: 43px;
+  z-index: 2;
+  transform: translateX(-50%);
+  min-width: 78px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(253, 251, 245, 0.86);
+  border: 1px solid rgba(184, 152, 85, 0.36);
+  box-shadow: 0 5px 15px rgba(94, 105, 86, 0.12);
+  color: #8a6420;
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.coupon-pair {
+  --coupon-col: 45%;   /* 单张券宽度，越小则两券间距越大、左右外缘不动 */
+  display: grid;
+  grid-template-columns: var(--coupon-col) var(--coupon-col);
+  justify-content: space-between;
+  align-items: stretch;
+}
+
+.coupon-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.coupon {
+  --tooth: 12px;                    /* 锯齿宽度 */
+  --depth: calc(var(--tooth) / 2);  /* 锯齿深度（45°齿） */
+  --notch: 13px;                    /* 两侧半圆缺口半径 */
+  --perf: 58px;                     /* 缺口所在的撕线高度（底部按钮区高度） */
+  position: relative;
+  min-height: 246px;
+  border-radius: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: 1fr 58px;
+  isolation: isolate;
+  -webkit-mask:
+    radial-gradient(circle var(--notch) at left  calc(100% - var(--perf)), #0000 98%, #000) 0 0 / 100% 100% no-repeat,
+    radial-gradient(circle var(--notch) at right calc(100% - var(--perf)), #0000 98%, #000) 0 0 / 100% 100% no-repeat,
+    conic-gradient(from 315deg at 50% var(--depth), #0000 0 90deg, #000 90deg) 0 0 / var(--tooth) 100% repeat-x,
+    conic-gradient(from 135deg at 50% calc(100% - var(--depth)), #0000 0 90deg, #000 90deg) 0 0 / var(--tooth) 100% repeat-x,
+    linear-gradient(#000, #000) 0 0 / 100% 100% no-repeat;
+  -webkit-mask-composite: source-in, source-in, source-in, source-in;
+  mask:
+    radial-gradient(circle var(--notch) at left  calc(100% - var(--perf)), #0000 98%, #000) 0 0 / 100% 100% no-repeat,
+    radial-gradient(circle var(--notch) at right calc(100% - var(--perf)), #0000 98%, #000) 0 0 / 100% 100% no-repeat,
+    conic-gradient(from 315deg at 50% var(--depth), #0000 0 90deg, #000 90deg) 0 0 / var(--tooth) 100% repeat-x,
+    conic-gradient(from 135deg at 50% calc(100% - var(--depth)), #0000 0 90deg, #000 90deg) 0 0 / var(--tooth) 100% repeat-x,
+    linear-gradient(#000, #000) 0 0 / 100% 100% no-repeat;
+  mask-composite: intersect, intersect, intersect, intersect, add;
+}
+
+
+
+.coupon-face {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  padding: 16px 12px 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.coupon-face::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 0;
+  border-bottom: 1.5px dashed currentColor;
+  opacity: 0.24;
+}
+
+.coupon-tag {
+  max-width: 100%;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.coupon-kicker {
+  margin-top: 14px;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  opacity: 0.78;
+}
+
+.stub-value {
+  margin-top: 4px;
+  font-family: var(--font-serif);
+  font-size: clamp(2.8rem, 13vw, 4.25rem);
+  font-weight: 800;
+  line-height: 0.95;
+  letter-spacing: 0;
+}
+
+.stub-value small {
+  font-size: 0.48em;
+  font-weight: 800;
+}
+
+.stub-off {
+  margin-top: 11px;
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  opacity: 0.76;
+}
+
+.coupon-current .stub-off {
+  font-size: 1.52rem;
+  line-height: 0.9;
+}
+
+.coupon-title {
+  margin-top: 8px;
+  width: 100%;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: inherit;
+}
+
+.coupon-meta {
+  width: 100%;
+  margin-top: auto;
+  padding-top: 9px;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+}
+
+.code-chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: 'Courier New', monospace;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  border: 1px dashed currentColor;
+}
+
+.coupon-expire {
+  font-size: 0.64rem;
+  opacity: 0.82;
+  white-space: nowrap;
+}
+
+.coupon-expire b {
+  font-weight: 800;
+}
+
+.coupon-current {
+  color: var(--coupon-ink);
+  background: var(--coupon-gradient);
+  filter: drop-shadow(0 14px 22px color-mix(in srgb, var(--coupon-main) 50%, transparent));
+}
+
+.coupon-current .coupon-face {
+  background:
+    radial-gradient(circle at 78% 24%, rgba(255, 255, 255, 0.18), transparent 30%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.08), transparent 48%);
+}
+
+.coupon-current .coupon-tag {
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+}
+
+
+
+.coupon-current::selection {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.coupon-current.expired {
+  filter: grayscale(0.85);
+  opacity: 0.72;
+}
+
+.btn-use {
+  position: relative;
+  z-index: 3;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--coupon-ink) 24%, transparent);
+  background: rgba(0, 0, 0, 0.16);
+  color: var(--coupon-ink);
+  font-family: var(--font-sans);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  justify-items: center;
+  padding: 0 18px;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease, background 0.15s ease;
+}
+
+.btn-use span:first-child {
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+}
+
+.btn-use:hover {
+  filter: brightness(1.04);
+}
+
+.btn-use:active {
+  transform: translateY(1px);
+}
+
+.btn-use:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  filter: grayscale(0.8);
+}
+
+.use-arrow {
+  width: 22px;
+  height: 22px;
+  display: block;
+  color: currentColor;
+}
+
+.coupon-current .btn-use .use-arrow {
+  animation: use-arrow-bob 2.6s ease-in-out infinite;
+}
+
+@keyframes use-arrow-bob {
+  0%, 68%, 100% { transform: translateY(0); }
+  78% { transform: translateY(3px); }
+}
+
+.coupon-current .btn-use {
+  animation: use-nudge 2.6s ease-in-out infinite;
+}
+
+@keyframes use-nudge {
+  0%, 68%, 100% { background: rgba(0, 0, 0, 0.16); }
+  78% { background: rgba(0, 0, 0, 0.28); }
+}
+
+/* Usable coupon resting state: bottom stub slightly torn open at a small
+   angle, leaving a faint wedge gap with the body above — invites the tear. */
+.wallet:not(.best-offer) .coupon-wrap.current:not(.tearing) .coupon-current:not(.expired) .btn-use {
+  transform-origin: right center;
+  transform: rotate(-1.4deg);
+  box-shadow: 0 -4px 7px -3px rgba(0, 0, 0, 0.45);
+}
+
+.wallet:not(.best-offer) .coupon-wrap.current:not(.tearing) .coupon-current:not(.expired) .btn-use:active {
+  transform: rotate(-1.4deg) translateY(1px);
+}
+
+.coupon-wrap.tearing .coupon-current {
+  overflow: visible;
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% calc(100% - 58px),
+    0 calc(100% - 58px)
+  );
+}
+
+.coupon-wrap.tearing .coupon-face {
+  animation: ticket-body-hold 0.92s ease both;
+}
+
+.coupon-wrap.tearing .coupon-face::after {
+  opacity: 0.52;
+  border-bottom-color: rgba(255, 255, 255, 0.82);
+  animation: perforation-rattle 0.22s ease-in-out 2;
+}
+
+.coupon-wrap.tearing .btn-use {
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.05s ease;
+}
+
+.tear-canvas {
+  position: absolute;
+  left: 0;
+  bottom: -192px;
+  width: 100%;
+  height: 250px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+
+@keyframes perforation-rattle {
+  0%, 100% { transform: translateX(0); }
+  35% { transform: translateX(-2px); }
+  70% { transform: translateX(2px); }
+}
+
+@keyframes ticket-body-hold {
+  0%, 100% { transform: translateY(0); filter: none; }
+  42% { transform: translateY(-1px); filter: brightness(1.03); }
+}
+
+@keyframes tear-stub-away {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 1;
+    filter: brightness(1.03);
+  }
+  18% {
+    transform: translateY(4px) rotate(-1deg);
+  }
+  45% {
+    transform: translateY(18px) rotate(3deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(74px) rotate(8deg);
+    opacity: 0;
+    filter: brightness(0.94);
+  }
+}
+
+.coupon-target {
+  color: var(--coupon-ink);
+  background: var(--coupon-gradient);
+  filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--coupon-main) 45%, transparent));
+}
+
+.coupon-target .coupon-face {
+  opacity: 0.78;
+}
+
+.coupon-target .coupon-face::after {
+  display: none;
+}
+
+.coupon-target .coupon-tag {
+  color: #eee6d8;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.coupon-target .stub-value,
+.coupon-target .stub-off,
+.coupon-target .coupon-title {
+  color: color-mix(in srgb, var(--coupon-ink) 88%, transparent);
+}
+
+.coupon-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  background:
+    linear-gradient(90deg, rgba(221, 196, 131, 0.12), rgba(221, 196, 131, 0.36)),
+    repeating-linear-gradient(
+      -35deg,
+      rgba(255, 255, 255, 0.08) 0 5px,
+      transparent 5px 11px
+    );
+  transition: width 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.locked-floor {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  padding: 0 11px;
+  border-top: 0;
+  background:
+    repeating-linear-gradient(
+      -35deg,
+      rgba(255, 255, 255, 0.04) 0 5px,
+      transparent 5px 11px
+    ),
+    rgba(17, 18, 17, 0.32);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+  cursor: not-allowed;
+  user-select: none;
+  filter: grayscale(0.35);
+  overflow: hidden;
+}
+
+.locked-floor b,
+.locked-floor span:last-child {
+  color: rgba(221, 196, 131, 0.58);
+}
+
+.locked-floor span {
+  position: relative;
+  z-index: 1;
+}
+
+.lock-badge {
+  position: absolute;
+  top: -10px;
+  right: 12px;
+  z-index: 5;
+  width: 29px;
+  height: 29px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ddc483, #a87f33);
+  color: #fdf9ee;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 3px 8px rgba(168, 127, 51, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+.lock-badge svg {
+  width: 13px;
+  height: 13px;
+}
+
+.coupon-wrap.ready .coupon-target {
+  background: linear-gradient(160deg, #75612e 0%, #4d4124 100%);
+  animation: ready-glow 1.4s infinite alternate ease-in-out;
+}
+
+.coupon-wrap.ready .locked-floor {
+  color: #fff7dc;
+}
+
+@keyframes ready-glow {
+  from { box-shadow: 0 12px 22px rgba(49, 51, 49, 0.18); }
+  to { box-shadow: 0 12px 28px rgba(198, 160, 84, 0.45); }
+}
+
+.coupon-wrap.absorb .coupon-target {
+  animation: absorb-pulse 0.35s ease;
+}
+
+@keyframes absorb-pulse {
+  50% { transform: scale(1.02); }
+}
+
+.coupon-wrap.unlocking .lock-badge {
+  animation: lock-pop 0.7s forwards cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+
+@keyframes lock-pop {
+  35% { transform: rotate(-14deg) scale(1.25); }
+  100% { transform: translateY(-30px) rotate(24deg) scale(0.3); opacity: 0; }
+}
+
+.coupon-wrap.swap .coupon {
+  animation: swap-in 0.65s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+}
+
+@keyframes swap-in {
+  0% { transform: perspective(600px) rotateX(65deg) scale(0.94); opacity: 0; }
+  100% { transform: perspective(600px) rotateX(0deg) scale(1); opacity: 1; }
+}
+
+.fly-coin {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffe9a8, #e3b54e 60%, #b3852e);
+  border: 1px solid #a87f33;
+  box-shadow: 0 2px 6px rgba(180, 130, 40, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.7);
+  z-index: 60;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: #8a6420;
+  transition: transform 0.65s cubic-bezier(0.3, 0.6, 0.35, 1), opacity 0.65s ease;
+}
+
+/* ============================================================
+   Best Coupon Locked Page
+   ============================================================ */
+
+.best-locked-page {
+  min-height: calc(100% - 8px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 0 8px;
+  text-align: center;
+}
+
+.best-locked-copy {
+  width: 100%;
+  padding: 16px 8px 4px;
+}
+
+.best-locked-eyebrow {
+  display: block;
+  margin-bottom: 8px;
+  color: #a98435;
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 1.9px;
+  text-transform: uppercase;
+}
+
+.best-locked-copy h1 {
+  font-family: var(--font-serif);
+  font-size: clamp(1.78rem, 8vw, 2.55rem);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: 0;
+  color: #273323;
+}
+
+.best-locked-coupon {
+  width: 100%;
+  display: grid;
+  justify-items: center;
+}
+
+.best-locked-ticket {
+  width: 52%;
+  min-width: 184px;
+  max-width: 220px;
+  min-height: 218px;
+  grid-template-rows: 1fr;
+  color: #fff7ec;
+  background: linear-gradient(160deg, #bb9445 0%, #8f6a23 100%);
+  box-shadow: 0 18px 34px rgba(143, 106, 35, 0.34);
+  animation: best-coupon-breathe 2.8s ease-in-out infinite;
+}
+
+.best-locked-ticket .coupon-face {
+  justify-content: center;
+  padding: 24px 12px;
+}
+
+.best-locked-ticket .coupon-kicker {
+  margin-top: 0;
+}
+
+.best-locked-ticket .stub-off {
+  font-size: 1.52rem;
+  line-height: 0.9;
+}
+
+@keyframes best-coupon-breathe {
+  0%, 100% {
+    filter: brightness(1);
+    box-shadow:
+      0 18px 34px rgba(143, 106, 35, 0.34),
+      0 0 0 rgba(205, 167, 86, 0);
+  }
+  50% {
+    filter: brightness(1.08);
+    box-shadow:
+      0 20px 38px rgba(143, 106, 35, 0.4),
+      0 0 28px rgba(205, 167, 86, 0.45);
+  }
+}
+
+.best-locked-countdown {
+  width: 100%;
+  padding: 18px 18px 16px;
+  border-radius: 18px;
+  background: #fdfbf5;
+  border: 1px solid rgba(226, 219, 206, 0.88);
+  box-shadow: 0 16px 32px rgba(92, 110, 88, 0.1);
+}
+
+.best-locked-countdown span {
+  display: block;
+  margin-bottom: 8px;
+  color: #6d7b67;
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.best-locked-clock {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.best-locked-clock .digit {
+  min-width: 54px;
+  background: rgba(205, 167, 86, 0.1);
+  border-color: rgba(205, 167, 86, 0.28);
+  color: #b4862e;
+  box-shadow: inset 0 -10px 14px rgba(143, 106, 35, 0.08);
+}
+
+.best-locked-clock .unit-label {
+  color: #7c8877;
+}
+
+.best-locked-clock .clock-colon {
+  color: #cda756;
+}
+
+.best-locked-cta {
+  width: 52%;
+  min-width: 184px;
+  max-width: 220px;
+  min-height: 52px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(160deg, #bb9445 0%, #8f6a23 100%);
+  color: #fff7ec;
+  font-family: var(--font-sans);
+  font-size: 0.84rem;
+  font-weight: 900;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  box-shadow: 0 14px 28px rgba(143, 106, 35, 0.28);
+  cursor: pointer;
+  transition: transform 0.16s ease, filter 0.16s ease;
+}
+
+.best-locked-cta:hover {
+  filter: brightness(1.06);
+}
+
+.best-locked-cta:active {
+  transform: translateY(1px);
+}
+
+.best-locked-cta:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  filter: grayscale(0.7);
+}
+
+.best-locked-footnote {
+  max-width: 320px;
+  color: #7c8877;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.wallet.best-offer .coupon-route,
+.wallet.best-offer .coupon-wrap.target {
+  display: none;
+}
+
+.wallet.best-offer .coupon-pair {
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+
+.wallet.best-offer .coupon-wrap.current {
+  width: 50%;
+}
+
+.best-offer-note {
+  margin: -2px 0 16px;
+  padding: 13px 16px;
+  border: 1px solid rgba(184, 152, 85, 0.34);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 248, 226, 0.92), rgba(241, 226, 184, 0.54)),
+    radial-gradient(circle at 18% 20%, rgba(205, 167, 86, 0.2), transparent 36%);
+  box-shadow: 0 12px 24px rgba(143, 106, 35, 0.12);
+  text-align: center;
+}
+
+.best-offer-note span {
+  display: block;
+  margin-bottom: 5px;
+  color: #9b752b;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+}
+
+.best-offer-note p {
+  max-width: 310px;
+  margin: 0 auto;
+  color: #5f6d59;
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.55;
+}
+
+.wallet.best-offer .coupon-current {
+  min-height: 232px;
+  color: #fff7ec;
+  background: linear-gradient(160deg, #bb9445 0%, #8f6a23 100%);
+  box-shadow: 0 16px 30px rgba(143, 106, 35, 0.34);
+}
+
+.wallet.best-offer .btn-use {
+  background: rgba(93, 66, 20, 0.42);
+  color: #fff7ec;
+  border-top-color: rgba(255, 255, 255, 0.22);
+}
+
+@media (max-width: 390px) {
+  .coupon-pair {
+    gap: 10px;
+  }
+
+  .coupon {
+    min-height: 238px;
+    border-radius: 16px;
+  }
+
+  .coupon-face {
+    padding-left: 9px;
+    padding-right: 9px;
+  }
+
+  .coupon-tag {
+    font-size: 0.54rem;
+    letter-spacing: 0.45px;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .stub-off {
+    letter-spacing: 1.8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-arc-line,
+  .coupon-current .btn-use,
+  .coupon-wrap.ready .coupon-target {
+    animation: none;
+  }
+}
+
+/* ============================================================
+   FC Receipt Printer Page
+   ============================================================ */
+
+.printer-overlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 38%, rgba(92, 110, 88, 0.15), transparent), #151814fa;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 20px 20px;
+  overflow: hidden;
+  opacity: 0;
+  animation: printer-fade-in 0.4s ease forwards;
+}
+
+@keyframes printer-fade-in {
+  to { opacity: 1; }
+}
+
+.printer-machine {
+  position: relative;
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  
+  /* GPU acceleration and performance optimization */
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  
+  /* Rhythmic physical mechanical hum/vibration during print (0.5s start, 1.6s duration) */
+  animation: printer-print-vibration 1.6s linear 0.5s;
+}
+
+@keyframes printer-print-vibration {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  5% { transform: translate3d(0.4px, -0.4px, 0); }
+  10% { transform: translate3d(-0.4px, 0.4px, 0); }
+  15% { transform: translate3d(0.4px, 0.4px, 0); }
+  20% { transform: translate3d(-0.4px, -0.4px, 0); }
+  25% { transform: translate3d(0.4px, -0.4px, 0); }
+  30% { transform: translate3d(-0.4px, 0.4px, 0); }
+  35% { transform: translate3d(0.4px, 0.4px, 0); }
+  40% { transform: translate3d(-0.4px, -0.4px, 0); }
+  45% { transform: translate3d(0.4px, -0.4px, 0); }
+  50% { transform: translate3d(-0.4px, 0.4px, 0); }
+  55% { transform: translate3d(0.4px, 0.4px, 0); }
+  60% { transform: translate3d(-0.4px, -0.4px, 0); }
+  65% { transform: translate3d(0.4px, -0.4px, 0); }
+  70% { transform: translate3d(-0.4px, 0.4px, 0); }
+  75% { transform: translate3d(0.4px, 0.4px, 0); }
+  80% { transform: translate3d(-0.4px, -0.4px, 0); }
+  85% { transform: translate3d(0.4px, -0.4px, 0); }
+  90% { transform: translate3d(0, 0, 0); }
+}
+
+/* Metallic printer slot */
+.printer-slot {
+  position: relative;
+  width: 100%;
+  height: 28px;
+  background: linear-gradient(to bottom, #d2d7d9 0%, #b2b7b9 35%, #7e8486 45%, #2a2e30 50%, #4a4e50 55%, #a8adbf 100%);
+  border-radius: 6px;
+  box-shadow: 
+    0 12px 24px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 3px rgba(0, 0, 0, 0.5);
+  z-index: 15;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.printer-slot::after {
+  content: '';
+  width: 90%;
+  height: 4px;
+  background: #000000;
+  border-radius: 2px;
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.1);
+}
+
+/* Paper container to handle clipping of slide-down animation */
+.receipt-paper-wrap {
+  position: relative;
+  width: 90%;
+  margin-top: -12px;
+  overflow: hidden;
+  padding-bottom: 20px;
+  z-index: 10;
+}
+
+/* The actual receipt paper */
+.receipt-paper {
+  /* Ink derived from the target coupon's tier tokens (falls back to neutral). */
+  --zc-text: color-mix(in srgb, var(--zc-accent) 70%, #000);
+  position: relative;
+  width: 100%;
+  background: #ffffff;
+  padding: 24px 18px 28px;
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.35),
+    -1px 0 0 rgba(0, 0, 0, 0.05),
+    1px 0 0 rgba(0, 0, 0, 0.05);
+  font-family: 'Courier New', Courier, monospace;
+  color: var(--zc-text, #1a1a1a);
+  
+  /* GPU acceleration properties */
+  will-change: transform;
+  transform: translate3d(0, -100%, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  
+  /* Smoother print timing: 1.6s duration with cubic-bezier */
+  animation: print-receipt 1.6s cubic-bezier(0.15, 0.85, 0.35, 1) 0.5s forwards;
+  
+  /* Zig-zag bottom edge */
+  clip-path: polygon(
+    0 0, 
+    100% 0, 
+    100% calc(100% - 8px), 
+    96.8% 100%, 93.7% calc(100% - 8px), 90.6% 100%, 87.5% calc(100% - 8px), 84.4% 100%, 81.2% calc(100% - 8px), 78.1% 100%, 75% calc(100% - 8px), 71.8% 100%, 68.7% calc(100% - 8px), 65.6% 100%, 62.5% calc(100% - 8px), 59.3% 100%, 56.2% calc(100% - 8px), 53.1% 100%, 50% calc(100% - 8px), 46.8% 100%, 43.7% calc(100% - 8px), 40.6% 100%, 37.5% calc(100% - 8px), 34.3% 100%, 31.2% calc(100% - 8px), 28.1% 100%, 25% calc(100% - 8px), 21.8% 100%, 18.7% calc(100% - 8px), 15.6% 100%, 12.5% calc(100% - 8px), 9.3% 100%, 6.2% calc(100% - 8px), 3.1% 100%, 0 calc(100% - 8px)
+  );
+}
+
+/* Smooth printing animation */
+@keyframes print-receipt {
+  0% { transform: translate3d(0, -100%, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+/* Receipt content elements */
+.receipt-header {
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.receipt-logo {
+  font-family: var(--font-serif);
+  font-size: 1.3rem;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: var(--zc-text, #2d332b);
+  margin-bottom: 4px;
+}
+
+.receipt-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #666;
+}
+
+.receipt-divider {
+  border-top: 1px dashed color-mix(in srgb, var(--zc-accent, #cccccc) 45%, #fff);
+  margin: 12px 0;
+  height: 0;
+}
+
+.receipt-meta {
+  font-size: 0.65rem;
+  color: #555555;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.receipt-meta-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.receipt-big-text {
+  text-align: center;
+  font-family: var(--font-serif);
+  font-weight: 900;
+  font-size: 2.1rem;
+  line-height: 1.1;
+  color: var(--zc-text, #1a1a1a);
+  margin: 14px 0;
+  text-transform: uppercase;
+}
+
+.receipt-item-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  font-weight: 700;
+  margin: 6px 0;
+}
+
+.receipt-barcode {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  height: 40px;
+  margin: 16px auto 0;
+  width: 170px;
+  gap: 1px;
+}
+
+.receipt-barcode .bar {
+  background-color: var(--zc-text, #000000);
+  height: 100%;
+}
+
+/* Fade-in buttons after printing completes (at 2.1s) */
+.printer-buttons {
+  width: 100%;
+  max-width: 300px;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  opacity: 0;
+  transform: translateY(10px);
+  animation: printer-btns-fade 0.5s ease 2.1s forwards;
+  z-index: 20;
+}
+
+@keyframes printer-btns-fade {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.btn-printer-secondary {
+  background-color: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  color: #ffffff;
+  padding: 14px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.btn-printer-secondary:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-color: #ffffff;
+}
+
+.btn-printer-primary {
+  background: var(--zc-gradient, #ffffff);
+  color: var(--zc-ink, #1a1a1a);
+  border: none;
+  padding: 14px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 850;
+  cursor: pointer;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  transition: filter 0.2s;
+}
+
+.btn-printer-primary:hover {
+  filter: brightness(0.95);
+}
+
+/* ============================================================
+   3D Zoom-and-Flip Card Transition
+   ============================================================ */
+
+.card-hidden {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.zoom-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(15, 18, 14, 0.72);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  animation: zoom-overlay-in 0.35s ease forwards;
+}
+
+@keyframes zoom-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.zoom-overlay.closing {
+  animation: zoom-overlay-out 0.4s ease forwards;
+}
+
+@keyframes zoom-overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.zoom-card-container {
+  --zoom-tooth: 13px;
+  --zoom-depth: calc(var(--zoom-tooth) / 2);
+  position: fixed;
+  z-index: 101;
+  perspective: 1200px;
+  transition: left 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+              top 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+              width 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+              height 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.55s ease;
+  will-change: left, top, width, height;
+  border-radius: 0;
+}
+
+.zoom-card-container.zoomed {
+  box-shadow: 0 32px 64px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.zoom-card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.7s cubic-bezier(0.4, 0.0, 0.2, 1);
+  will-change: transform;
+}
+
+.zoom-card-inner.flipped {
+  transform: rotateY(180deg);
+}
+
+.zoom-card-front,
+.zoom-card-back {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+/* Front face — clone of the coupon card body */
+.zoom-card-front {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--zc-ink, #fff7fb);
+  background: var(--zc-gradient, linear-gradient(160deg, #ec82bd 0%, #dc6fae 54%, #cf609f 100%));
+  box-shadow: inset 0 0 40px rgba(255, 255, 255, 0.06);
+  -webkit-mask:
+    conic-gradient(from 315deg at 50% var(--zoom-depth), #0000 0 90deg, #000 90deg) 0 0 / var(--zoom-tooth) 100% repeat-x,
+    conic-gradient(from 135deg at 50% calc(100% - var(--zoom-depth)), #0000 0 90deg, #000 90deg) 0 0 / var(--zoom-tooth) 100% repeat-x,
+    linear-gradient(#000, #000) 0 0 / 100% 100% no-repeat;
+  -webkit-mask-composite: source-in, source-in;
+  mask:
+    conic-gradient(from 315deg at 50% var(--zoom-depth), #0000 0 90deg, #000 90deg) 0 0 / var(--zoom-tooth) 100% repeat-x,
+    conic-gradient(from 135deg at 50% calc(100% - var(--zoom-depth)), #0000 0 90deg, #000 90deg) 0 0 / var(--zoom-tooth) 100% repeat-x,
+    linear-gradient(#000, #000) 0 0 / 100% 100% no-repeat;
+  mask-composite: intersect, intersect, add;
+}
+
+.zoom-card-front.best-offer-face {
+  background: linear-gradient(160deg, #bb9445 0%, #8f6a23 100%);
+  color: #fff8e8;
+}
+
+.zoom-card-front .front-kicker {
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  opacity: 0.78;
+}
+
+.zoom-card-front .front-value {
+  font-family: var(--font-serif);
+  font-size: clamp(3.2rem, 14vw, 5rem);
+  font-weight: 800;
+  line-height: 0.95;
+  margin-top: 6px;
+}
+
+.zoom-card-front .front-value small {
+  font-size: 0.48em;
+  font-weight: 800;
+}
+
+.zoom-card-front .front-label {
+  margin-top: 12px;
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  opacity: 0.76;
+}
+
+.zoom-card-front .front-subtitle {
+  margin-top: 8px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  opacity: 0.72;
+}
+
+/* Back face — coupon code details */
+.zoom-card-back {
+  /* Derived from the operated coupon's tier tokens; falls back to the
+     original cream/black ticket when no tokens are supplied (best offer). */
+  --zc-paper: color-mix(in srgb, var(--zc-main) 14%, #fff);
+  --zc-text: color-mix(in srgb, var(--zc-accent) 70%, #000);
+  transform: rotateY(180deg);
+  background: transparent;
+  color: var(--zc-text, #2d332b);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+  overflow: visible;
+}
+
+/* ── close button ── */
+.zoom-back-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: color-mix(in srgb, var(--zc-text, #2d332b) 8%, transparent);
+  color: color-mix(in srgb, var(--zc-text, #2d332b) 55%, transparent);
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background 0.2s, transform 0.15s;
+  z-index: 6;
+}
+
+.zoom-back-close:hover {
+  background: color-mix(in srgb, var(--zc-text, #2d332b) 16%, transparent);
+}
+
+.zoom-back-close:active {
+  transform: scale(0.92);
+}
+
+/* ==========================================================================
+   Kristalina-style redeem ticket (.kt-*)
+   ========================================================================== */
+
+.kt-ticket {
+  --kt-tooth: 13px;
+  --kt-depth: calc(var(--kt-tooth) / 2);
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--zc-paper, #f5f0e3);
+  color: var(--zc-text, #2d332b);
+  -webkit-mask:
+    conic-gradient(from 315deg at 50% var(--kt-depth), #0000 0 90deg, #000 90deg) 0 0 / var(--kt-tooth) 100% repeat-x,
+    conic-gradient(from 135deg at 50% calc(100% - var(--kt-depth)), #0000 0 90deg, #000 90deg) 0 0 / var(--kt-tooth) 100% repeat-x,
+    linear-gradient(#000, #000) 0 0 / 100% 100% no-repeat;
+  -webkit-mask-composite: source-in, source-in;
+  mask:
+    conic-gradient(from 315deg at 50% var(--kt-depth), #0000 0 90deg, #000 90deg) 0 0 / var(--kt-tooth) 100% repeat-x,
+    conic-gradient(from 135deg at 50% calc(100% - var(--kt-depth)), #0000 0 90deg, #000 90deg) 0 0 / var(--kt-tooth) 100% repeat-x,
+    linear-gradient(#000, #000) 0 0 / 100% 100% no-repeat;
+  mask-composite: intersect, intersect, add;
+}
+
+/* ── top block ── */
+.kt-top {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 22px 18px;
+  text-align: center;
+}
+
+.kt-brand {
+  font-family: 'Pinyon Script', cursive;
+  font-size: 2.3rem;
+  line-height: 1;
+  color: var(--zc-text, #2d332b);
+  margin-bottom: 10px;
+}
+
+.kt-cupom {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--zc-text, #2d332b);
+  margin-bottom: 2px;
+}
+
+.kt-percent {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 6.8rem;
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: -2px;
+  color: var(--zc-text, #2d332b);
+}
+
+.kt-pct {
+  font-size: 3.8rem;
+  font-weight: 800;
+  vertical-align: super;
+  margin-left: 4px;
+}
+
+.kt-off {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 3rem;
+  font-weight: 800;
+  letter-spacing: 12px;
+  text-indent: 12px;
+  text-transform: uppercase;
+  color: var(--zc-text, #2d332b);
+  margin-top: 4px;
+}
+
+/* ── perforated divider ── */
+.kt-divider {
+  position: relative;
+  height: 0;
+  margin: 0 0;
+  display: flex;
+  align-items: center;
+}
+
+.kt-dline {
+  flex: 1;
+  border-top: 1.6px dashed color-mix(in srgb, var(--zc-text, #2d332b) 38%, transparent);
+  margin: 0 16px;
+}
+
+.kt-divider::before,
+.kt-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--zc-text, #2d332b);
+  transform: translateY(-50%);
+}
+
+.kt-divider::before {
+  left: -9px;
+}
+
+.kt-divider::after {
+  right: -9px;
+}
+
+/* ── bottom block ── */
+.kt-bottom {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 22px 28px;
+  text-align: center;
+}
+
+.kt-code-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.kt-utilize {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-style: italic;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--zc-text, #2d332b) 80%, transparent);
+}
+
+.kt-code {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 1px;
+  color: var(--zc-text, #2d332b);
+}
+
+.kt-copy {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1.5px solid color-mix(in srgb, var(--zc-text, #2d332b) 30%, transparent);
+  background: transparent;
+  color: var(--zc-text, #2d332b);
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, transform 0.12s;
+}
+
+.kt-copy svg {
+  width: 15px;
+  height: 15px;
+}
+
+.kt-copy:hover {
+  background: color-mix(in srgb, var(--zc-text, #2d332b) 10%, transparent);
+}
+
+.kt-copy:active {
+  transform: scale(0.9);
+}
+
+.kt-copy.copied {
+  background: var(--zc-text, #2d332b);
+  border-color: var(--zc-text, #2d332b);
+  color: var(--zc-paper, #f5f0e3);
+}
+
+.kt-hint {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-style: italic;
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--zc-text, #2d332b) 70%, transparent);
+  margin-bottom: 14px;
+}
+
+.kt-visit {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  border: none;
+  background: var(--zc-text, #2d332b);
+  color: var(--zc-paper, #f5f0e3);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: filter 0.18s, transform 0.12s;
+}
+
+.kt-visit svg {
+  width: 14px;
+  height: 14px;
+}
+
+.kt-visit:hover {
+  filter: brightness(1.12);
+}
+
+.kt-visit:active {
+  transform: scale(0.96);
+}
+
+/* ==========================================================================
+   Completed State (Max Discount) Styles
+   ========================================================================== */
+
+.completed-banner {
+  background: linear-gradient(135deg, rgba(183, 67, 134, 0.08) 0%, rgba(184, 152, 85, 0.1) 100%);
+  border: 1px dashed rgba(184, 152, 85, 0.4);
+  border-radius: 16px;
+  padding: 16px;
+  text-align: center;
+  margin-bottom: 20px;
+  animation: slide-down-fade 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.completed-banner-title {
+  color: #c59f4f;
+  font-size: 0.95rem;
+  font-weight: 800;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.completed-banner-desc {
+  font-size: 0.72rem;
+  color: var(--color-text-muted, #7c8877);
+  font-weight: 500;
+}
+
+.max-discount-label {
+  display: inline-flex;
+  align-items: center;
+  background: linear-gradient(90deg, #cda756, #977229);
+  color: #ffffff;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-top: 4px;
+  margin-bottom: 8px;
+  box-shadow: 0 2px 6px rgba(151, 114, 41, 0.25);
+  animation: badge-pulse 2s infinite alternate;
+}
+
+@keyframes slide-down-fade {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-up-fade {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes badge-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 2px 6px rgba(151, 114, 41, 0.25);
+  }
+  100% {
+    transform: scale(1.04);
+    box-shadow: 0 2px 10px rgba(151, 114, 41, 0.45);
+  }
+}

@@ -1,0 +1,356 @@
+/* ============================================================
+   FC Coupon Wallet v2 — side-by-side coupons + flight arc
+   ============================================================ */
+
+/* ---------- Flight-style journey arc ---------- */
+.journey {
+  position: relative;
+  padding: 4px 10px 0;
+  margin-bottom: -4px;
+}
+
+.journey-arc {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+#arc-base {
+  stroke: #cfc5aa;
+}
+
+#arc-fill {
+  stroke: #b88c3d;
+  transition: stroke-dasharray 0.25s linear;
+}
+
+.arc-end {
+  fill: #475841;
+  stroke: #f4f1e8;
+  stroke-width: 2;
+}
+
+.arc-end.end-target {
+  fill: #fbf9f1;
+  stroke: #b88c3d;
+}
+
+.marker-coin {
+  fill: #e3b54e;
+  stroke: #a87f33;
+  stroke-width: 1.5;
+}
+
+.marker-txt {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 9px;
+  font-weight: 800;
+  fill: #8a6420;
+}
+
+#arc-marker {
+  filter: drop-shadow(0 2px 3px rgba(168, 127, 51, 0.45));
+}
+
+.arc-chip {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #8a7a52;
+  background-color: #f6efdd;
+  border: 1px solid #e6d6ae;
+  padding: 4px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.arc-chip b { color: #a87f33; font-variant-numeric: tabular-nums; }
+
+/* ---------- Side-by-side coupon cards ---------- */
+.coupon-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.kcoupon {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+}
+
+.kc-main {
+  border-radius: 18px 18px 8px 8px;
+  padding: 16px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 7px;
+  min-height: 178px;
+  position: relative;
+  overflow: hidden;
+}
+
+.kc-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  line-height: 1.3;
+  opacity: 0.92;
+}
+
+.kc-value {
+  font-family: var(--font-serif);
+  font-size: 3.1rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -1px;
+  margin-top: 2px;
+}
+
+.kc-value small { font-size: 1.5rem; font-weight: 700; }
+
+.kc-sub {
+  font-size: 0.62rem;
+  opacity: 0.78;
+  white-space: nowrap;
+}
+
+.kc-sub b { font-weight: 700; }
+
+.kc-label {
+  width: 100%;
+  margin-top: auto;
+  padding-top: 9px;
+  border-top: 1px solid currentColor;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
+
+/* Detachable stub with the use arrow (current coupon only) */
+.kc-stub {
+  font-family: var(--font-sans);
+  border: none;
+  cursor: pointer;
+  border-radius: 8px 8px 18px 18px;
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.kc-stub:hover { filter: brightness(1.06); }
+.kc-stub:hover .stub-arrow { transform: translateY(3px); }
+.kc-stub:active { transform: scale(0.98); }
+
+.kc-stub:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.8);
+  opacity: 0.6;
+}
+
+.stub-arrow {
+  width: 22px;
+  height: 22px;
+  transition: transform 0.2s ease;
+}
+
+.kc-stub-text {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+/* Current coupon — deep sage, ready to use */
+.kcoupon.current .kc-main,
+.kcoupon.current .kc-stub {
+  background: linear-gradient(160deg, #475841 0%, #2f3b2b 100%);
+  color: #f6f3ea;
+  box-shadow: 0 10px 22px rgba(40, 52, 37, 0.26);
+}
+
+.kcoupon.current .kc-title { color: #dfd0a0; }
+.kcoupon.current .kc-stub { color: #ecd9a8; }
+
+/* Sheen sweep on the active coupon */
+.kcoupon.current .kc-main::after {
+  content: '';
+  position: absolute;
+  inset: -60% -30%;
+  background: linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.13) 50%, transparent 58%);
+  transform: translateX(-80%);
+  animation: sheen-sweep 5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes sheen-sweep {
+  0%, 55% { transform: translateX(-80%); }
+  85%, 100% { transform: translateX(80%); }
+}
+
+.kcoupon.expired .kc-main,
+.kcoupon.expired .kc-stub {
+  filter: grayscale(0.75);
+  opacity: 0.7;
+}
+
+/* Target coupon — dark charcoal, locked */
+.kcoupon.target .kc-main {
+  background: linear-gradient(160deg, #45433d 0%, #2c2b27 100%);
+  color: #efe9da;
+  box-shadow: 0 10px 22px rgba(35, 33, 28, 0.25);
+}
+
+.kcoupon.target .kc-title { color: #cdbd92; }
+.kcoupon.target .kc-value { color: #e8dab2; }
+
+.kc-progress {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.tp-track {
+  flex: 1;
+  height: 6px;
+  background-color: rgba(244, 241, 232, 0.16);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.tp-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #e3b54e, #b88c3d);
+  border-radius: 3px;
+  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tp-label {
+  font-size: 0.64rem;
+  font-weight: 700;
+  color: #cdbd92;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Lock badge riveted to the target coupon */
+.lock-badge {
+  position: absolute;
+  top: -10px;
+  right: 12px;
+  z-index: 5;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #cfa95c, #a87f33);
+  color: #fdf9ee;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 3px 8px rgba(168, 127, 51, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.lock-badge svg { width: 12px; height: 12px; }
+
+/* States: ready / absorb / unlocking / swap */
+.kcoupon.ready .kc-main {
+  animation: ready-glow 1.4s infinite alternate ease-in-out;
+}
+
+@keyframes ready-glow {
+  from { box-shadow: 0 10px 22px rgba(35, 33, 28, 0.25); }
+  to { box-shadow: 0 10px 22px rgba(35, 33, 28, 0.25), 0 0 22px rgba(227, 181, 78, 0.55); }
+}
+
+.kcoupon.absorb .kc-main {
+  animation: absorb-pulse 0.35s ease;
+}
+
+@keyframes absorb-pulse {
+  50% { transform: scale(1.03); }
+}
+
+.kcoupon.unlocking .lock-badge {
+  animation: lock-pop 0.7s forwards cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+
+@keyframes lock-pop {
+  35% { transform: rotate(-14deg) scale(1.25); }
+  100% { transform: translateY(-30px) rotate(24deg) scale(0.3); opacity: 0; }
+}
+
+.kcoupon.swap .kc-main {
+  animation: swap-in 0.65s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+}
+
+@keyframes swap-in {
+  0% { transform: perspective(600px) rotateX(65deg) scale(0.94); opacity: 0; }
+  100% { transform: perspective(600px) rotateX(0deg) scale(1); opacity: 1; }
+}
+
+/* Flying coins */
+.fly-coin {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffe9a8, #e3b54e 60%, #b3852e);
+  border: 1px solid #a87f33;
+  box-shadow: 0 2px 6px rgba(180, 130, 40, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.7);
+  z-index: 60;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: #8a6420;
+  transition: transform 0.65s cubic-bezier(0.3, 0.6, 0.35, 1), opacity 0.65s ease;
+}
+
+/* Best offer (final tier) */
+.wallet.best-offer .journey,
+.wallet.best-offer .kcoupon.target {
+  display: none;
+}
+
+.wallet.best-offer .coupon-row {
+  grid-template-columns: 1fr;
+}
+
+.wallet.best-offer .kcoupon.current .kc-main,
+.wallet.best-offer .kcoupon.current .kc-stub {
+  background: linear-gradient(160deg, #bb9445 0%, #8f6a23 100%);
+  color: #fffaeb;
+  box-shadow: 0 12px 26px rgba(143, 106, 35, 0.38);
+}
+
+.wallet.best-offer .kcoupon.current .kc-title { color: #fff0c4; }
+.wallet.best-offer .kcoupon.current .kc-stub { color: #6e5314; background: linear-gradient(135deg, #fdf6e3, #ecd9a8); }
+
+@media (prefers-reduced-motion: reduce) {
+  .kcoupon.current .kc-main::after,
+  .kcoupon.ready .kc-main {
+    animation: none;
+  }
+}
