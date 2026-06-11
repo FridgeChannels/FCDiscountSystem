@@ -8,3 +8,4 @@ screenshots/
 scraps/
 ritual-intro-check.png
 *.log
+.env

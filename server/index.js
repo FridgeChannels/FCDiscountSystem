@@ -5,6 +5,9 @@ const ENGINE_BASE_URL = process.env.ENGINE_BASE_URL ?? 'http://localhost:8787';
 const PORT = Number(process.env.BFF_PORT ?? 3001);
 const ENGINE_SERVICE_TOKEN = process.env.ENGINE_SERVICE_TOKEN ?? '';
 const ENGINE_TIMEOUT_MS = Number(process.env.ENGINE_TIMEOUT_MS ?? 30000);
+const ENGINE_REWARD_PLAN_TIMEOUT_MS = Number(
+  process.env.ENGINE_REWARD_PLAN_TIMEOUT_MS ?? Math.max(ENGINE_TIMEOUT_MS, 120000),
+);
 
 // 阶段5:reward-plan 服务端短缓存 + 在途去重。
 // - 同一 touchId 的并发请求只打一次引擎(去重)
@@ -24,17 +27,17 @@ function writePlanCache(touchId, data) {
   planCache.set(touchId, { data, expiresAt: Date.now() + PLAN_CACHE_TTL_MS });
 }
 
-function getPlanDeduped(touchId) {
+function getPlanDeduped(touchId, timeoutMs = ENGINE_REWARD_PLAN_TIMEOUT_MS) {
   const existing = planInflight.get(touchId);
   if (existing) return existing;
-  const promise = callEngine('/reward-plan/generate', { touchId }).finally(() => {
+  const promise = callEngine('/reward-plan/generate', { touchId }, timeoutMs).finally(() => {
     planInflight.delete(touchId);
   });
   planInflight.set(touchId, promise);
   return promise;
 }
 
-async function callEngine(path, body) {
+async function callEngine(path, body, timeoutMs = ENGINE_TIMEOUT_MS) {
   const headers = { 'content-type': 'application/json' };
   if (ENGINE_SERVICE_TOKEN) {
     headers.authorization = `Bearer ${ENGINE_SERVICE_TOKEN}`;
@@ -44,7 +47,7 @@ async function callEngine(path, body) {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(ENGINE_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const json = await res.json();
   if (!res.ok || json.error || json.data === null) {
@@ -53,6 +56,7 @@ async function callEngine(path, body) {
   }
   return json.data;
 }
+
 
 function readJson(req) {
   return new Promise((resolve, reject) => {
@@ -75,7 +79,7 @@ function sendJson(res, status, payload, extraHeaders = {}) {
   res.writeHead(status, {
     'content-type': 'application/json',
     'access-control-allow-origin': '*',
-    'access-control-allow-methods': 'GET,POST,OPTIONS',
+    'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
     'access-control-allow-headers': 'content-type,if-none-match',
     ...extraHeaders,
   });
@@ -107,7 +111,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 200, cachedPlan);
         return;
       }
-      const data = await getPlanDeduped(touchId);
+      const data = await getPlanDeduped(touchId, ENGINE_REWARD_PLAN_TIMEOUT_MS);
       writePlanCache(touchId, data);
       sendJson(res, 200, data);
       return;
@@ -115,7 +119,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/api/fc/games/manifest') {
       const touchId = url.searchParams.get('touchId') || 'anonymous';
-      const document = getRuntimeManifest(touchId);
+      const document = await getRuntimeManifest(touchId);
       const ifNoneMatch = req.headers['if-none-match'];
       if (ifNoneMatch && ifNoneMatch === document.etag) {
         res.writeHead(304, {
@@ -164,6 +168,13 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/fc/survey/complete') {
       const body = await readJson(req);
       const data = await callEngine('/survey/complete', body);
+      sendJson(res, 200, data);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/fc/coupons/redeem') {
+      const body = await readJson(req);
+      const data = await callEngine('/coupons/redeem', body);
       sendJson(res, 200, data);
       return;
     }

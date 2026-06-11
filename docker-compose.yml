@@ -8,12 +8,40 @@ services:
     container_name: fc-engine
     environment:
       ENGINE_PORT: 8787
-      FC_REPO: memory
-      FC_CACHE: memory
+      FC_REPO: ${FC_REPO:-memory}
+      FC_CACHE: ${FC_CACHE:-memory}
+      SUPABASE_URL: ${SUPABASE_URL-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY-}
+      REDIS_URL: ${REDIS_URL-}
+      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-fc:}
+      RUNTIME_SHELL_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8787/health"]
       interval: 10s
       timeout: 3s
+      retries: 8
+    restart: unless-stopped
+
+  platform-web:
+    build:
+      context: ..
+      dockerfile: FCDiscountSystem/docker/platform-web.Dockerfile
+    container_name: fc-platform-web
+    environment:
+      ENGINE_BASE_URL: http://engine:8787
+      RUNTIME_SHELL_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      UPLOADED_GAMES_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      SUPABASE_URL: ${SUPABASE_URL-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY-}
+    volumes:
+      - platform_uploaded_games:/workspace/fc-platform/apps/web/public/uploaded-games
+    depends_on:
+      engine:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8789/admin/game-library"]
+      interval: 15s
+      timeout: 5s
       retries: 8
     restart: unless-stopped
 
@@ -28,16 +56,14 @@ services:
       ENGINE_TIMEOUT_MS: 30000
       FC_PLATFORM_ROOT: /workspace/fc-platform
       PLAN_CACHE_TTL_MS: 15000
+      RUNTIME_SHELL_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
       MANIFEST_TTL_SECONDS: 30
-      MANIFEST_STABLE_VERSION: 1.0.0
-      MANIFEST_CANARY_VERSION: 1.1.0
-      MANIFEST_CANARY_RUNTIMES: DodgePlaneRuntime,BridgeCrossRuntime
-      MANIFEST_CANARY_DEFAULT_PERCENT: 20
-      MANIFEST_CANARY_ROLLOUTS: '{"DodgePlaneRuntime":20,"BridgeCrossRuntime":20}'
       MANIFEST_SIGNING_KEY_ID: docker-local
       MANIFEST_PRIVATE_KEY_PEM: ${MANIFEST_PRIVATE_KEY_PEM-}
     depends_on:
       engine:
+        condition: service_healthy
+      platform-web:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3001/api/fc/health"]
@@ -52,13 +78,16 @@ services:
       dockerfile: FCDiscountSystem/docker/web.Dockerfile
       args:
         VITE_API_BASE: /api/fc
+        VITE_RUNTIME_SHELL_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
         VITE_MANIFEST_PUBLIC_KEY_PEM: ${VITE_MANIFEST_PUBLIC_KEY_PEM-}
         VITE_MANIFEST_REQUIRE_SIGNATURE: ${VITE_MANIFEST_REQUIRE_SIGNATURE-false}
     container_name: fc-web
     ports:
-      - "8080:80"
+      - "${PUBLIC_PORT:-8080}:80"
     depends_on:
       bff:
+        condition: service_healthy
+      platform-web:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
@@ -66,3 +95,6 @@ services:
       timeout: 3s
       retries: 8
     restart: unless-stopped
+
+volumes:
+  platform_uploaded_games:

@@ -6,43 +6,82 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(here, '..');
 
+const ENGINE_BASE_URL = process.env.ENGINE_BASE_URL ?? 'http://localhost:8787';
+const ENGINE_SERVICE_TOKEN = process.env.ENGINE_SERVICE_TOKEN ?? '';
+const ENGINE_TIMEOUT_MS = Number(process.env.ENGINE_TIMEOUT_MS ?? 30000);
+
+const RUNTIME_SHELL_BASE_URL = (
+  process.env.RUNTIME_SHELL_BASE_URL ?? 'http://localhost:8789'
+).replace(/\/$/, '');
+
 const RUNTIME_CATALOG = [
   {
     runtimeComponent: 'MatchGameRuntime',
     moduleSpecifier: '@fc/game-templates/match/MatchGameRuntime.js',
     sourceFile: 'packages/game-templates/src/match/MatchGameRuntime.tsx',
+    loadMode: 'inline',
   },
   {
     runtimeComponent: 'MemoryMatchRuntime',
     moduleSpecifier: '@fc/game-templates/memory/MemoryMatchRuntime.js',
     sourceFile: 'packages/game-templates/src/memory/MemoryMatchRuntime.tsx',
+    loadMode: 'inline',
   },
   {
     runtimeComponent: 'RpsChoiceRuntime',
     moduleSpecifier: '@fc/game-templates/rps/RpsChoiceRuntime.js',
     sourceFile: 'packages/game-templates/src/rps/RpsChoiceRuntime.tsx',
+    loadMode: 'iframe',
+    iframePath: '/runtime-shell/rps',
   },
   {
     runtimeComponent: 'Merge2048Runtime',
     moduleSpecifier: '@fc/game-templates/merge2048/Merge2048Runtime.js',
     sourceFile: 'packages/game-templates/src/merge2048/Merge2048Runtime.tsx',
+    loadMode: 'inline',
   },
   {
     runtimeComponent: 'SliceBlocksRuntime',
     moduleSpecifier: '@fc/game-templates/slice/SliceBlocksRuntime.js',
     sourceFile: 'packages/game-templates/src/slice/SliceBlocksRuntime.tsx',
+    loadMode: 'inline',
   },
   {
     runtimeComponent: 'DodgePlaneRuntime',
     moduleSpecifier: '@fc/game-templates/dodge/DodgePlaneRuntime.js',
     sourceFile: 'packages/game-templates/src/dodge/DodgePlaneRuntime.tsx',
+    loadMode: 'inline',
   },
   {
     runtimeComponent: 'BridgeCrossRuntime',
     moduleSpecifier: '@fc/game-templates/bridge/BridgeCrossRuntime.js',
     sourceFile: 'packages/game-templates/src/bridge/BridgeCrossRuntime.tsx',
+    loadMode: 'iframe',
+    iframePath: '/runtime-shell/bridge',
   },
 ];
+
+function resolveIframeConfig(runtime) {
+  if (runtime.loadMode !== 'iframe' || !runtime.iframePath) {
+    return { loadMode: runtime.loadMode ?? 'inline' };
+  }
+  const iframeUrl = `${RUNTIME_SHELL_BASE_URL}${runtime.iframePath}`;
+  return {
+    loadMode: 'iframe',
+    iframeUrl,
+    allowedOrigin: new URL(iframeUrl).origin,
+    iframePath: runtime.iframePath,
+  };
+}
+
+export function listRuntimeCatalog() {
+  return RUNTIME_CATALOG.map((item) => ({
+    runtimeComponent: item.runtimeComponent,
+    moduleSpecifier: item.moduleSpecifier,
+    sourceFile: item.sourceFile,
+    ...resolveIframeConfig(item),
+  }));
+}
 
 const manifestCache = new Map();
 
@@ -196,6 +235,7 @@ function buildManifestDocument(touchId) {
   const fcRoot = resolveFcRoot();
   const entries = RUNTIME_CATALOG.map((runtime) => buildRuntimeEntry(runtime, fcRoot)).map((entry) => {
     const pick = pickVariant(entry, touchId);
+    const catalogItem = RUNTIME_CATALOG.find((item) => item.runtimeComponent === entry.runtimeComponent);
     return {
       runtimeComponent: entry.runtimeComponent,
       fallbackVersion: entry.fallbackVersion,
@@ -203,6 +243,7 @@ function buildManifestDocument(touchId) {
       selected: pick.selected,
       fallback: pick.fallback,
       variants: entry.variants,
+      ...(catalogItem ? resolveIframeConfig(catalogItem) : { loadMode: 'inline' }),
     };
   });
 
@@ -219,13 +260,46 @@ function buildManifestDocument(touchId) {
   return { payload, signature, etag };
 }
 
-export function getRuntimeManifest(touchId) {
+async function fetchEngineManifest(touchId) {
+  const headers = {};
+  if (ENGINE_SERVICE_TOKEN) {
+    headers.authorization = `Bearer ${ENGINE_SERVICE_TOKEN}`;
+  }
+  const res = await fetch(
+    `${ENGINE_BASE_URL}/games/manifest?touchId=${encodeURIComponent(touchId)}`,
+    {
+      headers,
+      signal: AbortSignal.timeout(ENGINE_TIMEOUT_MS),
+    },
+  );
+  const json = await res.json();
+  if (!res.ok) {
+    const message = typeof json?.error === 'string' ? json.error : `HTTP ${res.status}`;
+    throw new Error(`engine manifest failed: ${message}`);
+  }
+  if (!json?.payload?.entries || !Array.isArray(json.payload.entries)) {
+    throw new Error('engine manifest response invalid');
+  }
+  return json;
+}
+
+export async function getRuntimeManifest(touchId) {
   const key = String(touchId || 'anonymous');
   const now = Date.now();
   const cached = manifestCache.get(key);
   if (cached && cached.expiresAt > now) return cached.document;
 
-  const document = buildManifestDocument(key);
+  let document;
+  try {
+    document = await fetchEngineManifest(key);
+  } catch (err) {
+    console.warn(
+      '[FCDiscountSystem] engine manifest fetch failed, using local fallback:',
+      err instanceof Error ? err.message : err,
+    );
+    document = buildManifestDocument(key);
+  }
+
   const ttlMs =
     Math.max(5, Number.parseInt(String(document.payload.ttlSeconds || 30), 10)) * 1000;
   manifestCache.set(key, { document, expiresAt: now + ttlMs });

@@ -148,6 +148,10 @@ export function ensureRuntimesRegistered() {
   // 保持向后兼容:新架构按需加载,不再执行全量注册。
 }
 
+export function getRuntimeManifestEntry(component) {
+  return manifestMap.get(component) ?? null;
+}
+
 export function getRuntime(component) {
   return async () => {
     const entry = manifestMap.get(component);

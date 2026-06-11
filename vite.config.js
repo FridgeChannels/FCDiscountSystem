@@ -44,6 +44,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@fc/shared-types': path.join(fcPackages, 'shared-types/src'),
+      '@fc/game-bridge': path.join(fcPackages, 'game-bridge/src'),
       '@fc/game-runtime': path.join(fcPackages, 'game-runtime/src'),
       '@fc/game-templates': path.join(fcPackages, 'game-templates/src'),
       '@fc/game-templates/register-runtimes': path.join(

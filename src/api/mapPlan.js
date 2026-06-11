@@ -19,15 +19,24 @@ export function secondsUntil(iso) {
 
 export function mapPlanToViewModel(plan) {
   const ladder = [...plan.ladder].sort((a, b) => a.tier - b.tier);
+  const currentCoupon = plan.currentCoupon;
   const discounts = ladder.map((step) => ({
     tier: step.tier,
+    campaignId: step.campaignId,
     num: formatDiscountValue(step).replace('%', '').replace('Free Ship', '0'),
     value: formatDiscountLabel(step),
     target: step.pointsThreshold,
-    code:
-      plan.currentCoupon && plan.currentCoupon.tier === step.tier
-        ? plan.currentCoupon.couponCode
-        : '',
+    code: (() => {
+      if (!currentCoupon) return '';
+      // 新链路优先以 campaignId 对齐，避免 tier 变动导致券码贴错卡位。
+      if (currentCoupon.campaignId && step.campaignId) {
+        return currentCoupon.campaignId === step.campaignId
+          ? currentCoupon.couponCode
+          : '';
+      }
+      // 兼容回退:旧数据缺 campaignId 时继续按 tier 匹配。
+      return currentCoupon.tier === step.tier ? currentCoupon.couponCode : '';
+    })(),
   }));
 
   const currentStepIndex = Math.max(

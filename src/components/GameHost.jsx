@@ -1,7 +1,9 @@
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { completeGameSession } from '../api/client.js';
 import { dbg, dbgError } from '../lib/debug.js';
-import { ensureRuntimesRegistered, getRuntime } from '../lib/runtimeRegistry.js';
+import { ensureRuntimesRegistered, getRuntime, getRuntimeManifestEntry } from '../lib/runtimeRegistry.js';
+import { getRuntimeLoadConfig } from '../lib/runtimeLoadConfig.js';
+import IframeGameHost from './IframeGameHost.jsx';
 
 function normalizeStartPayloadForLocalHost(start) {
   const params = { ...(start.difficultyParams ?? {}) };
@@ -23,7 +25,7 @@ function normalizeStartPayloadForLocalHost(start) {
   };
 }
 
-export default function GameHost({ start, onDone, onError }) {
+function InlineGameHost({ start, onDone, onError }) {
   const [Comp, setComp] = useState(null);
   const [err, setErr] = useState(null);
   const eventsRef = useRef([]);
@@ -40,13 +42,10 @@ export default function GameHost({ start, onDone, onError }) {
     eventLogCountRef.current = 0;
     setErr(null);
     setComp(null);
-    dbg('[FCDBG][GameHost] mount/start', {
+    dbg('[FCDBG][GameHost] mount/start inline', {
       sessionId: start.sessionId,
       templateKey: start.templateKey,
       runtimeComponent: start.runtimeComponent,
-      pointsMode: start.pointsMode,
-      difficultyParamsOriginal: start.difficultyParams,
-      difficultyParamsNormalized: normalizedStart.difficultyParams,
     });
     ensureRuntimesRegistered();
     const loader = getRuntime(start.runtimeComponent);
@@ -62,10 +61,6 @@ export default function GameHost({ start, onDone, onError }) {
     loader()
       .then((mod) => {
         if (!cancelled) {
-          dbg('[FCDBG][GameHost] runtime loaded', {
-            runtimeComponent: start.runtimeComponent,
-            hasDefaultExport: Boolean(mod?.default),
-          });
           setComp(() => mod.default);
         }
       })
@@ -91,17 +86,7 @@ export default function GameHost({ start, onDone, onError }) {
             ? result.rawEvents
             : eventsRef.current,
       };
-      dbg('[FCDBG][GameHost] complete called by runtime', {
-        sessionId: payload.sessionId,
-        completed: payload.completed,
-        rawScore: payload.rawScore,
-        accuracy: payload.accuracy,
-        durationSeconds: payload.durationSeconds,
-        rawEventsCount: payload.rawEvents?.length ?? 0,
-        signals: payload.signals,
-      });
       const view = await completeGameSession(payload);
-      dbg('[FCDBG][GameHost] complete response', view);
       onDoneRef.current?.(view);
     } catch (error) {
       dbgError('[FCDBG][GameHost] complete failed', error);
@@ -112,14 +97,7 @@ export default function GameHost({ start, onDone, onError }) {
   const handleRuntimeEvent = useCallback((event) => {
     eventsRef.current.push(event);
     eventLogCountRef.current += 1;
-    if (eventLogCountRef.current <= 5 || eventLogCountRef.current % 10 === 0) {
-      dbg('[FCDBG][GameHost] runtime event', {
-        sessionId: start.sessionId,
-        count: eventLogCountRef.current,
-        event,
-      });
-    }
-  }, [start.sessionId]);
+  }, []);
 
   if (err) {
     return <p className="platform-game-error">{err}</p>;
@@ -133,4 +111,44 @@ export default function GameHost({ start, onDone, onError }) {
     onComplete: handleComplete,
     onEvent: handleRuntimeEvent,
   });
+}
+
+export default function GameHost({ start, onDone, onError }) {
+  const manifestEntry = getRuntimeManifestEntry(start.runtimeComponent);
+  const loadConfig = useMemo(
+    () => getRuntimeLoadConfig(start.runtimeComponent, manifestEntry),
+    [manifestEntry, start.runtimeComponent],
+  );
+
+  useEffect(() => {
+    if (loadConfig.loadMode !== 'iframe' || !loadConfig.iframeUrl || !loadConfig.allowedOrigin) {
+      return;
+    }
+    dbg('[FCDBG][GameHost] using iframe runtime', {
+      runtimeComponent: start.runtimeComponent,
+      iframeUrl: loadConfig.iframeUrl,
+      allowedOrigin: loadConfig.allowedOrigin,
+      sessionId: start.sessionId,
+    });
+  }, [
+    loadConfig.allowedOrigin,
+    loadConfig.iframeUrl,
+    loadConfig.loadMode,
+    start.runtimeComponent,
+    start.sessionId,
+  ]);
+
+  if (loadConfig.loadMode === 'iframe' && loadConfig.iframeUrl && loadConfig.allowedOrigin) {
+    return (
+      <IframeGameHost
+        start={start}
+        iframeUrl={loadConfig.iframeUrl}
+        allowedOrigin={loadConfig.allowedOrigin}
+        onDone={onDone}
+        onError={onError}
+      />
+    );
+  }
+
+  return <InlineGameHost start={start} onDone={onDone} onError={onError} />;
 }

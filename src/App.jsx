@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
-import { completeSurvey, fetchRewardPlan, startGameSession } from './api/client.js';
+import { completeSurvey, fetchRewardPlan, redeemCoupon, startGameSession } from './api/client.js';
 import { readCachedRewardPlan, readRememberedTouchId, rememberTouchId, writeCachedRewardPlan } from './api/cache.js';
 import { mapPlanToViewModel } from './api/mapPlan.js';
 import PlatformGameModal from './components/PlatformGameModal.jsx';
@@ -210,6 +210,7 @@ export default function App() {
   const [currentSwap, setCurrentSwap] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
   const [pendingPoints, setPendingPoints] = useState(0);
+  const [redeemingCoupon, setRedeemingCoupon] = useState(false);
   const [introActive, setIntroActive] = useState(true);
   const closeIntro = useCallback(() => setIntroActive(false), []);
 
@@ -845,6 +846,28 @@ function triggerLoginBonusAnimation(pts) {
     }
   }
 
+  async function ensureCouponReadyForUse() {
+    if (current?.code) return current.code;
+    if (!rewardPlanId) throw new Error('Reward plan is not ready yet');
+    setRedeemingCoupon(true);
+    try {
+      const issued = await redeemCoupon({ rewardPlanId, touchId });
+      const code = issued?.couponCode;
+      if (!code) throw new Error('No coupon code returned');
+      setDiscounts((prev) =>
+        prev.map((item, idx) =>
+          idx === currentStepIndex
+            ? { ...item, code }
+            : item
+        )
+      );
+      await reloadPlan();
+      return code;
+    } finally {
+      setRedeemingCoupon(false);
+    }
+  }
+
   function handleShopNow() {
     // 第一原则:交互即时反馈,去掉假延迟,点击立刻给出反馈。
     setShopLoading(true);
@@ -887,9 +910,16 @@ function triggerLoginBonusAnimation(pts) {
     );
   }
 
-  function handleUseCoupon() {
-    if (isExpired || isTearingCoupon) return;
+  async function handleUseCoupon() {
+    if (isExpired || isTearingCoupon || redeemingCoupon) return;
     if (isBestOffer) {
+      try {
+        await ensureCouponReadyForUse();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Could not issue coupon';
+        showNotification('Coupon unavailable', msg, '⚠️');
+        return;
+      }
       const faceEl = couponFaceRef.current;
       const viewport = viewportRef.current;
       if (faceEl && viewport) {

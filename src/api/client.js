@@ -1,6 +1,14 @@
 import { dbg } from '../lib/debug.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
+const NORMALIZED_API_BASE = API_BASE.endsWith('/') ? API_BASE.slice(0, -1) : API_BASE;
+
+function buildApiUrl(path) {
+  if (path.startsWith('/api/')) return path;
+  if (!NORMALIZED_API_BASE) return path;
+  if (path.startsWith(NORMALIZED_API_BASE)) return path;
+  return `${NORMALIZED_API_BASE}${path}`;
+}
 
 // 阶段0/3:GET 请求在途去重。
 // 相同的并发 GET(例如 React StrictMode 在开发模式下重复执行 effect,
@@ -25,7 +33,7 @@ async function request(path, options = {}) {
   dbg('[FCDBG][API] request', { method, path, body: parsedBody });
 
   const doFetch = async () => {
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await fetch(buildApiUrl(path), {
       headers: { 'content-type': 'application/json', ...(options.headers ?? {}) },
       ...options,
     });
@@ -45,7 +53,7 @@ async function request(path, options = {}) {
 
   // 只对 GET 去重:POST 是带副作用的变更,不合并。
   if (method === 'GET') {
-    const key = `GET ${API_BASE}${path}`;
+    const key = `GET ${buildApiUrl(path)}`;
     const existing = inflightGets.get(key);
     if (existing) {
       dbg('[FCDBG][API] reuse in-flight GET', { path });
@@ -86,14 +94,22 @@ export function completeSurvey(touchId, rewardPlanId, answers) {
   });
 }
 
+export function redeemCoupon(payload) {
+  return request('/api/fc/coupons/redeem', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function fetchGameManifest(touchId) {
   const path = `/api/fc/games/manifest?touchId=${encodeURIComponent(touchId)}`;
-  const key = `GET ${API_BASE}${path}#manifest`;
+  const url = buildApiUrl(path);
+  const key = `GET ${url}#manifest`;
   const existing = inflightGets.get(key);
   if (existing) return existing;
 
   const promise = (async () => {
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await fetch(url, {
       headers: {
         'content-type': 'application/json',
         ...(manifestEtag ? { 'if-none-match': manifestEtag } : {}),
