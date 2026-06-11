@@ -1035,6 +1035,46 @@ body {
 
 .modal-overlay.open .modal-content { transform: scale(1); }
 
+.modal-card {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  width: min(100%, 420px);
+  max-width: 420px;
+  box-shadow: var(--shadow-md);
+  padding: 18px;
+  transform: scale(0.96);
+  transition: transform 0.25s ease;
+}
+
+.modal-overlay.open .modal-card { transform: scale(1); }
+
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.modal-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.modal-close {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modal-body {
+  width: 100%;
+}
+
 .modal-header {
   display: flex;
   justify-content: space-between;
@@ -1318,6 +1358,85 @@ body {
 @keyframes bounce-alert {
   from { transform: translateY(0) scale(1); }
   to { transform: translateY(-8px) scale(1.08); }
+}
+
+.loading-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.loading-hint {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.brand-logo-img {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.reward-sync-status {
+  position: sticky;
+  top: 0;
+  z-index: 12;
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  text-align: center;
+  backdrop-filter: blur(10px);
+}
+
+.reward-sync-status.error {
+  color: #8a4b17;
+}
+
+.platform-game-modal {
+  max-height: 90dvh;
+  overflow: auto;
+}
+
+.platform-game-shell {
+  min-height: 280px;
+}
+
+.platform-game-loading,
+.platform-game-error {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.platform-game-loading {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+}
+
+.platform-game-spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(50, 66, 45, 0.16);
+  border-top-color: var(--brand-primary, #32422d);
+  border-radius: 50%;
+  animation: platform-spin 0.8s linear infinite;
+}
+
+@keyframes platform-spin {
+  to { transform: rotate(360deg); }
 }
 
 @media (prefers-reduced-motion: reduce) {

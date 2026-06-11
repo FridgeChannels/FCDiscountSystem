@@ -1,18 +1,48 @@
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
+import { completeSurvey, fetchRewardPlan, startGameSession } from './api/client.js';
+import { readCachedRewardPlan, readRememberedTouchId, rememberTouchId, writeCachedRewardPlan } from './api/cache.js';
+import { mapPlanToViewModel } from './api/mapPlan.js';
+import PlatformGameModal from './components/PlatformGameModal.jsx';
+import { dbg, dbgError } from './lib/debug.js';
+
+// 阶段4:对不依赖每秒倒计时的叶子组件做 memo,
+// 避免倒计时每秒触发它们跟着整棵树一起重渲染。
+const Header = memo(HeaderBase);
+const Challenges = memo(
+  ChallengesBase,
+  (prev, next) =>
+    prev.challenges === next.challenges &&
+    prev.dailyCapReached === next.dailyCapReached,
+);
+const RulesFooter = memo(
+  RulesFooterBase,
+  (prev, next) => prev.rulesOpen === next.rulesOpen,
+);
 
 const INITIAL_SECONDS = 2 * 24 * 3600 + 4 * 3600 + 55 * 60;
 const INTRO_REWARD_POINTS = 5;
+const DEFAULT_TOUCH_ID = 'A8SQN3V2OW';
+
+function getTouchId() {
+  const params = new URLSearchParams(window.location.search);
+  const fromQuery = params.get('touchId');
+  if (fromQuery) return fromQuery;
+
+  // NFC / landing paths: /p/:touchId or /t/:touchId (aligned with fc-platform /t/[touchId])
+  const pathMatch = window.location.pathname.match(/^\/(?:p|t)\/([^/]+)\/?$/i);
+  if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]);
+
+  return readRememberedTouchId() || DEFAULT_TOUCH_ID;
+}
+
 const INITIAL_DISCOUNTS = [
   { num: '15', value: '15% OFF', target: 0, code: 'FC15RITUAL' },
   { num: '20', value: '20% OFF', target: 80, code: 'FC20RITUAL' },
   { num: '30', value: '30% OFF', target: 20, code: 'FC30RITUAL' }
 ];
 
-const CHALLENGES = [
-  { id: 'tap', badge: 'Game 1', icon: '🎮', title: 'Tap Target', desc: 'Tap as fast as you can in 5s', reward: '+12 PTS', cta: 'Play Now' },
-  { id: 'memory', badge: 'Game 2', icon: '🃏', title: 'Card Match', desc: 'Match 2 pairs of cards', reward: '+15 PTS', cta: 'Play Now' },
-  { id: 'spin', badge: 'Game 3', icon: '🎡', title: 'Lucky Spin', desc: 'Spin the wheel for points', reward: '+10 PTS', cta: 'Play Now' },
-  { id: 'survey', badge: 'Survey', icon: '📝', title: 'Preferences', desc: 'Share habits for rewards', reward: '+10 PTS', cta: 'Start' }
+const FALLBACK_CHALLENGES = [
+  { id: 'survey', type: 'survey', badge: 'Survey', icon: '📝', title: 'Preferences', desc: 'Share habits for rewards', reward: '+10 PTS', cta: 'Start' }
 ];
 
 const SURVEY_STEPS = [
@@ -139,9 +169,22 @@ export default function App() {
   const targetCouponRef = useRef(null);
   const canvasRef = useRef(null);
   const tearTimerRef = useRef(null);
+  const activeGameRequestRef = useRef(0);
+  const preloadedGameStartsRef = useRef(new Map());
+  const preloadingGameStartsRef = useRef(new Map());
   const confettiRef = useRef({ ctx: null, particles: [], frame: null });
   const couponFaceRef = useRef(null);
 
+  const [touchId] = useState(getTouchId);
+  const [planLoading, setPlanLoading] = useState(true);
+  const [planError, setPlanError] = useState(null);
+  const [rewardPlanId, setRewardPlanId] = useState(null);
+  const [brand, setBrand] = useState({ name: 'Rewards', logoUrl: null, primaryColor: null, shopUrl: '#' });
+  const [challenges, setChallenges] = useState(FALLBACK_CHALLENGES);
+  const [gameStart, setGameStart] = useState(null);
+  const [gameModalTitle, setGameModalTitle] = useState('Play & Earn');
+  const [gameLoadingMessage, setGameLoadingMessage] = useState('Preparing game…');
+  const [surveyAnswers, setSurveyAnswers] = useState([]);
   const [points, setPoints] = useState(67);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [countdownSeconds, setCountdownSeconds] = useState(INITIAL_SECONDS);
@@ -161,6 +204,11 @@ export default function App() {
   const [pendingPoints, setPendingPoints] = useState(0);
   const [introActive, setIntroActive] = useState(true);
   const closeIntro = useCallback(() => setIntroActive(false), []);
+
+  const clearGameSessionCache = useCallback(() => {
+    preloadedGameStartsRef.current.clear();
+    preloadingGameStartsRef.current.clear();
+  }, []);
 
   // 3D Zoom-and-Flip state
   const [zoomActive, setZoomActive] = useState(false);
@@ -183,6 +231,131 @@ export default function App() {
   const [surveyStep, setSurveyStep] = useState(0);
 
   const [discounts, setDiscounts] = useState(INITIAL_DISCOUNTS);
+
+  const syncFromPlan = useCallback((plan) => {
+    const vm = mapPlanToViewModel(plan);
+    setRewardPlanId(vm.rewardPlanId);
+    setPoints(vm.points);
+    setDiscounts(vm.discounts.length ? vm.discounts : INITIAL_DISCOUNTS);
+    setCurrentStepIndex(vm.currentStepIndex);
+    setCountdownSeconds(vm.countdownSeconds);
+    setBrand(vm.brand);
+    setChallenges(vm.challenges.length ? vm.challenges : FALLBACK_CHALLENGES);
+    if (vm.brand.primaryColor) {
+      document.documentElement.style.setProperty('--brand-primary', vm.brand.primaryColor);
+    }
+  }, []);
+
+  const reloadPlan = useCallback(async () => {
+    const plan = await fetchRewardPlan(touchId);
+    clearGameSessionCache();
+    writeCachedRewardPlan(touchId, plan);
+    syncFromPlan(plan);
+    return plan;
+  }, [clearGameSessionCache, syncFromPlan, touchId]);
+
+  const preloadGameStart = useCallback((challenge) => {
+    if (!rewardPlanId || !challenge?.gameInstanceId) return null;
+    const key = `${rewardPlanId}:${challenge.gameInstanceId}`;
+    if (preloadedGameStartsRef.current.has(key)) {
+      return Promise.resolve(preloadedGameStartsRef.current.get(key));
+    }
+    if (preloadingGameStartsRef.current.has(key)) {
+      return preloadingGameStartsRef.current.get(key);
+    }
+
+    const promise = startGameSession(rewardPlanId, challenge.gameInstanceId)
+      .then((start) => {
+        dbg('[FCDBG][App] startGameSession success', {
+          rewardPlanId,
+          gameInstanceId: challenge.gameInstanceId,
+          templateKey: start.templateKey,
+          runtimeComponent: start.runtimeComponent,
+          pointsMode: start.pointsMode,
+          difficultyParams: start.difficultyParams,
+          sessionId: start.sessionId,
+        });
+        preloadedGameStartsRef.current.set(key, start);
+        return start;
+      })
+      .catch((err) => {
+        dbgError('[FCDBG][App] startGameSession failed', {
+          rewardPlanId,
+          gameInstanceId: challenge.gameInstanceId,
+          err,
+        });
+        preloadedGameStartsRef.current.delete(key);
+        throw err;
+      })
+      .finally(() => {
+        preloadingGameStartsRef.current.delete(key);
+      });
+
+    preloadingGameStartsRef.current.set(key, promise);
+    return promise;
+  }, [rewardPlanId]);
+
+  useEffect(() => {
+    if (!rewardPlanId) return undefined;
+    const gameChallenges = challenges
+      .filter((challenge) => challenge.type !== 'survey' && challenge.gameInstanceId)
+      .slice(0, 1);
+    if (!gameChallenges.length) return undefined;
+
+    let cancelled = false;
+    const run = () => {
+      if (cancelled) return;
+      gameChallenges.forEach((challenge) => {
+        preloadGameStart(challenge)?.catch(() => {
+          // Preloading is an optimization; click-time fallback will surface errors.
+        });
+      });
+    };
+
+    const idleId = window.requestIdleCallback
+      ? window.requestIdleCallback(run, { timeout: 1200 })
+      : window.setTimeout(run, 250);
+
+    return () => {
+      cancelled = true;
+      if (window.cancelIdleCallback && typeof idleId === 'number') {
+        window.cancelIdleCallback(idleId);
+      } else {
+        window.clearTimeout(idleId);
+      }
+    };
+  }, [challenges, preloadGameStart, rewardPlanId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    rememberTouchId(touchId);
+
+    const cached = readCachedRewardPlan(touchId);
+    if (cached) {
+      syncFromPlan(cached);
+      setPlanLoading(false);
+    }
+
+    (async () => {
+      try {
+        setPlanLoading(true);
+        setPlanError(null);
+        const plan = await fetchRewardPlan(touchId);
+        if (!cancelled) {
+          clearGameSessionCache();
+          writeCachedRewardPlan(touchId, plan);
+          syncFromPlan(plan);
+        }
+      } catch (err) {
+        if (!cancelled) setPlanError(err instanceof Error ? err.message : 'Failed to load rewards');
+      } finally {
+        if (!cancelled) setPlanLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clearGameSessionCache, syncFromPlan, touchId]);
 
   const current = discounts[currentStepIndex];
   const next = discounts[currentStepIndex + 1];
@@ -233,15 +406,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    let coinTimer;
     const modalTimer = window.setTimeout(() => {
       setIntroRewardOpen(false);
-      coinTimer = window.setTimeout(() => addPoints(INTRO_REWARD_POINTS), 360);
     }, 3600);
 
     return () => {
       window.clearTimeout(modalTimer);
-      window.clearTimeout(coinTimer);
     };
   }, []);
 
@@ -489,13 +659,44 @@ export default function App() {
   }
 
   function handleShopNow() {
+    // 第一原则:交互即时反馈,去掉假延迟,点击立刻给出反馈。
     setShopLoading(true);
-    setTimeout(() => {
-      showNotification('Ready to use', 'Your coupon is claimed. We are opening Ritual with this code ready for checkout!', '🛍️', () => {
-        setShopLoading(false);
-        setDrawerOpen(false);
-      });
-    }, 1200);
+    const shopUrl = brand.shopUrl || '#';
+    showNotification('Ready to use', 'Your coupon is ready. Opening the shop with your code!', '🛍️', () => {
+      setShopLoading(false);
+      setDrawerOpen(false);
+      if (shopUrl && shopUrl !== '#') window.open(shopUrl, '_blank', 'noopener,noreferrer');
+    });
+  }
+
+  async function handleSettlementComplete(settlement) {
+    dbg('[FCDBG][App] settlement received', settlement);
+    clearGameSessionCache();
+    setActiveModal(null);
+    setGameStart(null);
+    const pts = settlement.pointsAwarded ?? 0;
+    showNotification(
+      'Challenge Completed!',
+      pts > 0 ? `You earned +${pts} pts.` : 'Challenge completed for today.',
+      '🎮',
+      () => {
+        // 第一原则:动效不等接口。先用结算结果立即给出庆祝反馈,
+        // 真实 plan 在后台静默同步;失败只降级提示,不打断动效。
+        if (settlement.couponWon) {
+          setReceiptColors(readCouponTokens(targetCouponRef.current));
+          setShowReceipt(true);
+          startConfetti();
+        } else if (pts > 0) {
+          flyCoins(Math.min(6, Math.max(3, Math.round(pts / 3))), () => {});
+        }
+
+        // 后台静默校正:重新拉取 plan,与服务端对齐(失败仅降级提示)。
+        reloadPlan().catch((err) => {
+          dbgError('[FCDBG][App] background reloadPlan failed', err);
+          setPlanError(err instanceof Error ? err.message : 'Could not refresh rewards');
+        });
+      }
+    );
   }
 
   function handleUseCoupon() {
@@ -622,12 +823,59 @@ export default function App() {
     setTimeout(() => setIsTearingCoupon(false), 260);
   }
 
-  function openChallenge(id) {
-    setActiveModal(id);
-    if (id === 'memory') {
-      setMemoryGame({ active: false, values: ['❓', '❓', '❓', '❓'], flipped: [], matched: [] });
+  async function openChallenge(challenge) {
+    dbg('[FCDBG][App] openChallenge', challenge);
+    if (challenge.type === 'survey' || challenge.id === 'survey') {
+      setActiveModal('survey');
+      setSurveyStep(0);
+      setSurveyAnswers([]);
+      return;
     }
-    if (id === 'survey') setSurveyStep(0);
+
+    if (!rewardPlanId) {
+      showNotification('Not ready', 'Rewards are still loading. Please try again.', '⚠️');
+      return;
+    }
+
+    const requestToken = activeGameRequestRef.current + 1;
+    activeGameRequestRef.current = requestToken;
+    setGameModalTitle(challenge.title);
+    setActiveModal('platform-game');
+    setGameStart(null);
+    setGameLoadingMessage('Loading game…');
+
+    try {
+      const key = `${rewardPlanId}:${challenge.gameInstanceId}`;
+      const preloaded = preloadedGameStartsRef.current.get(key);
+      if (preloaded) {
+        dbg('[FCDBG][App] using preloaded game start', {
+          key,
+          sessionId: preloaded.sessionId,
+          templateKey: preloaded.templateKey,
+        });
+        setGameStart(preloaded);
+        setGameLoadingMessage('');
+        return;
+      }
+
+      setGameLoadingMessage('Finishing game setup…');
+      const start = await (preloadingGameStartsRef.current.get(key) ?? preloadGameStart(challenge));
+      if (activeGameRequestRef.current === requestToken) {
+        dbg('[FCDBG][App] game start ready for modal', {
+          key,
+          sessionId: start.sessionId,
+          templateKey: start.templateKey,
+          runtimeComponent: start.runtimeComponent,
+        });
+        setGameStart(start);
+        setGameLoadingMessage('');
+      }
+    } catch (err) {
+      if (activeGameRequestRef.current !== requestToken) return;
+      setActiveModal(null);
+      setGameStart(null);
+      showNotification('Game unavailable', err instanceof Error ? err.message : 'Could not start game', '⚠️');
+    }
   }
 
   function startTapGame() {
@@ -691,25 +939,47 @@ export default function App() {
     }, 3200);
   }
 
-  function handleSurveyOption() {
+  async function handleSurveyOption(option) {
+    const nextAnswers = [...surveyAnswers, { questionId: String(surveyStep + 1), value: option }];
+    setSurveyAnswers(nextAnswers);
+
     if (surveyStep < SURVEY_STEPS.length - 1) {
       setSurveyStep((step) => step + 1);
       return;
     }
 
-    setTimeout(() => {
-      setActiveModal(null);
-      setSurveyStep(0);
-      showNotification('Survey Completed!', 'Thanks for sharing your preferences. +10 pts added to your progress!', '📝', () => addPoints(10));
-    }, 400);
+    // 第一原则:提交后立即关闭问卷并交还交互,网络请求在后台进行。
+    setActiveModal(null);
+    setSurveyStep(0);
+    setSurveyAnswers([]);
+
+    try {
+      const settlement = await completeSurvey(touchId, rewardPlanId, nextAnswers);
+      await handleSettlementComplete({
+        ...settlement,
+        pointsAwarded: settlement.pointsAwarded ?? 10,
+      });
+    } catch (err) {
+      showNotification('Survey failed', err instanceof Error ? err.message : 'Could not submit survey', '⚠️');
+    }
   }
 
   return (
-    <div className="mobile-viewport" data-screen-label="优惠券首页" ref={viewportRef}>
+    <div
+      className="mobile-viewport"
+      data-screen-label="优惠券首页"
+      ref={viewportRef}
+      style={brand.primaryColor ? { '--brand-primary': brand.primaryColor } : undefined}
+    >
       <canvas id="confetti-canvas" ref={canvasRef} />
-      {introActive && <BrandIntro onComplete={closeIntro} />}
+      {introActive && <BrandIntro onComplete={closeIntro} brand={brand} />}
 
-      <Header />
+      <Header brand={brand} />
+      {(planLoading || planError) && (
+        <div className={`reward-sync-status ${planError ? 'error' : ''}`} role="status">
+          {planError ? 'Using saved rewards. Refresh failed.' : 'Refreshing rewards…'}
+        </div>
+      )}
 
       <main className="content-area">
         {isBestOffer ? (
@@ -752,7 +1022,7 @@ export default function App() {
               countdownSeconds={countdownSeconds}
             />
 
-            <Challenges dailyCapReached={dailyCapReached} onOpen={openChallenge} />
+            <Challenges challenges={challenges} dailyCapReached={dailyCapReached} onOpen={openChallenge} />
             <RulesFooter rulesOpen={rulesOpen} onToggle={() => setRulesOpen((value) => !value)} />
           </>
         )}
@@ -771,28 +1041,19 @@ export default function App() {
 
       <RewardIntro open={introRewardOpen} points={INTRO_REWARD_POINTS} />
 
-      <TapGameModal
-        open={activeModal === 'tap'}
-        game={tapGame}
-        onClose={() => setActiveModal(null)}
-        onStart={startTapGame}
-        onTap={() => tapGame.active && setTapGame((game) => ({ ...game, taps: game.taps + 1 }))}
-      />
-
-      <MemoryModal
-        open={activeModal === 'memory'}
-        game={memoryGame}
-        onClose={() => setActiveModal(null)}
-        onStart={startMemoryGame}
-        onFlip={handleMemoryCard}
-      />
-
-      <SpinModal
-        open={activeModal === 'spin'}
-        active={spinActive}
-        rotation={spinRotation}
-        onClose={() => setActiveModal(null)}
-        onStart={startSpinGame}
+      <PlatformGameModal
+        open={activeModal === 'platform-game'}
+        title={gameModalTitle}
+        gameStart={gameStart}
+        loadingMessage={gameLoadingMessage}
+        onClose={() => {
+          activeGameRequestRef.current += 1;
+          clearGameSessionCache();
+          setActiveModal(null);
+          setGameStart(null);
+        }}
+        onDone={handleSettlementComplete}
+        onError={(message) => showNotification('Game error', message, '⚠️')}
       />
 
       <SurveyModal
@@ -853,8 +1114,8 @@ function BrandMark({ className = 'brand-logo' }) {
   );
 }
 
-function BrandIntro({ onComplete }) {
-  const target = 'Ritual';
+function BrandIntro({ onComplete, brand }) {
+  const target = brand?.name ?? 'Rewards';
   const [display, setDisplay] = useState('     ');
   const [lockedCount, setLockedCount] = useState(0);
   const [exiting, setExiting] = useState(false);
@@ -886,10 +1147,10 @@ function BrandIntro({ onComplete }) {
       window.clearTimeout(exit);
       window.clearTimeout(complete);
     };
-  }, [onComplete]);
+  }, [onComplete, target]);
 
   return (
-    <section className={`brand-intro ${exiting ? 'exiting' : ''}`} aria-label="Ritual intro">
+    <section className={`brand-intro ${exiting ? 'exiting' : ''}`} aria-label={`${target} intro`}>
       <div className="brand-intro-core">
         <BrandMark className="brand-intro-logo" />
         <div className="brand-intro-word" aria-label={target}>
@@ -908,12 +1169,16 @@ function BrandIntro({ onComplete }) {
   );
 }
 
-function Header() {
+function HeaderBase({ brand }) {
   return (
     <header className="brand-header">
       <div className="brand-info">
-        <BrandMark />
-        <span className="brand-name">Ritual</span>
+        {brand?.logoUrl ? (
+          <img className="brand-logo-img" src={brand.logoUrl} alt={`${brand.name} logo`} />
+        ) : (
+          <BrandMark />
+        )}
+        <span className="brand-name">{brand?.name ?? 'Rewards'}</span>
       </div>
     </header>
   );
@@ -1095,7 +1360,7 @@ function CouponWallet({
   );
 }
 
-function Challenges({ dailyCapReached, onOpen }) {
+function ChallengesBase({ challenges, dailyCapReached, onOpen }) {
   return (
     <section className="earn-progress-section" data-screen-label="挑战任务">
       <div className="section-head stacked">
@@ -1103,7 +1368,7 @@ function Challenges({ dailyCapReached, onOpen }) {
         <span className="section-note">Updated daily · New challenges every day</span>
       </div>
       <div className="challenges-swiper">
-        {CHALLENGES.map((challenge) => {
+        {challenges.map((challenge) => {
           const pts = challenge.reward.replace(/[^0-9]/g, '');
           return (
             <div className="challenge-card" key={challenge.id}>
@@ -1113,9 +1378,9 @@ function Challenges({ dailyCapReached, onOpen }) {
               <p className="challenge-desc">{challenge.desc}</p>
               <button
                 className="btn btn-outline btn-play"
-                id={challenge.id === 'tap' ? 'play-game-btn' : challenge.id === 'survey' ? 'take-survey-btn' : `play-${challenge.id}-btn`}
+                id={challenge.type === 'survey' ? 'take-survey-btn' : `play-${challenge.id}-btn`}
                 disabled={dailyCapReached}
-                onClick={() => onOpen(challenge.id)}
+                onClick={() => onOpen(challenge)}
               >
                 {dailyCapReached ? (
                   <span>Cap Reached</span>
@@ -1134,7 +1399,7 @@ function Challenges({ dailyCapReached, onOpen }) {
   );
 }
 
-function RulesFooter({ rulesOpen, onToggle }) {
+function RulesFooterBase({ rulesOpen, onToggle }) {
   return (
     <footer className="rules-footer">
       <div className="accordion-item">
@@ -1282,7 +1547,7 @@ function SurveyModal({ open, step, onClose, onOption }) {
           <h4>{currentStep.title}</h4>
           <div className="survey-options">
             {currentStep.options.map((option) => (
-              <button className="survey-option-btn" key={option} onClick={onOption}>{option}</button>
+              <button className="survey-option-btn" key={option} onClick={() => onOption(option)}>{option}</button>
             ))}
           </div>
         </div>
