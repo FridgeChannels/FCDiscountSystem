@@ -70,7 +70,7 @@ export function mapPlanToViewModel(plan) {
     currentStepIndex,
     countdownSeconds: secondsUntil(plan.cycleExpiresAt),
     brand: {
-      name: plan.customerBrand?.name || 'Rewards',
+      name: plan.customerBrand?.name || null,
       logoUrl: plan.customerBrand?.logoUrl,
       primaryColor: plan.customerBrand?.primaryColor,
       shopUrl: plan.customerBrand?.shopUrl ?? '#',

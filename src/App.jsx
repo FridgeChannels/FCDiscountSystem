@@ -60,8 +60,6 @@ const SURVEY_STEPS = [
   }
 ];
 
-const SCRAMBLE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789{}[]=/\\<>;:_-+*#@';
-
 function copyText(text) {
   if (navigator.clipboard?.writeText) {
     return navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
@@ -174,22 +172,30 @@ export default function App() {
   const preloadingGameStartsRef = useRef(new Map());
   const confettiRef = useRef({ ctx: null, particles: [], frame: null });
   const couponFaceRef = useRef(null);
+  const pointsTweenRef = useRef(null);
+  const loginBonusGrantedRef = useRef(false);
 
   const [touchId] = useState(getTouchId);
   const [planLoading, setPlanLoading] = useState(true);
   const [planError, setPlanError] = useState(null);
   const [rewardPlanId, setRewardPlanId] = useState(null);
-  const [brand, setBrand] = useState({ name: 'Rewards', logoUrl: null, primaryColor: null, shopUrl: '#' });
+  const [brand, setBrand] = useState({ name: null, logoUrl: null, primaryColor: null, shopUrl: '#' });
   const [challenges, setChallenges] = useState(FALLBACK_CHALLENGES);
   const [gameStart, setGameStart] = useState(null);
   const [gameModalTitle, setGameModalTitle] = useState('Play & Earn');
   const [gameLoadingMessage, setGameLoadingMessage] = useState('Preparing game…');
   const [surveyAnswers, setSurveyAnswers] = useState([]);
-  const [points, setPoints] = useState(67);
+  const [welcomeStep, setWelcomeStep] = useState(() => {
+    return localStorage.getItem('fc_welcome_completed') === 'true' ? 3 : 0;
+  });
+  const [welcomeTargetPoints, setWelcomeTargetPoints] = useState(67);
+  const [points, setPoints] = useState(() => {
+    const isFirstTime = localStorage.getItem('fc_welcome_completed') !== 'true';
+    return isFirstTime ? 0 : 67;
+  });
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [countdownSeconds, setCountdownSeconds] = useState(INITIAL_SECONDS);
   const [tick, setTick] = useState(false);
-  const [introRewardOpen, setIntroRewardOpen] = useState(true);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isTearingCoupon, setIsTearingCoupon] = useState(false);
@@ -199,11 +205,16 @@ export default function App() {
   const [notification, setNotification] = useState(null);
   const [dailyCapReached] = useState(false);
   const [targetPulse, setTargetPulse] = useState('');
+  const [crediting, setCrediting] = useState(false);
   const [currentSwap, setCurrentSwap] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
   const [pendingPoints, setPendingPoints] = useState(0);
   const [introActive, setIntroActive] = useState(true);
   const closeIntro = useCallback(() => setIntroActive(false), []);
+
+  useEffect(() => () => {
+    if (pointsTweenRef.current) cancelAnimationFrame(pointsTweenRef.current);
+  }, []);
 
   const clearGameSessionCache = useCallback(() => {
     preloadedGameStartsRef.current.clear();
@@ -235,12 +246,20 @@ export default function App() {
   const syncFromPlan = useCallback((plan) => {
     const vm = mapPlanToViewModel(plan);
     setRewardPlanId(vm.rewardPlanId);
-    setPoints(vm.points);
     setDiscounts(vm.discounts.length ? vm.discounts : INITIAL_DISCOUNTS);
     setCurrentStepIndex(vm.currentStepIndex);
     setCountdownSeconds(vm.countdownSeconds);
     setBrand(vm.brand);
     setChallenges(vm.challenges.length ? vm.challenges : FALLBACK_CHALLENGES);
+    
+    const isFirstTime = localStorage.getItem('fc_welcome_completed') !== 'true';
+    if (isFirstTime) {
+      setWelcomeTargetPoints(vm.points);
+      setPoints(0);
+    } else {
+      setPoints(vm.points);
+    }
+
     if (vm.brand.primaryColor) {
       document.documentElement.style.setProperty('--brand-primary', vm.brand.primaryColor);
     }
@@ -384,7 +403,6 @@ export default function App() {
     setZoomActive(false);
     setZoomPhase('init');
     setZoomCoupon(null);
-    setIntroRewardOpen(true);
   }
 
   useEffect(() => {
@@ -405,15 +423,64 @@ export default function App() {
     if (tearTimerRef.current) window.clearTimeout(tearTimerRef.current);
   }, []);
 
-  useEffect(() => {
-    const modalTimer = window.setTimeout(() => {
-      setIntroRewardOpen(false);
-    }, 3600);
+function triggerLoginBonusAnimation(pts) {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
 
-    return () => {
-      window.clearTimeout(modalTimer);
+    const card = document.createElement('div');
+    card.className = 'login-bonus-card';
+    card.innerHTML = `
+      <div class="login-bonus-glow"></div>
+      <div class="login-bonus-coin">¢</div>
+      <div class="login-bonus-value">+${pts}</div>
+      <div class="login-bonus-label">Coins</div>
+    `;
+    viewport.appendChild(card);
+
+    const flyTimer = setTimeout(() => {
+      card.classList.add('exiting');
+
+      const cardRect = card.getBoundingClientRect();
+      const vpRect = viewport.getBoundingClientRect();
+      const startPos = {
+        x: cardRect.left - vpRect.left + cardRect.width / 2,
+        y: cardRect.bottom - vpRect.top + 8
+      };
+
+      flyCoins(
+        Math.min(10, Math.max(6, Math.round(pts * 1.5))),
+        () => {
+          creditPoints(pts);
+        },
+        startPos
+      );
+    }, 1200);
+
+    const exitTimer = setTimeout(() => {
+      card.remove();
+    }, 1900);
+
+    const cleanup = () => {
+      clearTimeout(flyTimer);
+      clearTimeout(exitTimer);
+      if (card.parentElement) card.remove();
     };
-  }, []);
+
+    card.addEventListener('animationend', (e) => {
+      if (e.animationName === 'login-bonus-exit') {
+        cleanup();
+      }
+    });
+  }
+
+  // 登录奖励:loading 收尾(加载层关闭)那一刻,把每次打开发放的 5 金币
+  // 飞进余额计数器 —— 复用到账动效(飞币 + “+5” + 计数器滚动)。只发放一次。
+  useEffect(() => {
+    if (introActive || loginBonusGrantedRef.current) return;
+    loginBonusGrantedRef.current = true;
+    const timer = window.setTimeout(() => triggerLoginBonusAnimation(INTRO_REWARD_POINTS), 150);
+    return () => window.clearTimeout(timer);
+  }, [introActive]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -528,7 +595,63 @@ export default function App() {
     }
   }
 
-  function flyCoins(count, done) {
+  function prefersReducedMotion() {
+    return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  // 🅑 Landing impact: a shockwave ring + radial sparks at the coupon.
+  function spawnImpact(x, y) {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const burst = document.createElement('div');
+    burst.className = 'coin-burst';
+    burst.style.left = `${x}px`;
+    burst.style.top = `${y}px`;
+    viewport.appendChild(burst);
+    burst.addEventListener('animationend', () => burst.remove());
+
+    if (prefersReducedMotion()) return;
+
+    const sparkCount = 7;
+    for (let i = 0; i < sparkCount; i++) {
+      const spark = document.createElement('span');
+      spark.className = 'coin-spark';
+      const angle = (Math.PI * 2 * i) / sparkCount + (Math.random() - 0.5) * 0.5;
+      const dist = 24 + Math.random() * 24;
+      spark.style.left = `${x}px`;
+      spark.style.top = `${y}px`;
+      spark.style.setProperty('--sx', `${Math.cos(angle) * dist}px`);
+      spark.style.setProperty('--sy', `${Math.sin(angle) * dist}px`);
+      viewport.appendChild(spark);
+      spark.addEventListener('animationend', () => spark.remove());
+    }
+  }
+
+  // 🅒 "+N" callout that pops at the target coupon and floats up.
+  function spawnGainCallout(amount) {
+    const viewport = viewportRef.current;
+    const target = targetCouponRef.current;
+    if (!viewport || !target || !amount) return;
+
+    const vpRect = viewport.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    if (targetRect.bottom < vpRect.top || targetRect.top > vpRect.bottom) return;
+
+    const cx = targetRect.left - vpRect.left + targetRect.width * 0.5;
+    const cy = targetRect.top - vpRect.top + targetRect.height * 0.4;
+    const el = document.createElement('div');
+    el.className = 'gain-callout';
+    el.innerText = `+${amount}`;
+    el.style.left = `${cx}px`;
+    el.style.top = `${cy}px`;
+    viewport.appendChild(el);
+    el.addEventListener('animationend', () => el.remove());
+  }
+
+  // 🅐 Arc coin stream: bigger coins fly a parabola, spin with a glint and a
+  // glowing trail, land at high opacity and trigger the impact (🅑).
+  function flyCoins(count, done, startPos) {
     const viewport = viewportRef.current;
     const target = targetCouponRef.current;
     if (!viewport || !target) {
@@ -543,49 +666,108 @@ export default function App() {
       return;
     }
 
-    const startX = vpRect.width / 2;
-    const startY = vpRect.height * 0.78;
+    const startX = startPos ? startPos.x : vpRect.width / 2;
+    const startY = startPos ? startPos.y : vpRect.height * 0.8;
     const endX = targetRect.left - vpRect.left + targetRect.width * 0.5;
     const endY = targetRect.top - vpRect.top + targetRect.height * 0.5;
+    const reduce = prefersReducedMotion();
+
     let landed = 0;
+    const finishOne = () => {
+      landed += 1;
+      if (landed >= count) done();
+    };
 
     for (let i = 0; i < count; i++) {
       const coin = document.createElement('div');
-      const jx = (Math.random() - 0.5) * 70;
-      const jy = (Math.random() - 0.5) * 30;
       coin.className = 'fly-coin';
       coin.innerText = '¢';
-      coin.style.left = `${startX + jx - 11}px`;
-      coin.style.top = `${startY + jy - 11}px`;
+
+      const sx = startX + (Math.random() - 0.5) * 56;
+      const sy = startY + (Math.random() - 0.5) * 22;
+      const ex = endX + (Math.random() - 0.5) * 26;
+      const ey = endY + (Math.random() - 0.5) * 20;
+      coin.style.left = `${sx - 15}px`;
+      coin.style.top = `${sy - 15}px`;
       viewport.appendChild(coin);
 
-      setTimeout(() => {
-        coin.style.transform = `translate(${endX - startX - jx}px, ${endY - startY - jy}px) scale(0.45)`;
-        coin.style.opacity = '0.15';
+      const midX = (sx + ex) / 2 + (Math.random() - 0.5) * 44;
+      const apexY = Math.min(sy, ey) - (88 + Math.random() * 64);
+      const spin = (Math.random() < 0.5 ? -1 : 1) * (360 + Math.random() * 260);
+      const duration = reduce ? 340 : 600 + Math.random() * 180;
+      const delay = i * (reduce ? 24 : 58);
 
-        setTimeout(() => {
-          coin.remove();
-          setTargetPulse('absorb');
-          setTimeout(() => setTargetPulse(''), 220);
-          landed++;
-          if (landed === count) done();
-        }, 660);
-      }, i * 90);
+      const anim = coin.animate(
+        [
+          { transform: 'translate(0px, 0px) rotate(0deg) scale(1)', opacity: 1, offset: 0 },
+          {
+            transform: `translate(${midX - sx}px, ${apexY - sy}px) rotate(${spin * 0.5}deg) scale(1.14)`,
+            opacity: 1,
+            offset: 0.5
+          },
+          {
+            transform: `translate(${ex - sx}px, ${ey - sy}px) rotate(${spin}deg) scale(0.62)`,
+            opacity: 1,
+            offset: 1
+          }
+        ],
+        { duration, delay, easing: 'cubic-bezier(0.42, 0, 0.58, 1)', fill: 'forwards' }
+      );
+
+      anim.onfinish = () => {
+        coin.remove();
+        spawnImpact(endX, endY);
+        setTargetPulse('absorb');
+        window.setTimeout(() => setTargetPulse(''), 360);
+        finishOne();
+      };
     }
   }
 
   function addPoints(pts) {
     if (!next) return;
 
-    flyCoins(Math.min(6, Math.max(3, Math.round(pts / 3))), () => {
-      setPoints((value) => {
-        const updated = value + pts;
-        if (updated >= targetPoints) {
-          triggerCelebration(updated);
-        }
-        return updated;
-      });
+    spawnGainCallout(pts);
+    flyCoins(Math.min(12, Math.max(8, Math.round(pts / 2))), () => {
+      creditPoints(pts);
     });
+  }
+
+  // 🅓 Roll the points counter up to the new total (instead of a hard jump),
+  // highlighting the counter while it credits; celebrate once at the end.
+  function creditPoints(pts) {
+    if (!pts) return;
+    if (pointsTweenRef.current) {
+      cancelAnimationFrame(pointsTweenRef.current);
+      pointsTweenRef.current = null;
+    }
+
+    const from = points;
+    const to = from + pts;
+
+    if (prefersReducedMotion()) {
+      setPoints(to);
+      if (to >= targetPoints) triggerCelebration(to);
+      return;
+    }
+
+    setCrediting(true);
+    const duration = 600;
+    const startedAt = performance.now();
+    const step = (now) => {
+      const t = Math.min((now - startedAt) / duration, 1);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setPoints(Math.round(from + (to - from) * eased));
+      if (t < 1) {
+        pointsTweenRef.current = requestAnimationFrame(step);
+      } else {
+        pointsTweenRef.current = null;
+        setPoints(to);
+        setCrediting(false);
+        if (to >= targetPoints) triggerCelebration(to);
+      }
+    };
+    pointsTweenRef.current = requestAnimationFrame(step);
   }
 
   function triggerCelebration(updatedPoints) {
@@ -687,7 +869,8 @@ export default function App() {
           setShowReceipt(true);
           startConfetti();
         } else if (pts > 0) {
-          flyCoins(Math.min(6, Math.max(3, Math.round(pts / 3))), () => {});
+          spawnGainCallout(pts);
+          flyCoins(Math.min(12, Math.max(8, Math.round(pts / 2))), () => {});
         }
 
         // 后台静默校正:重新拉取 plan,与服务端对齐(失败仅降级提示)。
@@ -739,6 +922,59 @@ export default function App() {
     }
     setIsTearingCoupon(true);
   }
+
+  const handleUseWelcomeCoupon = useCallback(() => {
+    setWelcomeStep(3);
+    localStorage.setItem('fc_welcome_completed', 'true');
+    
+    // Immediately start the points counter tweening from 0 to welcomeTargetPoints
+    const from = 0;
+    const to = welcomeTargetPoints;
+    const duration = 1200;
+    const startedAt = performance.now();
+    const step = (now) => {
+      const t = Math.min((now - startedAt) / duration, 1);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setPoints(Math.round(from + (to - from) * eased));
+      if (t < 1) {
+        pointsTweenRef.current = requestAnimationFrame(step);
+      } else {
+        pointsTweenRef.current = null;
+        setPoints(to);
+      }
+    };
+    pointsTweenRef.current = requestAnimationFrame(step);
+
+    // Zoom-and-flip card transition centered and flipped
+    setZoomCoupon(current);
+    const faceEl = couponFaceRef.current;
+    if (faceEl) {
+      setZoomColors(readCouponTokens(faceEl.closest('.coupon')));
+    } else {
+      setZoomColors({
+        main: '#F6E7C8',
+        accent: '#A8783B',
+        ink: '#6E4E23',
+        gradient: 'linear-gradient(160deg, #FAF4E8 0%, #F6E7C8 52%, #CABCA0 100%)'
+      });
+    }
+    setZoomCopyState('Copy');
+    
+    const viewport = viewportRef.current;
+    if (viewport) {
+      const vpRect = viewport.getBoundingClientRect();
+      const cardW = Math.min(vpRect.width * 0.82, 320);
+      const cardH = cardW * 1.58;
+      setZoomRect({
+        left: vpRect.left + (vpRect.width - cardW) / 2,
+        top: vpRect.top + (vpRect.height - cardH) / 2,
+        width: cardW,
+        height: cardH
+      });
+    }
+    setZoomPhase('flipped');
+    setZoomActive(true);
+  }, [current, welcomeTargetPoints]);
 
   function handleTearComplete() {
     // Get bounding rect of the coupon face (the card body above the torn button)
@@ -948,20 +1184,24 @@ export default function App() {
       return;
     }
 
-    // 第一原则:提交后立即关闭问卷并交还交互,网络请求在后台进行。
+    // 第一原则:动效不等接口。问卷全部答完后立即关闭弹窗,并像游戏一样
+    // 弹出「获得金币」动效;completeSurvey 仅在后台静默同步,失败只记录日志,
+    // 不打断动效、不弹错误提示。
     setActiveModal(null);
     setSurveyStep(0);
     setSurveyAnswers([]);
 
-    try {
-      const settlement = await completeSurvey(touchId, rewardPlanId, nextAnswers);
-      await handleSettlementComplete({
-        ...settlement,
-        pointsAwarded: settlement.pointsAwarded ?? 10,
-      });
-    } catch (err) {
-      showNotification('Survey failed', err instanceof Error ? err.message : 'Could not submit survey', '⚠️');
-    }
+    const surveyReward = 10;
+    showNotification(
+      'Survey Completed!',
+      `Thanks for sharing — you earned +${surveyReward} pts.`,
+      '📝',
+      () => addPoints(surveyReward)
+    );
+
+    completeSurvey(touchId, rewardPlanId, nextAnswers).catch((err) => {
+      dbgError('[FCDBG][App] background completeSurvey failed', err);
+    });
   }
 
   return (
@@ -972,7 +1212,17 @@ export default function App() {
       style={brand.primaryColor ? { '--brand-primary': brand.primaryColor } : undefined}
     >
       <canvas id="confetti-canvas" ref={canvasRef} />
-      {introActive && <BrandIntro onComplete={closeIntro} brand={brand} />}
+      {introActive && (
+        <BrandIntro 
+          onComplete={closeIntro} 
+          brand={brand} 
+          isWelcome={welcomeStep < 3}
+          onOpenPackage={() => {
+            setWelcomeStep(1);
+            setIntroActive(false);
+          }}
+        />
+      )}
 
       <Header brand={brand} />
       {(planLoading || planError) && (
@@ -1009,6 +1259,7 @@ export default function App() {
               progressPct={progressPct}
               points={points}
               targetPoints={targetPoints}
+              crediting={crediting}
               time={time}
               isBestOffer={isBestOffer}
               isExpired={isExpired}
@@ -1038,8 +1289,6 @@ export default function App() {
         onCopy={handleCopyCode}
         onShop={handleShopNow}
       />
-
-      <RewardIntro open={introRewardOpen} points={INTRO_REWARD_POINTS} />
 
       <PlatformGameModal
         open={activeModal === 'platform-game'}
@@ -1086,6 +1335,40 @@ export default function App() {
           onCopy={handleZoomCopy}
         />
       )}
+
+      {welcomeStep < 3 && !introActive && (
+        <WelcomeRitual
+          step={welcomeStep}
+          coupon={current}
+          brand={brand}
+          couponFaceRef={couponFaceRef}
+          onAdvanceToSettle={() => {
+            setWelcomeStep(2);
+          }}
+          onUse={handleUseWelcomeCoupon}
+          onComplete={() => {
+            setWelcomeStep(3);
+            localStorage.setItem('fc_welcome_completed', 'true');
+            // Immediately start the points counter tweening from 0 to welcomeTargetPoints
+            const from = 0;
+            const to = welcomeTargetPoints;
+            const duration = 1200;
+            const startedAt = performance.now();
+            const step = (now) => {
+              const t = Math.min((now - startedAt) / duration, 1);
+              const eased = 1 - Math.pow(1 - t, 3);
+              setPoints(Math.round(from + (to - from) * eased));
+              if (t < 1) {
+                pointsTweenRef.current = requestAnimationFrame(step);
+              } else {
+                pointsTweenRef.current = null;
+                setPoints(to);
+              }
+            };
+            pointsTweenRef.current = requestAnimationFrame(step);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1114,56 +1397,343 @@ function BrandMark({ className = 'brand-logo' }) {
   );
 }
 
-function BrandIntro({ onComplete, brand }) {
-  const target = brand?.name ?? 'Rewards';
-  const [display, setDisplay] = useState('     ');
-  const [lockedCount, setLockedCount] = useState(0);
-  const [exiting, setExiting] = useState(false);
+function WelcomeRitual({ step, coupon, brand, couponFaceRef, onAdvanceToSettle, onUse, onComplete }) {
+  const [rect, setRect] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const wWidth = window.innerWidth;
+      const wHeight = window.innerHeight;
+      const startW = 40;
+      const startH = startW * 1.58;
+      return {
+        left: wWidth / 2 - startW / 2,
+        top: wHeight / 2 - startH / 2,
+        width: startW,
+        height: startH
+      };
+    }
+    return null;
+  });
+  const [phase, setPhase] = useState('activation');
+  const [colors, setColors] = useState({
+    main: '#F6E7C8',
+    accent: '#A8783B',
+    ink: '#6E4E23',
+    gradient: 'linear-gradient(160deg, #FAF4E8 0%, #F6E7C8 52%, #CABCA0 100%)'
+  });
 
   useEffect(() => {
-    let frame = 0;
-    const interval = window.setInterval(() => {
-      frame += 1;
-      const nextLocked = Math.min(target.length, Math.floor(Math.max(frame - 8, 0) / 7));
-      setLockedCount(nextLocked);
-      setDisplay(target.split('').map((letter, index) => {
-        if (index < nextLocked) return letter;
-        if (frame < 5 && index > frame % 2) return ' ';
-        return SCRAMBLE_CHARS[(frame * 11 + index * 17) % SCRAMBLE_CHARS.length];
-      }).join(''));
-    }, 72);
+    const wWidth = window.innerWidth;
+    const wHeight = window.innerHeight;
+    const cardW = Math.min(wWidth * 0.82, 320);
+    const cardH = cardW * 1.58;
 
-    const settle = window.setTimeout(() => {
-      setLockedCount(target.length);
-      setDisplay(target);
-    }, 3000);
+    // Small delay to let browser paint the initial small rect at the box's position
+    const timer = setTimeout(() => {
+      setRect({
+        left: (wWidth - cardW) / 2,
+        top: (wHeight - cardH) / 2 - 20,
+        width: cardW,
+        height: cardH
+      });
+    }, 50);
 
-    const exit = window.setTimeout(() => setExiting(true), 3900);
-    const complete = window.setTimeout(onComplete, 4550);
+    return () => clearTimeout(timer);
+  }, []);
 
-    return () => {
-      window.clearInterval(interval);
-      window.clearTimeout(settle);
-      window.clearTimeout(exit);
-      window.clearTimeout(complete);
-    };
-  }, [onComplete, target]);
+  useEffect(() => {
+    const faceEl = couponFaceRef.current;
+    if (faceEl) {
+      const tokens = readCouponTokens(faceEl.closest('.coupon'));
+      if (tokens && tokens.gradient) {
+        setColors(tokens);
+      }
+    }
+  }, [couponFaceRef, coupon]);
+
+  useEffect(() => {
+    if (step === 2) {
+      setPhase('settling');
+      const faceEl = couponFaceRef.current;
+      if (faceEl) {
+        const faceRect = faceEl.getBoundingClientRect();
+        setRect({
+          left: faceRect.left,
+          top: faceRect.top,
+          width: faceRect.width,
+          height: faceRect.height
+        });
+      }
+      
+      const timer = setTimeout(onComplete, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [step, couponFaceRef, onComplete]);
 
   return (
-    <section className={`brand-intro ${exiting ? 'exiting' : ''}`} aria-label={`${target} intro`}>
-      <div className="brand-intro-core">
-        <BrandMark className="brand-intro-logo" />
-        <div className="brand-intro-word" aria-label={target}>
-          {display.split('').map((char, index) => (
-            <span
-              key={index}
-              className={index < lockedCount ? 'locked' : 'scrambling'}
-              style={{ '--i': index }}
-            >
-              {char === ' ' ? '\u00A0' : char}
-            </span>
-          ))}
+    <>
+      <div className={`welcome-backdrop ${phase}`} />
+      <div 
+        className={`welcome-coupon-container zoom-card-container ${phase}`}
+        style={{
+          left: rect ? `${rect.left}px` : '50%',
+          top: rect ? `${rect.top}px` : '50%',
+          width: rect ? `${rect.width}px` : '320px',
+          height: rect ? `${rect.height}px` : '505px',
+          ...couponColorVars(colors)
+        }}
+      >
+        <div className="zoom-card-inner">
+          <div className="zoom-card-front welcome-card-variant">
+            {brand?.name && (
+              <div className="welcome-card-brand">
+                {brand?.logoUrl ? (
+                  <img className="welcome-card-brand-logo" src={brand.logoUrl} alt={`${brand.name} logo`} />
+                ) : null}
+                <span className="welcome-card-brand-name">{brand.name}</span>
+              </div>
+            )}
+            <span className="welcome-card-emoji">🎉</span>
+            <h2 className="welcome-card-title">Exclusive Discount Activated!</h2>
+            <div className="welcome-card-value">
+              {coupon.num}<small>%</small> <span className="welcome-card-off">OFF</span>
+            </div>
+            <span className="welcome-card-claimed">Claimed & Ready!</span>
+          </div>
         </div>
+      </div>
+      
+      {phase === 'activation' && (
+        <div className="welcome-activation-content">
+          <div 
+            className="welcome-activation-footer" 
+            style={{ 
+              position: 'absolute',
+              top: rect ? `${rect.top + rect.height + 20}px` : 'auto',
+              left: 0,
+              width: '100%',
+              display: 'flex',
+              justifyContent: 'center',
+              pointerEvents: 'auto'
+            }}
+          >
+            <div className="welcome-buttons" style={{ pointerEvents: 'auto' }}>
+              <button 
+                className="btn-printer-primary" 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUse();
+                }}
+              >
+                Use Now
+              </button>
+              <button 
+                className="btn-printer-secondary" 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAdvanceToSettle();
+                }}
+              >
+                Earn More Rewards
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function BrandIntro({ onComplete, brand, isWelcome, onOpenPackage }) {
+  const target = brand?.name ?? '';
+  const [exiting, setExiting] = useState(false);
+  const [settled, setSettled] = useState(false);
+  const [unboxed, setUnboxed] = useState(false);
+
+  useEffect(() => {
+    if (isWelcome) {
+      // For welcome, wait for package to drop and settle (takes about 2.5s)
+      const settleTimer = window.setTimeout(() => setSettled(true), 2500);
+      return () => window.clearTimeout(settleTimer);
+    } else {
+      // Standard auto-play intro
+      const exit = window.setTimeout(() => setExiting(true), 8000);
+      const complete = window.setTimeout(onComplete, 8800);
+      return () => {
+        window.clearTimeout(exit);
+        window.clearTimeout(complete);
+      };
+    }
+  }, [onComplete, target, isWelcome]);
+
+  const handleOpen = () => {
+    if (!settled || unboxed) return;
+    setUnboxed(true);
+    if (navigator.vibrate) {
+      navigator.vibrate(60);
+    }
+    if (onOpenPackage) {
+      onOpenPackage();
+    }
+  };
+
+  return (
+    <section className={`brand-intro ${exiting ? 'exiting' : ''} ${isWelcome ? 'interactive' : ''} ${unboxed ? 'unboxed' : ''}`} aria-label={`${target} intro`}>
+      {isWelcome && target && (
+        <div className="welcome-brand-header">
+          {brand?.logoUrl ? (
+            <img className="welcome-brand-logo" src={brand.logoUrl} alt={`${target} logo`} />
+          ) : null}
+          {target && <span className="welcome-brand-name">{target}</span>}
+        </div>
+      )}
+      {isWelcome && !target && null}
+      <div className="intro-stage" aria-hidden="true" onClick={isWelcome ? handleOpen : undefined}>
+        <div className="intro-glow" />
+        <div className="intro-rays" />
+
+        <svg className="intro-package" viewBox="0 0 180 150">
+          {isWelcome ? (
+            /* Premium Closed Gift Box for Welcome Flow */
+            <g className="closed-gift-box">
+              {/* Box Base Left Face */}
+              <path 
+                d="M46 70 L90 92 L90 136 L46 114 Z" 
+                style={{ fill: '#EADBBF', stroke: '#b8892e', strokeWidth: '2px' }} 
+              />
+              {/* Box Base Right Face */}
+              <path 
+                d="M90 92 L134 70 L134 114 L90 136 Z" 
+                style={{ fill: '#DBCBB0', stroke: '#b8892e', strokeWidth: '2px' }} 
+              />
+              
+              {/* Box Base Left vertical ribbon */}
+              <path 
+                d="M62 78 L62 122 L74 128 L74 84 Z" 
+                style={{ fill: '#f0cc82', stroke: '#b8892e', strokeWidth: '2px' }} 
+              />
+              {/* Box Base Right vertical ribbon */}
+              <path 
+                d="M106 84 L106 128 L118 122 L118 78 Z" 
+                style={{ fill: '#f0cc82', stroke: '#b8892e', strokeWidth: '2px' }} 
+              />
+
+              {/* Lid Left lip */}
+              <path 
+                d="M42 60 L90 82 L90 92 L42 70 Z" 
+                style={{ fill: '#F6E7C8', stroke: '#b8892e', strokeWidth: '2px' }} 
+              />
+              {/* Lid Right lip */}
+              <path 
+                d="M90 82 L138 60 L138 70 L90 92 Z" 
+                style={{ fill: '#EADBBF', stroke: '#b8892e', strokeWidth: '2px' }} 
+              />
+
+              {/* Lid Left lip ribbon */}
+              <path 
+                d="M60 69 L60 79 L72 85 L72 75 Z" 
+                style={{ fill: '#f0cc82', stroke: '#b8892e', strokeWidth: '2px' }} 
+              />
+              {/* Lid Right lip ribbon */}
+              <path 
+                d="M108 74 L108 84 L120 78 L120 68 Z" 
+                style={{ fill: '#f0cc82', stroke: '#b8892e', strokeWidth: '2px' }} 
+              />
+
+              {/* Lid Top Face */}
+              <path 
+                d="M42 60 L90 38 L138 60 L90 82 Z" 
+                style={{ fill: '#FDF6ED', stroke: '#b8892e', strokeWidth: '2px' }} 
+              />
+
+              {/* Lid Top crossing ribbons */}
+              <path 
+                d="M60 69 L108 46 L120 52 L72 75 Z" 
+                style={{ fill: '#f0cc82', stroke: '#b8892e', strokeWidth: '2px' }} 
+              />
+              <path 
+                d="M60 52 L108 74 L120 68 L72 46 Z" 
+                style={{ fill: '#f0cc82', stroke: '#b8892e', strokeWidth: '2px' }} 
+              />
+
+              {/* Ribbon Bow Loops */}
+              <path 
+                d="M90 60 C70 40 60 50 90 60 Z" 
+                style={{ fill: '#f0cc82', stroke: '#b8892e', strokeWidth: '2px' }} 
+              />
+              <path 
+                d="M90 60 C110 40 120 50 90 60 Z" 
+                style={{ fill: '#f0cc82', stroke: '#b8892e', strokeWidth: '2px' }} 
+              />
+              
+              {/* Bow tails */}
+              <path 
+                d="M90 60 Q75 80 70 95" 
+                style={{ fill: 'none', stroke: '#b8892e', strokeWidth: '2px' }} 
+              />
+              <path 
+                d="M90 60 Q105 80 110 95" 
+                style={{ fill: 'none', stroke: '#b8892e', strokeWidth: '2px' }} 
+              />
+
+              {/* Knot */}
+              <circle 
+                cx="90" 
+                cy="60" 
+                r="6" 
+                style={{ fill: '#b8892e', stroke: '#b8892e', strokeWidth: '2px' }} 
+              />
+            </g>
+          ) : (
+            /* Original Express Cardboard Box for Normal Loading */
+            <>
+              <g className="package-box">
+                <path d="M42 64 90 42l48 22v54l-48 22-48-22Z" />
+                <path d="M42 64 90 86l48-22M90 86v54" />
+                <path d="M69 54v28l16-8 16 8V54" />
+                <path d="M54 104h18v12H54ZM117 105h15v11h-15Z" />
+              </g>
+              <g className="package-lid lid-left">
+                <path d="M42 63 90 41l-12-21-50 22Z" />
+                <path d="M42 63 78 79" />
+              </g>
+              <g className="package-lid lid-right">
+                <path d="M90 41 138 63l14-22-50-21Z" />
+                <path d="M102 79 138 63" />
+              </g>
+            </>
+          )}
+        </svg>
+
+        {(!isWelcome || unboxed) && (
+          <>
+            <svg className="intro-ticket" viewBox="0 0 160 106">
+              <path d="M18 28 Q18 17 29 17 H61 Q64 28 80 28 Q96 28 99 17 H131 Q142 17 142 28 V43 Q128 46 128 53 Q128 60 142 63 V78 Q142 89 131 89 H99 Q96 78 80 78 Q64 78 61 89 H29 Q18 89 18 78 V63 Q32 60 32 53 Q32 46 18 43Z" />
+              <path className="ticket-dash" d="M50 23v60M110 23v60" />
+              <text x="80" y="69" textAnchor="middle">%</text>
+            </svg>
+
+            <div className="intro-orbit">
+              {[0, 1, 2, 3, 4, 5].map((coin) => (
+                <span className="intro-coin" style={{ '--coin': coin }} key={coin}>¢</span>
+              ))}
+            </div>
+          </>
+        )}
+
+        {!isWelcome && target && (
+          <div className="intro-final-logo">
+            {brand?.logoUrl ? (
+              <img className="intro-final-mark" src={brand.logoUrl} alt={`${target} logo`} />
+            ) : null}
+            <span>{target}</span>
+            <i />
+          </div>
+        )}
+        {isWelcome && settled && !unboxed && (
+          <div className="welcome-box-pulse" onClick={handleOpen}>
+            <span className="pulse-text">🎁 Click to Reveal Exclusive Discount</span>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -1175,10 +1745,8 @@ function HeaderBase({ brand }) {
       <div className="brand-info">
         {brand?.logoUrl ? (
           <img className="brand-logo-img" src={brand.logoUrl} alt={`${brand.name} logo`} />
-        ) : (
-          <BrandMark />
-        )}
-        <span className="brand-name">{brand?.name ?? 'Rewards'}</span>
+        ) : null}
+        {brand?.name && <span className="brand-name">{brand.name}</span>}
       </div>
     </header>
   );
@@ -1258,6 +1826,7 @@ function CouponWallet({
   progressPct,
   points,
   targetPoints,
+  crediting,
   time,
   isBestOffer,
   isExpired,
@@ -1285,10 +1854,6 @@ function CouponWallet({
 
       {!isBestOffer && (
         <div className="coupon-route" aria-hidden="true">
-          <div className="route-point">
-            <span className="route-code">NOW</span>
-            <span className="route-label">Can use</span>
-          </div>
           <div className="route-arc-container">
             <svg className="route-arc" viewBox="0 0 178 70" preserveAspectRatio="none">
               <path className="route-arc-shadow" d="M8 58 C52 2 124 2 170 58" />
@@ -1296,11 +1861,7 @@ function CouponWallet({
             </svg>
             <span className="route-coin" id="route-coin" style={getArcPoint(progressPct / 100)}>¢</span>
           </div>
-          <span className="route-progress">{points} / {targetPoints}</span>
-          <div className="route-point align-right">
-            <span className="route-code">NEXT</span>
-            <span className="route-label">To unlock</span>
-          </div>
+          <span className={`route-progress ${crediting ? 'crediting' : ''}`}>{points} / {targetPoints}</span>
         </div>
       )}
 
@@ -1308,7 +1869,7 @@ function CouponWallet({
         <div className={`coupon-wrap current ${currentSwap ? 'swap' : ''} ${isTearingCoupon ? 'tearing' : ''}`}>
           <div className={`coupon coupon-current ${isExpired ? 'expired' : ''}`} data-tier={tierForDiscount(current.num)}>
             <div className="coupon-face" ref={couponFaceRef}>
-              <span className="coupon-kicker">{isBestOffer ? '当前可用优惠券' : 'From coupon'}</span>
+              <span className="coupon-kicker">{isBestOffer ? '当前可用优惠券' : 'Unlocked Offer'}</span>
               <span className="stub-value">{current.num}<small>%</small></span>
               {isBestOffer ? (
                 <>
@@ -1336,7 +1897,7 @@ function CouponWallet({
           <div className={`coupon-wrap target ${delta <= 0 ? 'ready' : ''} ${targetPulse} ${currentSwap ? 'swap' : ''}`}>
             <div className="coupon coupon-target" data-tier={tierForDiscount(next.num)} ref={targetCouponRef}>
               <div className="coupon-face">
-                <span className="coupon-kicker">To coupon</span>
+                <span className="coupon-kicker">Next Offer</span>
                 <span className="stub-value">{next.num}<small>%</small></span>
                 <span className="stub-off">OFF</span>
                 <span className="coupon-title">Orders $75+</span>
@@ -1420,29 +1981,6 @@ function RulesFooterBase({ rulesOpen, onToggle }) {
   );
 }
 
-function RewardIntro({ open, points }) {
-  if (!open) return null;
-
-  return (
-    <div className="reward-intro-overlay" aria-live="polite">
-      <div className="reward-intro-card">
-        <div className="reward-orbit" aria-hidden="true">
-          <span className="reward-coin coin-a">¢</span>
-          <span className="reward-coin coin-b">¢</span>
-          <span className="reward-coin coin-c">¢</span>
-          <span className="reward-coin coin-d">¢</span>
-        </div>
-        <span className="reward-label">Tap reward received</span>
-        <div className="reward-amount">+{points}</div>
-        <h3>Coins Added</h3>
-        <p>Your reward is being deposited into the next coupon.</p>
-        <div className="reward-progress">
-          <span />
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function CouponDrawer({ open, current, time, copyState, shopLoading, onClose, onCopy, onShop }) {
   return (
@@ -1988,7 +2526,7 @@ function ZoomFlipCard({ coupon, colors, rect, phase, isBestOffer, copyState, onC
         <div className={`zoom-card-inner ${isFlipped ? 'flipped' : ''}`}>
           {/* Front: coupon face clone */}
           <div className={`zoom-card-front ${isBestOffer ? 'best-offer-face' : ''}`}>
-            <span className="front-kicker">From coupon</span>
+            <span className="front-kicker">Unlocked Offer</span>
             <span className="front-value">{coupon.num}<small>%</small></span>
             <span className="front-label">COUPON</span>
             <span className="front-subtitle">Sitewide · No minimum</span>
@@ -2001,7 +2539,7 @@ function ZoomFlipCard({ coupon, colors, rect, phase, isBestOffer, copyState, onC
             <div className="kt-ticket">
               <div className="kt-top">
                 <div className="kt-brand">Ritual</div>
-                <div className="kt-cupom">YOUR COUPON</div>
+                <div className="kt-cupom"></div>
                 <div className="kt-percent">{coupon.num}<span className="kt-pct">%</span></div>
                 <div className="kt-off">OFF</div>
               </div>
