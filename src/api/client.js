@@ -7,6 +7,8 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 // 或多个组件同时拉取 reward-plan)会复用同一个网络请求,
 // 从根上消除“接口同时请求两次”的问题。
 const inflightGets = new Map();
+let manifestCache = null;
+let manifestEtag = '';
 
 async function request(path, options = {}) {
   const method = options.method ?? 'GET';
@@ -82,4 +84,37 @@ export function completeSurvey(touchId, rewardPlanId, answers) {
     method: 'POST',
     body: JSON.stringify({ touchId, rewardPlanId, answers }),
   });
+}
+
+export async function fetchGameManifest(touchId) {
+  const path = `/api/fc/games/manifest?touchId=${encodeURIComponent(touchId)}`;
+  const key = `GET ${API_BASE}${path}#manifest`;
+  const existing = inflightGets.get(key);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: {
+        'content-type': 'application/json',
+        ...(manifestEtag ? { 'if-none-match': manifestEtag } : {}),
+      },
+    });
+    if (res.status === 304 && manifestCache) {
+      dbg('[FCDBG][API] manifest not modified');
+      return manifestCache;
+    }
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(json.error ?? `Request failed: ${res.status}`);
+    }
+    manifestEtag = res.headers.get('etag') ?? manifestEtag;
+    manifestCache = json;
+    return json;
+  })().finally(() => {
+    inflightGets.delete(key);
+  });
+
+  inflightGets.set(key, promise);
+  return promise;
 }

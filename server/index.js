@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { getRuntimeManifest, validateManifestEntry } from './runtime-manifest.js';
 
 const ENGINE_BASE_URL = process.env.ENGINE_BASE_URL ?? 'http://localhost:8787';
 const PORT = Number(process.env.BFF_PORT ?? 3001);
@@ -70,12 +71,13 @@ function readJson(req) {
   });
 }
 
-function sendJson(res, status, payload) {
+function sendJson(res, status, payload, extraHeaders = {}) {
   res.writeHead(status, {
     'content-type': 'application/json',
     'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'access-control-allow-headers': 'content-type',
+    'access-control-allow-headers': 'content-type,if-none-match',
+    ...extraHeaders,
   });
   res.end(JSON.stringify(payload));
 }
@@ -108,6 +110,40 @@ const server = http.createServer(async (req, res) => {
       const data = await getPlanDeduped(touchId);
       writePlanCache(touchId, data);
       sendJson(res, 200, data);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/fc/games/manifest') {
+      const touchId = url.searchParams.get('touchId') || 'anonymous';
+      const document = getRuntimeManifest(touchId);
+      const ifNoneMatch = req.headers['if-none-match'];
+      if (ifNoneMatch && ifNoneMatch === document.etag) {
+        res.writeHead(304, {
+          etag: document.etag,
+          'cache-control': `private, max-age=${document.payload.ttlSeconds}`,
+          'access-control-allow-origin': '*',
+        });
+        res.end();
+        return;
+      }
+
+      const hasInvalidEntry = document.payload.entries.some(
+        (entry) => !validateManifestEntry(entry),
+      );
+      if (hasInvalidEntry) {
+        sendJson(res, 500, { error: 'manifest validation failed' });
+        return;
+      }
+
+      sendJson(
+        res,
+        200,
+        document,
+        {
+          etag: document.etag,
+          'cache-control': `private, max-age=${document.payload.ttlSeconds}`,
+        },
+      );
       return;
     }
 

@@ -1,15 +1,34 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-// FC platform 源码路径可通过环境变量 FC_PLATFORM_ROOT 覆盖,
-// 默认回退到仓库同级的 ../fc-platform,
-// 避免把构建绑死在某台机器的本地绝对路径上。
-const fcRoot = process.env.FC_PLATFORM_ROOT
-  ? path.resolve(process.env.FC_PLATFORM_ROOT)
-  : path.resolve(root, '../fc-platform');
+function resolveFcRoot() {
+  if (process.env.FC_PLATFORM_ROOT) {
+    return path.resolve(process.env.FC_PLATFORM_ROOT);
+  }
+
+  // 优先同级目录,再尝试常见的用户目录布局(例如 Downloads/fc-platform)。
+  const candidates = [
+    path.resolve(root, '../fc-platform'),
+    path.resolve(root, '../../fc-platform'),
+    path.resolve(root, '../../Downloads/fc-platform'),
+  ];
+
+  const found = candidates.find((candidate) =>
+    fs.existsSync(path.join(candidate, 'packages/game-runtime/src')),
+  );
+
+  if (found) return found;
+
+  throw new Error(
+    'Cannot locate fc-platform. Set FC_PLATFORM_ROOT=/absolute/path/to/fc-platform',
+  );
+}
+
+const fcRoot = resolveFcRoot();
 const fcPackages = path.join(fcRoot, 'packages');
 
 export default defineConfig({

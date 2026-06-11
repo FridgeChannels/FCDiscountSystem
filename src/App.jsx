@@ -4,6 +4,7 @@ import { readCachedRewardPlan, readRememberedTouchId, rememberTouchId, writeCach
 import { mapPlanToViewModel } from './api/mapPlan.js';
 import PlatformGameModal from './components/PlatformGameModal.jsx';
 import { dbg, dbgError } from './lib/debug.js';
+import { preloadRuntimeManifest } from './lib/runtimeRegistry.js';
 
 // 阶段4:对不依赖每秒倒计时的叶子组件做 memo,
 // 避免倒计时每秒触发它们跟着整棵树一起重渲染。
@@ -348,6 +349,10 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     rememberTouchId(touchId);
+
+    preloadRuntimeManifest(touchId).catch((err) => {
+      dbgError('[FCDBG][App] runtime manifest preload failed', err);
+    });
 
     const cached = readCachedRewardPlan(touchId);
     if (cached) {
