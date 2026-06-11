@@ -79,6 +79,14 @@ export function completeGameSession(payload) {
   });
 }
 
+// 领取优惠券:用户在确认弹窗点击「确认领取」后调用,后端返回券码并标记为已领取(未核销)。
+export function claimCoupon(touchId, rewardPlanId, tier) {
+  return request('/api/fc/coupon/claim', {
+    method: 'POST',
+    body: JSON.stringify({ touchId, rewardPlanId, tier }),
+  });
+}
+
 export function completeSurvey(touchId, rewardPlanId, answers) {
   return request('/api/fc/survey/complete', {
     method: 'POST',
