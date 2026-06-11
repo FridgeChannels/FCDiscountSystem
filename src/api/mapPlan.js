@@ -87,6 +87,10 @@ export function mapPlanToViewModel(plan) {
     challenges,
     rewardPlanId: plan.rewardPlanId,
     dailyCapReached: plan.reasonCodes?.includes('DAILY_CAP_REACHED') ?? false,
+    // 领取/核销状态(后端字段优先,前端据此锁定/解锁最低折扣页)。
+    couponClaimed: !!(plan.currentCoupon?.claimedAt || plan.currentCoupon?.status === 'CLAIMED'),
+    couponRedeemed: !!(plan.currentCoupon?.redeemedAt || plan.currentCoupon?.status === 'REDEEMED'),
+    claimedCouponCode: plan.currentCoupon?.couponCode || null,
   };
 }
 

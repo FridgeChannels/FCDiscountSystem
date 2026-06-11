@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
-import { completeSurvey, fetchRewardPlan, redeemCoupon, startGameSession } from './api/client.js';
+import { claimCoupon, completeSurvey, fetchRewardPlan, redeemCoupon, startGameSession } from './api/client.js';
 import { readCachedRewardPlan, readRememberedTouchId, rememberTouchId, writeCachedRewardPlan } from './api/cache.js';
 import { mapPlanToViewModel } from './api/mapPlan.js';
 import PlatformGameModal from './components/PlatformGameModal.jsx';
@@ -174,6 +174,7 @@ export default function App() {
   const confettiRef = useRef({ ctx: null, particles: [], frame: null });
   const couponFaceRef = useRef(null);
   const pointsTweenRef = useRef(null);
+  const prevCountdownRef = useRef(null);
   const loginBonusGrantedRef = useRef(false);
 
   const [touchId] = useState(getTouchId);
@@ -244,6 +245,19 @@ export default function App() {
   const [surveyStep, setSurveyStep] = useState(0);
 
   const [discounts, setDiscounts] = useState(INITIAL_DISCOUNTS);
+  // 已领取但后端未核销的券码。存在时,每次登录都强制停留在最低折扣页,直到后端标记核销。
+  const [claimedCode, setClaimedCode] = useState(() => {
+    const code = localStorage.getItem('fc_claimed_code');
+    if (code && code.includes('NaN')) {
+      localStorage.removeItem('fc_claimed_code');
+      return null;
+    }
+    return code || null;
+  });
+  // 确认领取弹窗:{ onConfirm } —— 点击「确认领取」后执行的领取动作。
+  const [claimConfirm, setClaimConfirm] = useState(null);
+  // 状态D · 新挑战开启过渡页:null | { reason: 'redeemed' | 'expired' }
+  const [newChallenge, setNewChallenge] = useState(null);
 
   const syncFromPlan = useCallback((plan) => {
     const vm = mapPlanToViewModel(plan);
@@ -264,6 +278,18 @@ export default function App() {
 
     if (vm.brand.primaryColor) {
       document.documentElement.style.setProperty('--brand-primary', vm.brand.primaryColor);
+    }
+
+    // 以后端核销状态为准:已核销则解除锁定、开启新一轮;已领取未核销则维持锁定。
+    if (vm.couponRedeemed) {
+      const wasLocked = !!localStorage.getItem('fc_claimed_code');
+      localStorage.removeItem('fc_claimed_code');
+      setClaimedCode(null);
+      // 从「已领取锁定」转为「已核销」:展示「新挑战开启页(redeemed)」。
+      if (wasLocked) setNewChallenge({ reason: 'redeemed' });
+    } else if (vm.couponClaimed && vm.claimedCouponCode) {
+      localStorage.setItem('fc_claimed_code', vm.claimedCouponCode);
+      setClaimedCode(vm.claimedCouponCode);
     }
   }, []);
 
@@ -382,19 +408,28 @@ export default function App() {
     };
   }, [clearGameSessionCache, syncFromPlan, touchId]);
 
-  const current = discounts[currentStepIndex];
-  const next = discounts[currentStepIndex + 1];
-  const targetPoints = next?.target ?? current.target;
+  const current = discounts[currentStepIndex] || discounts[discounts.length - 1] || { num: '15', target: 0 };
+  const next = discounts[currentStepIndex + 1] || null;
+  const targetPoints = next?.target ?? current?.target ?? 0;
   const progressPct = next ? Math.min((points / targetPoints) * 100, 100) : 100;
   const delta = next ? Math.max(targetPoints - points, 0) : 0;
   const isBestOffer = !next;
+  // 已领取未核销:强制锁定在最低折扣页,直到后端确认核销。
+  const claimedUnused = !!claimedCode;
+  const showBestOffer = isBestOffer || claimedUnused;
+  // 锁定时展示已领取的那张券(优先按券码匹配,兜底用当前券)。
+  const lockedCoupon = claimedCode
+    ? (discounts.find((d) => d.code === claimedCode) || current)
+    : current;
   const isExpired = countdownSeconds <= 0;
   const time = useMemo(() => formatCountdown(countdownSeconds), [countdownSeconds]);
   const urgent = countdownSeconds < 86400 && countdownSeconds > 0;
 
   function resetRound() {
     setDiscounts((prevDiscounts) => {
-      const nextStart = parseInt(prevDiscounts[0].num) + 5;
+      const firstNum = prevDiscounts?.[0]?.num;
+      const numVal = parseInt(firstNum, 10);
+      const nextStart = !Number.isNaN(numVal) ? (numVal + 5) : 15;
       const finalStart = nextStart > 30 ? 15 : nextStart;
       return [
         { num: String(finalStart), value: `${finalStart}% OFF`, target: 0, code: `FC${finalStart}RITUAL` },
@@ -409,13 +444,47 @@ export default function App() {
     setZoomActive(false);
     setZoomPhase('init');
     setZoomCoupon(null);
+    // 有效期归零:解除已领取锁定,从状态C回到状态A,开启新一轮挑战。
+    localStorage.removeItem('fc_claimed_code');
+    setClaimedCode(null);
+    setClaimConfirm(null);
+  }
+
+  // 完整重置回首登起点(开场礼盒 + 欢迎流)。
+  function resetToFirstLogin() {
+    localStorage.removeItem('fc_welcome_completed');
+    localStorage.removeItem('fc_claimed_code');
+    setClaimedCode(null);
+    resetRound();                       // 刷新折扣档位 / 倒计时 / 清各类卡片
+    setPoints(0);                       // 首登从 0 金币开始累积
+    setWelcomeStep(0);                  // 回到欢迎流起点
+    setIntroActive(true);               // 重新播放开场礼盒
+    loginBonusGrantedRef.current = false;
+    setNewChallenge(null);
+  }
+
+  // 「新挑战开启页」CTA:开始新一轮 = 完整重放首登体验。
+  function handleStartNewChallenge() {
+    resetToFirstLogin();
+  }
+
+  // 仅开发环境:在无真实后端时手动预览「新挑战开启页」两态(生产构建会被 import.meta.env.DEV 摇树移除)。
+  function devShowNewChallenge(reason) {
+    if (reason === 'redeemed') {
+      localStorage.removeItem('fc_claimed_code');
+      setClaimedCode(null);
+    }
+    setNewChallenge({ reason });
   }
 
   useEffect(() => {
-    if (countdownSeconds === 0) {
-      resetRound();
+    // 仅在倒计时「从正数真实跳到 0」时触发,避免初次加载就拿到过期 plan 而误弹过渡页。
+    const prev = prevCountdownRef.current;
+    prevCountdownRef.current = countdownSeconds;
+    if (prev > 0 && countdownSeconds === 0 && !newChallenge) {
+      setNewChallenge({ reason: 'expired' });
     }
-  }, [countdownSeconds]);
+  }, [countdownSeconds, newChallenge]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -479,14 +548,18 @@ function triggerLoginBonusAnimation(pts) {
     });
   }
 
-  // 登录奖励:loading 收尾(加载层关闭)那一刻,把每次打开发放的 5 金币
-  // 飞进余额计数器 —— 复用到账动效(飞币 + “+5” + 计数器滚动)。只发放一次。
+  // 登录奖励:点击 Earn More Rewards 按钮后发放的 5 金币动效。只发放一次。
   useEffect(() => {
     if (introActive || loginBonusGrantedRef.current) return;
     loginBonusGrantedRef.current = true;
+    // 首次登录: 不在此触发,改由 onAdvanceToSettle 回调触发
+    const isFirstTime = localStorage.getItem('fc_welcome_completed') !== 'true';
+    if (isFirstTime) return;
+    // 已停留在凭证页(状态C,已领取未核销)或已达到最低折扣(isBestOffer):本次登录不发 5 金币、不展示 +5 动效。
+    if (claimedUnused || isBestOffer) return;
     const timer = window.setTimeout(() => triggerLoginBonusAnimation(INTRO_REWARD_POINTS), 150);
     return () => window.clearTimeout(timer);
-  }, [introActive]);
+  }, [introActive, claimedUnused, isBestOffer]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -538,6 +611,7 @@ function triggerLoginBonusAnimation(pts) {
     }, 500);
   }, [tapGame.active, tapGame.timeLeft, tapGame.taps]);
 
+
   function showNotification(title, message, icon = '✨', onConfirm = null) {
     setNotification({ title, message, icon, onConfirm });
   }
@@ -546,6 +620,68 @@ function triggerLoginBonusAnimation(pts) {
     const onConfirm = notification?.onConfirm;
     setNotification(null);
     if (onConfirm) onConfirm();
+  }
+
+  // 任意「Claim now」按钮先弹确认弹窗,确认后再执行真正的领取动作。
+  function requestClaim(onConfirm, discount) {
+    setClaimConfirm({ onConfirm, discount });
+  }
+
+  function cancelClaim() {
+    setClaimConfirm(null);
+
+    // 首次登录时如果用户取消领取，标记首登欢迎流程完成，进入真正的钱包首页
+    if (welcomeStep < 3) {
+      setWelcomeStep(3);
+      localStorage.setItem('fc_welcome_completed', 'true');
+
+      // 让积分从 0 滚到 welcomeTargetPoints
+      const from = 0;
+      const to = welcomeTargetPoints;
+      const duration = 1200;
+      const startedAt = performance.now();
+      const step = (now) => {
+        const t = Math.min((now - startedAt) / duration, 1);
+        const eased = 1 - Math.pow(1 - t, 3);
+        setPoints(Math.round(from + (to - from) * eased));
+        if (t < 1) {
+          pointsTweenRef.current = requestAnimationFrame(step);
+        } else {
+          pointsTweenRef.current = null;
+          setPoints(to);
+        }
+      };
+      pointsTweenRef.current = requestAnimationFrame(step);
+    }
+
+    if (showReceipt) {
+      handleAccumulateMore();
+    } else {
+      const walletEl = document.getElementById('wallet') || document.querySelector('.wallet');
+      if (walletEl) {
+        walletEl.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  }
+
+  function confirmClaim() {
+    const onConfirm = claimConfirm?.onConfirm;
+    setClaimConfirm(null);
+    if (onConfirm) onConfirm();
+  }
+
+  // 领取动作的统一副作用:乐观锁定本地状态 + 通知后端核销系统。
+  // 写入后 claimedUnused 立即为真,底层页面切到「已领取凭证页(去使用)」。
+  function writeClaimLock(coupon) {
+    const code = coupon?.code;
+    if (!code) return;
+    localStorage.setItem('fc_claimed_code', code);
+    setClaimedCode(code);
+    if (rewardPlanId) {
+      claimCoupon(touchId, rewardPlanId, coupon.tier).catch((err) => {
+        dbgError('[FCDBG][App] claimCoupon failed', err);
+      });
+    }
   }
 
   function startConfetti() {
@@ -753,7 +889,7 @@ function triggerLoginBonusAnimation(pts) {
 
     if (prefersReducedMotion()) {
       setPoints(to);
-      if (to >= targetPoints) triggerCelebration(to);
+      if (next && to >= targetPoints) triggerCelebration(to);
       return;
     }
 
@@ -770,7 +906,7 @@ function triggerLoginBonusAnimation(pts) {
         pointsTweenRef.current = null;
         setPoints(to);
         setCrediting(false);
-        if (to >= targetPoints) triggerCelebration(to);
+        if (next && to >= targetPoints) triggerCelebration(to);
       }
     };
     pointsTweenRef.current = requestAnimationFrame(step);
@@ -787,10 +923,17 @@ function triggerLoginBonusAnimation(pts) {
     setTargetPulse('');
   }
 
+  const handleTargetClick = () => {
+    setReceiptColors(readCouponTokens(targetCouponRef.current));
+    setPendingPoints(points);
+    setShowReceipt(true);
+  };
+
   function handleUseReceiptCoupon() {
     const nextCoupon = discounts[currentStepIndex + 1];
+    writeClaimLock(nextCoupon);
     const targetPointsVal = nextCoupon?.target ?? 90;
-    setCurrentStepIndex((index) => index + 1);
+    setCurrentStepIndex((index) => Math.min(index + 1, discounts.length - 1));
     setPoints(Math.max(pendingPoints - targetPointsVal, 0));
     setShowReceipt(false);
     
@@ -827,7 +970,7 @@ function triggerLoginBonusAnimation(pts) {
 
   function handleAccumulateMore() {
     const targetPointsVal = discounts[currentStepIndex + 1]?.target ?? 90;
-    setCurrentStepIndex((index) => index + 1);
+    setCurrentStepIndex((index) => Math.min(index + 1, discounts.length - 1));
     setPoints(Math.max(pendingPoints - targetPointsVal, 0));
     setShowReceipt(false);
     
@@ -837,12 +980,13 @@ function triggerLoginBonusAnimation(pts) {
   }
 
   async function handleCopyCode() {
+    const code = claimedCode || current.code;
     try {
-      await navigator.clipboard.writeText(current.code);
+      await navigator.clipboard.writeText(code);
       setCopyState('Copied!');
       setTimeout(() => setCopyState('Copy'), 2000);
     } catch {
-      showNotification('Copy Failed', `We couldn't copy it automatically. Please copy manually: ${current.code}`, '⚠️');
+      showNotification('Copy Failed', `We couldn't copy it automatically. Please copy manually: ${code}`, '⚠️');
     }
   }
 
@@ -879,6 +1023,11 @@ function triggerLoginBonusAnimation(pts) {
     });
   }
 
+  function handleShopNowDirect() {
+    const shopUrl = (brand.shopUrl && brand.shopUrl !== '#') ? brand.shopUrl : 'https://ritual.com';
+    window.open(shopUrl, '_blank', 'noopener,noreferrer');
+  }
+
   async function handleSettlementComplete(settlement) {
     dbg('[FCDBG][App] settlement received', settlement);
     clearGameSessionCache();
@@ -910,8 +1059,10 @@ function triggerLoginBonusAnimation(pts) {
     );
   }
 
+  // 钱包/最佳档「Claim now」:写锁后从券面放大翻牌展示券码;关闭后底层即「去使用」凭证页。
   async function handleUseCoupon() {
     if (isExpired || isTearingCoupon || redeemingCoupon) return;
+
     if (isBestOffer) {
       try {
         await ensureCouponReadyForUse();
@@ -920,47 +1071,68 @@ function triggerLoginBonusAnimation(pts) {
         showNotification('Coupon unavailable', msg, '⚠️');
         return;
       }
-      const faceEl = couponFaceRef.current;
-      const viewport = viewportRef.current;
-      if (faceEl && viewport) {
-        const faceRect = faceEl.getBoundingClientRect();
-        setZoomRect({
-          left: faceRect.left,
-          top: faceRect.top,
-          width: faceRect.width,
-          height: faceRect.height
-        });
-        setZoomCoupon(current);
-        setZoomColors(readCouponTokens(faceEl.closest('.coupon')));
-        setZoomCopyState('Copy');
-        setZoomPhase('init');
-        setZoomActive(true);
+    }
 
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            const vpRect = viewport.getBoundingClientRect();
-            const cardW = Math.min(vpRect.width * 0.82, 320);
-            const cardH = cardW * 1.58;
-            setZoomRect({
-              left: vpRect.left + (vpRect.width - cardW) / 2,
-              top: vpRect.top + (vpRect.height - cardH) / 2,
-              width: cardW,
-              height: cardH
-            });
-            setZoomPhase('flipped');
-          });
-        });
-      } else {
-        setDrawerOpen(true);
-      }
+    writeClaimLock(current);
+
+    const faceEl = couponFaceRef.current;
+    const viewport = viewportRef.current;
+    if (!faceEl || !viewport) {
+      setDrawerOpen(true);
       return;
     }
-    setIsTearingCoupon(true);
+
+    if (isBestOffer) {
+      const faceRect = faceEl.getBoundingClientRect();
+      setZoomRect({
+        left: faceRect.left,
+        top: faceRect.top,
+        width: faceRect.width,
+        height: faceRect.height
+      });
+      setZoomCoupon(current);
+      setZoomColors(readCouponTokens(faceEl.closest('.coupon')));
+      setZoomCopyState('Copy');
+      setZoomPhase('init');
+      setZoomActive(true);
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const vpRect = viewport.getBoundingClientRect();
+          const cardW = Math.min(vpRect.width * 0.82, 320);
+          const cardH = cardW * 1.58;
+          setZoomRect({
+            left: vpRect.left + (vpRect.width - cardW) / 2,
+            top: vpRect.top + (vpRect.height - cardH) / 2,
+            width: cardW,
+            height: cardH
+          });
+          setZoomPhase('flipped');
+        });
+      });
+      return;
+    }
+
+    const vpRect = viewport.getBoundingClientRect();
+    const cardW = Math.min(vpRect.width * 0.82, 320);
+    const cardH = cardW * 1.58;
+    setZoomRect({
+      left: vpRect.left + (vpRect.width - cardW) / 2,
+      top: vpRect.top + (vpRect.height - cardH) / 2,
+      width: cardW,
+      height: cardH
+    });
+    setZoomCoupon(current);
+    setZoomColors(readCouponTokens(faceEl.closest('.coupon')));
+    setZoomCopyState('Copy');
+    setZoomPhase('flipped');
+    setZoomActive(true);
   }
 
   const handleUseWelcomeCoupon = useCallback(() => {
     setWelcomeStep(3);
     localStorage.setItem('fc_welcome_completed', 'true');
+    writeClaimLock(current);
     
     // Immediately start the points counter tweening from 0 to welcomeTargetPoints
     const from = 0;
@@ -1267,15 +1439,24 @@ function triggerLoginBonusAnimation(pts) {
       )}
 
       <main className="content-area">
-        {isBestOffer ? (
+        {showBestOffer ? (
           <BestCouponLockedPage
-            coupon={current}
+            coupon={lockedCoupon}
             time={time}
             tick={tick}
             countdownSeconds={countdownSeconds}
             isExpired={isExpired}
             couponFaceRef={couponFaceRef}
-            onUse={handleUseCoupon}
+            claimed={claimedUnused}
+            copyState={copyState}
+            onClaim={() => requestClaim(handleUseCoupon, lockedCoupon.num)}
+            onShop={handleShopNowDirect}
+            onCopy={handleCopyCode}
+            points={points}
+            targetPoints={targetPoints}
+            challenges={challenges}
+            dailyCapReached={dailyCapReached}
+            onOpenChallenge={openChallenge}
           />
         ) : (
           <>
@@ -1303,9 +1484,11 @@ function triggerLoginBonusAnimation(pts) {
               isTearingCoupon={isTearingCoupon}
               targetCouponRef={targetCouponRef}
               couponFaceRef={couponFaceRef}
-              onUse={handleUseCoupon}
+              onUse={() => requestClaim(handleUseCoupon, current.num)}
               onTearComplete={handleTearComplete}
               countdownSeconds={countdownSeconds}
+              confirmOpen={!!claimConfirm}
+              onTargetClick={handleTargetClick}
             />
 
             <Challenges challenges={challenges} dailyCapReached={dailyCapReached} onOpen={openChallenge} />
@@ -1349,11 +1532,51 @@ function triggerLoginBonusAnimation(pts) {
 
       <NotificationModal notification={notification} onConfirm={confirmNotification} />
 
+      <ClaimConfirmModal claim={claimConfirm} onConfirm={confirmClaim} onCancel={cancelClaim} />
+
+      {newChallenge && (
+        <NewChallengeUnlocked reason={newChallenge.reason} onStart={handleStartNewChallenge} prevCoupon={lockedCoupon} />
+      )}
+
+      {import.meta.env.DEV && !newChallenge && (
+        <div
+          style={{
+            position: 'fixed', left: 10, bottom: 10, zIndex: 9999,
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '6px 8px', borderRadius: 8,
+            background: 'rgba(20,24,20,0.82)', font: '600 11px/1 sans-serif'
+          }}
+        >
+          <span style={{ color: '#9fe1cb', letterSpacing: 1 }}>DEV</span>
+          <button
+            type="button"
+            onClick={resetToFirstLogin}
+            style={{ padding: '5px 8px', borderRadius: 6, border: 0, cursor: 'pointer', background: '#377add', color: '#fff' }}
+          >
+            首登
+          </button>
+          <button
+            type="button"
+            onClick={() => devShowNewChallenge('redeemed')}
+            style={{ padding: '5px 8px', borderRadius: 6, border: 0, cursor: 'pointer', background: '#4f8a4a', color: '#fff' }}
+          >
+            Redeemed
+          </button>
+          <button
+            type="button"
+            onClick={() => devShowNewChallenge('expired')}
+            style={{ padding: '5px 8px', borderRadius: 6, border: 0, cursor: 'pointer', background: '#a98435', color: '#fff' }}
+          >
+            Expired
+          </button>
+        </div>
+      )}
+
       {showReceipt && (
         <ReceiptPrinter
           unlockedCoupon={discounts[currentStepIndex + 1]}
           colors={receiptColors}
-          onUse={handleUseReceiptCoupon}
+          onUse={() => requestClaim(handleUseReceiptCoupon, discounts[currentStepIndex + 1]?.num)}
           onAccumulate={handleAccumulateMore}
         />
       )}
@@ -1379,8 +1602,9 @@ function triggerLoginBonusAnimation(pts) {
           couponFaceRef={couponFaceRef}
           onAdvanceToSettle={() => {
             setWelcomeStep(2);
+            setTimeout(() => triggerLoginBonusAnimation(INTRO_REWARD_POINTS), 300);
           }}
-          onUse={handleUseWelcomeCoupon}
+          onUse={() => requestClaim(handleUseWelcomeCoupon, current.num)}
           onComplete={() => {
             setWelcomeStep(3);
             localStorage.setItem('fc_welcome_completed', 'true');
@@ -1559,7 +1783,7 @@ function WelcomeRitual({ step, coupon, brand, couponFaceRef, onAdvanceToSettle, 
                   onUse();
                 }}
               >
-                Use Now
+                Claim Now
               </button>
               <button 
                 className="btn-printer-secondary" 
@@ -1818,12 +2042,115 @@ function ClockUnit({ label, value, tick, isLast }) {
   );
 }
 
-function BestCouponLockedPage({ coupon, time, tick, isExpired, couponFaceRef, onUse }) {
+function BestCouponLockedPage({ 
+  coupon, time, tick, isExpired, couponFaceRef, claimed, copyState, onClaim, onShop, onCopy,
+  points, targetPoints, challenges, dailyCapReached, onOpenChallenge 
+}) {
+  if (claimed) {
+    const displayTarget = coupon.target ?? 0;
+    const displayPoints = displayTarget === 0 ? points : (points + displayTarget);
+    return (
+      <section className="best-locked-page voucher-ready" data-screen-label="券已领取">
+        {/* Top Countdown Banner */}
+        <div className="limited-offer-banner">
+          <div className="limited-offer-title">
+            <span className="limited-offer-dot">●</span> LIMITED OFFER ENDS IN
+          </div>
+          <div className="limited-offer-timer-boxes">
+            <div className="limited-offer-timer-box-wrapper">
+              <div className="limited-offer-timer-box">{time.digits[0]}</div>
+              <div className="limited-offer-timer-label">DAYS</div>
+            </div>
+            <div className="limited-offer-timer-colon">:</div>
+            <div className="limited-offer-timer-box-wrapper">
+              <div className="limited-offer-timer-box">{time.digits[1]}</div>
+              <div className="limited-offer-timer-label">HOURS</div>
+            </div>
+            <div className="limited-offer-timer-colon">:</div>
+            <div className="limited-offer-timer-box-wrapper">
+              <div className="limited-offer-timer-box">{time.digits[2]}</div>
+              <div className="limited-offer-timer-label">MIN</div>
+            </div>
+            <div className="limited-offer-timer-colon">:</div>
+            <div className="limited-offer-timer-box-wrapper">
+              <div className="limited-offer-timer-box">{time.digits[3]}</div>
+              <div className="limited-offer-timer-label">SEC</div>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. Title YOUR COUPON */}
+        <h2 className="your-coupon-title">YOUR COUPON</h2>
+
+        {/* 3. Coupon Card */}
+        <div className="voucher-coupon-card-container">
+          {/* Progress badge pill */}
+          <div className="voucher-coupon-progress-badge">
+            {displayPoints} / {displayTarget}
+          </div>
+
+          {/* Left/Right badges */}
+          <div className="voucher-coupon-left-badge">C</div>
+          <div className="voucher-coupon-right-badge">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+            </svg>
+          </div>
+
+          <div className="voucher-coupon-card">
+            {/* CLAIMED with checkmark */}
+            <div className="voucher-coupon-claimed-badge">
+              • CLAIMED ✓
+            </div>
+
+            {/* Large Coupon Value */}
+            <h1 className="voucher-coupon-value-large">{coupon.num}%</h1>
+            <div className="voucher-coupon-off-label">OFF</div>
+            
+            <div className="voucher-coupon-subtitle">Sitewide · No minimum</div>
+
+            {/* Code Capsule */}
+            <div className="voucher-code-capsule">
+              <div className="voucher-code-left-cutout"></div>
+              <div className="voucher-code-right-cutout"></div>
+              <div className="voucher-code-text-wrapper">
+                <span className="voucher-code-label">Your Code</span>
+                <span className="voucher-code-value">{coupon.code}</span>
+              </div>
+              <button className="voucher-code-copy-btn" onClick={onCopy} aria-label="Copy Code">
+                {copyState === 'Copied!' ? (
+                  <span style={{ fontWeight: 'bold', color: '#4f8a4a', fontSize: '14px' }}>✓</span>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                )}
+              </button>
+            </div>
+
+            {/* Redeem CTA */}
+            <button className="btn-voucher-use-now" id="use-now-btn" onClick={onShop}>
+              Redeem
+            </button>
+
+            {/* Expiry Pill */}
+            <div className="voucher-expiry-countdown">
+              Expires in <span className="voucher-expiry-time">{time.digits.join(' : ')}</span>
+            </div>
+          </div>
+        </div>
+
+
+      </section>
+    );
+  }
+
   return (
     <section className="best-locked-page" data-screen-label="最佳优惠券">
       <div className="best-locked-copy">
-        <span className="best-locked-eyebrow">Best Coupon Locked</span>
-        <h1>Best Coupon Locked</h1>
+        <span className="best-locked-eyebrow">本轮最低折扣</span>
+        <h1>{coupon.num}% OFF <small>可立即领取</small></h1>
       </div>
 
       <div className="best-locked-coupon" data-coupon-theme="dtc">
@@ -1845,12 +2172,184 @@ function BestCouponLockedPage({ coupon, time, tick, isExpired, couponFaceRef, on
         </div>
       </div>
 
-      <button className="best-locked-cta" id="use-now-btn" type="button" disabled={isExpired} onClick={onUse}>
-        Use Coupon Now
+      <button className="best-locked-cta" id="use-now-btn" type="button" disabled={isExpired} onClick={onClaim}>
+        Claim Now
       </button>
 
-      <p className="best-locked-footnote">A new challenge will start automatically when the timer ends.</p>
+      <p className="best-locked-footnote">
+        有效期结束后将自动开启新一轮挑战。
+      </p>
     </section>
+  );
+}
+
+function NewChallengeUnlocked({ reason, onStart, prevCoupon }) {
+  const redeemed = reason === 'redeemed';
+  const expired = reason === 'expired';
+  
+  // Previous offer details
+  const prevNum = prevCoupon?.num || '20';
+  const prevValue = prevCoupon?.value || '20% OFF';
+  // Subtitle for previous offer (Orders $75+ or Sitewide depending on tier)
+  const prevSubtitle = prevNum === '20' ? 'Orders $75+' : 'Sitewide · No minimum';
+
+  // New round details (starts at 15%)
+  const newNum = '15';
+  
+  return (
+    <div className="new-challenge-overlay" role="dialog" aria-label="New challenge unlocked" data-screen-label="新挑战开启">
+      <div className="nc-container">
+        
+        {/* 1. Header badge */}
+        {expired ? (
+          <div className="nc-header-badge expired">
+            <svg className="nc-header-clock-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <span className="nc-header-badge-text">LAST CHALLENGE ENDED</span>
+          </div>
+        ) : (
+          <div className="nc-used-badge-wrapper">
+            <div className="nc-used-circle">
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            </div>
+            <span className="nc-used-label">OFFER USED</span>
+          </div>
+        )}
+
+        {/* 2. Main title & description */}
+        <h1 className="nc-title">New Challenge Unlocked</h1>
+        <p className="nc-subtitle">
+          {expired 
+            ? 'Your previous challenge has ended. A fresh round is now ready for you.'
+            : 'Nice! Your last offer was used successfully. Earn points to unlock your next coupon.'}
+        </p>
+
+        {/* 3. Previous Offer/Challenge Ticket */}
+        <div className="nc-ticket-previous">
+          <div className="nc-ticket-label">
+            {expired ? 'PREVIOUS CHALLENGE' : 'PREVIOUS OFFER'}
+          </div>
+          
+          <div className="nc-ticket-value-row">
+            <span className="nc-ticket-value-number">{prevNum}</span>
+            <div className="nc-ticket-percent-off-stack">
+              <span className="nc-ticket-percent-symbol">%</span>
+              <span className="nc-ticket-off-label">OFF</span>
+            </div>
+          </div>
+          
+          <div className="nc-ticket-subtitle">{prevSubtitle}</div>
+          
+          {/* Stamp */}
+          {expired ? (
+            <div className="nc-stamp-ended">
+              <span className="nc-stamp-ended-star">★</span>
+              <span className="nc-stamp-ended-text">ENDED</span>
+              <span className="nc-stamp-ended-star">★</span>
+            </div>
+          ) : (
+            <div className="nc-stamp-used">
+              <svg className="nc-stamp-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>USED</span>
+              <span className="nc-stamp-star">★</span>
+            </div>
+          )}
+
+          {/* Clock timer pill for expired page */}
+          {expired && (
+            <div className="nc-ticket-timer-pill">
+              <svg className="nc-pill-clock-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+              <span>00:00:00</span>
+            </div>
+          )}
+        </div>
+
+        {/* 4. Separator */}
+        {expired ? (
+          <div className="nc-connector-circle">
+            <svg className="nc-refresh-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+          </div>
+        ) : (
+          <div className="nc-arrow-down">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <polyline points="19 12 12 19 5 12"></polyline>
+            </svg>
+            <div className="nc-arrow-glow"></div>
+          </div>
+        )}
+
+        {/* 5. New Round Ticket */}
+        <div className={`nc-new-round-section ${expired ? 'expired-glow' : ''}`}>
+          {expired ? (
+            /* Progress pill on top centered on the border */
+            <div className="nc-ticket-new-progress-pill">0 / 80</div>
+          ) : (
+            /* Mini Arc Path Header */
+            <div className="nc-mini-arc-container">
+              <svg className="nc-mini-arc-svg" viewBox="0 0 178 70" preserveAspectRatio="none">
+                <path d="M8 58 C52 14 126 14 170 58" fill="none" stroke="#e6e1d5" strokeWidth="2" strokeDasharray="5 5" />
+              </svg>
+              <div className="nc-mini-arc-coin">¢</div>
+              <div className="nc-mini-arc-progress">0 / 80</div>
+              <div className="nc-mini-arc-lock">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+                </svg>
+              </div>
+            </div>
+          )}
+
+          {/* New Round Ticket Card */}
+          <div className="nc-ticket-new-round">
+            <div className="nc-ticket-label">NEW ROUND</div>
+            
+            <div className="nc-ticket-value-row">
+              <span className="nc-ticket-value-number">{newNum}</span>
+              <div className="nc-ticket-percent-off-stack">
+                <span className="nc-ticket-percent-symbol">%</span>
+                <span className="nc-ticket-off-label">OFF</span>
+              </div>
+            </div>
+            
+            <div className="nc-ticket-value-subtitle">Orders $75+</div>
+            
+            <div className="nc-ticket-divider">
+              <span className="nc-ticket-diamond">♦</span>
+            </div>
+            
+            <div className="nc-ticket-subtitle">Start earning to unlock more</div>
+          </div>
+        </div>
+
+        {/* 6. Bottom CTA Button and Timer Footer */}
+        <div className="nc-footer">
+          <button className="nc-btn-start" type="button" onClick={onStart}>
+            <span>Start New Challenge</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          </button>
+          <p className="nc-footer-text">
+            {expired ? 'A new countdown has started.' : 'Your new timer has started.'}
+          </p>
+        </div>
+
+      </div>
+    </div>
   );
 }
 
@@ -1872,7 +2371,9 @@ function CouponWallet({
   couponFaceRef,
   onUse,
   onTearComplete,
-  countdownSeconds
+  countdownSeconds,
+  confirmOpen,
+  onTargetClick
 }) {
   return (
     <section className={`wallet ${isBestOffer ? 'best-offer' : ''}`} data-screen-label="优惠券">
@@ -1902,7 +2403,7 @@ function CouponWallet({
 
       <div className="coupon-pair" data-coupon-theme="dtc">
         <div className={`coupon-wrap current ${currentSwap ? 'swap' : ''} ${isTearingCoupon ? 'tearing' : ''}`}>
-          <div className={`coupon coupon-current ${isExpired ? 'expired' : ''}`} data-tier={tierForDiscount(current.num)}>
+          <div className={`coupon coupon-current ${isExpired ? 'expired' : ''} ${confirmOpen ? 'confirm-open-zoom' : ''}`} data-tier={tierForDiscount(current.num)}>
             <div className="coupon-face" ref={couponFaceRef}>
               <span className="coupon-kicker">{isBestOffer ? '当前可用优惠券' : 'Unlocked Offer'}</span>
               <span className="stub-value">{current.num}<small>%</small></span>
@@ -1918,7 +2419,7 @@ function CouponWallet({
               )}
             </div>
             <button className="btn-use" id="use-now-btn" aria-label="Use current coupon" disabled={isExpired || isTearingCoupon} onClick={onUse}>
-              <span>{isExpired ? 'Expired' : isBestOffer ? 'Claim now' : 'Use now'}</span>
+              <span>{isExpired ? 'Expired' : 'Claim'}</span>
               <svg className="use-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 4.5V19" />
                 <path d="M6 13l6 6 6-6" />
@@ -1929,7 +2430,11 @@ function CouponWallet({
         </div>
 
         {next && (
-          <div className={`coupon-wrap target ${delta <= 0 ? 'ready' : ''} ${targetPulse} ${currentSwap ? 'swap' : ''}`}>
+          <div 
+            className={`coupon-wrap target ${delta <= 0 ? 'ready' : ''} ${targetPulse} ${currentSwap ? 'swap' : ''}`}
+            onClick={delta <= 0 ? onTargetClick : undefined}
+            style={delta <= 0 ? { cursor: 'pointer' } : undefined}
+          >
             <div className="coupon coupon-target" data-tier={tierForDiscount(next.num)} ref={targetCouponRef}>
               <div className="coupon-face">
                 <span className="coupon-kicker">Next Offer</span>
@@ -2112,8 +2617,11 @@ function SurveyModal({ open, step, onClose, onOption }) {
   const currentStep = SURVEY_STEPS[step];
   return (
     <Modal id="survey-modal" open={open} title="Quick Preferences Survey" onClose={onClose}>
-      <div className="survey-progress-bar">
-        <div className="survey-progress-fill" style={{ width: `${((step + 1) / SURVEY_STEPS.length) * 100}%` }} />
+      <div className="survey-progress-header">
+        <span className="survey-step-indicator">{step + 1}/{SURVEY_STEPS.length}</span>
+        <div className="survey-progress-bar">
+          <div className="survey-progress-fill" style={{ width: `${((step + 1) / SURVEY_STEPS.length) * 100}%` }} />
+        </div>
       </div>
       <div className="survey-questions">
         <div className="survey-question-step active">
@@ -2136,6 +2644,84 @@ function NotificationModal({ notification, onConfirm }) {
       <p className="notification-message">{notification?.message}</p>
       <button className="btn btn-primary btn-block" id="notification-confirm-btn" onClick={onConfirm}>Understood</button>
     </Modal>
+  );
+}
+
+function ClaimConfirmModal({ claim, onConfirm, onCancel }) {
+  const discount = claim?.discount || '15';
+  const [isClaiming, setIsClaiming] = useState(false);
+
+  useEffect(() => {
+    if (claim) {
+      setIsClaiming(false);
+    }
+  }, [claim]);
+
+  if (!claim) return null;
+
+  const handleConfirm = () => {
+    if (isClaiming) return;
+    setIsClaiming(true);
+    setTimeout(() => {
+      onConfirm();
+    }, 1200);
+  };
+
+  const nextDiscount = discount === 10 ? 15 : 20;
+  const isMaxTier = discount >= 20;
+
+  return (
+    <div className="modal-overlay open" id="claim-confirm-modal">
+      <div className={`claim-confirm-content ${isClaiming ? 'modal-claiming' : ''}`}>
+        <button className="claim-confirm-close-btn" onClick={onCancel} disabled={isClaiming}>&times;</button>
+        
+        {/* Title */}
+        <h3 className="claim-confirm-title">Ready to lock it in?</h3>
+
+        {/* Current Reward Display */}
+        <div className="claim-confirm-reward-display">
+          <div className="claim-confirm-reward-value">{discount}% OFF</div>
+          <div className="claim-confirm-reward-subtitle">You’ve unlocked this reward.</div>
+        </div>
+
+        {/* Decision Description Text */}
+        <div className="claim-confirm-body">
+          {!isMaxTier && (
+            <p>Or keep earning points<br />for a chance at <strong>{nextDiscount}% OFF</strong>.</p>
+          )}
+          <p className="claim-confirm-round-complete">Once claimed,<br />this round is complete.</p>
+        </div>
+
+        <div className="claim-confirm-actions">
+          <button 
+            className={`btn-claim-confirm-yes ${isClaiming ? 'claiming' : ''}`} 
+            id="claim-confirm-btn"
+            onClick={handleConfirm}
+            disabled={isClaiming}
+          >
+            {isClaiming ? (
+              <>
+                <span className="claiming-spinner"></span>
+                Locking In...
+              </>
+            ) : (
+              `Lock In ${discount}% OFF`
+            )}
+          </button>
+          <button 
+            className="btn-claim-confirm-cancel" 
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onCancel();
+            }}
+            disabled={isClaiming}
+          >
+            {isMaxTier ? 'Go Back' : 'Go for More OFF'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2356,7 +2942,7 @@ function TearCanvas({ active, isBestOffer, onComplete }) {
         ctx.closePath();
         ctx.clip();
         
-        drawButtonBase(ctx, isBestOffer ? 'CLAIM NOW' : 'USE NOW');
+        drawButtonBase(ctx, 'CLAIM NOW');
         ctx.restore();
 
         ctx.save();
@@ -2372,7 +2958,7 @@ function TearCanvas({ active, isBestOffer, onComplete }) {
         ctx.clip();
 
         ctx.translate(-x_tear, 0);
-        drawButtonBase(ctx, isBestOffer ? 'CLAIM NOW' : 'USE NOW');
+        drawButtonBase(ctx, 'CLAIM NOW');
         ctx.restore();
 
         fallX = x_tear;
@@ -2414,7 +3000,7 @@ function TearCanvas({ active, isBestOffer, onComplete }) {
           ctx.clip();
 
           ctx.translate(-W, 0);
-          drawButtonBase(ctx, isBestOffer ? 'CLAIM NOW' : 'USE NOW');
+          drawButtonBase(ctx, 'CLAIM NOW');
           ctx.restore();
         }
       }
@@ -2527,7 +3113,7 @@ const ReceiptPrinter = memo(function ReceiptPrinter({ unlockedCoupon, colors, on
       
       <div className="printer-buttons">
         <button className="btn-printer-primary" id="btn-receipt-use" onClick={onUse}>
-          Use Now
+          Claim Now
         </button>
         <button className="btn-printer-secondary" id="btn-receipt-accumulate" onClick={onAccumulate}>
           Keep Accumulating Points
@@ -2537,7 +3123,10 @@ const ReceiptPrinter = memo(function ReceiptPrinter({ unlockedCoupon, colors, on
   );
 });
 
-function ZoomFlipCard({ coupon, colors, rect, phase, isBestOffer, copyState, onClose, onCopy }) {
+function ZoomFlipCard({ coupon, colors, rect, phase, copyState, onClose, onCopy }) {
+  const canvasRef = useRef(null);
+  const [scratched, setScratched] = useState(false);
+
   const containerStyle = {
     ...(rect ? {
       left: `${rect.left}px`,
@@ -2545,77 +3134,218 @@ function ZoomFlipCard({ coupon, colors, rect, phase, isBestOffer, copyState, onC
       width: `${rect.width}px`,
       height: `${rect.height}px`
     } : {}),
-    ...(isBestOffer ? {} : couponColorVars(colors))
+    ...couponColorVars(colors)
   };
 
   const isZoomed = phase === 'zoomed' || phase === 'flipped';
   const isFlipped = phase === 'flipped';
 
+  useEffect(() => {
+    if (phase !== 'flipped') {
+      setScratched(false);
+    }
+  }, [phase]);
+
+  useEffect(() => {
+    if (phase !== 'flipped' || !canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    
+    // Set display size based on container bounding rect
+    const width = canvas.parentElement.clientWidth || 260;
+    const height = canvas.parentElement.clientHeight || 76;
+    canvas.width = width;
+    canvas.height = height;
+
+    // Draw Gold Foil Background
+    const grad = ctx.createLinearGradient(0, 0, width, height);
+    grad.addColorStop(0, '#dfbe74');
+    grad.addColorStop(0.35, '#ca9d4c');
+    grad.addColorStop(0.7, '#e8cf96');
+    grad.addColorStop(1, '#ab7b2b');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, width, height);
+
+    // Draw metallic brush noise/glitter texture
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+    for (let i = 0; i < 200; i++) {
+      ctx.fillRect(Math.random() * width, Math.random() * height, Math.random() * 3 + 1, Math.random() * 2 + 1);
+    }
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+    for (let i = 0; i < 200; i++) {
+      ctx.fillRect(Math.random() * width, Math.random() * height, Math.random() * 2 + 1, Math.random() * 2 + 1);
+    }
+
+    // Scratch Animation
+    let animationFrameId;
+    const duration = 1800; // 1.8 seconds scratch-off
+    const startTime = performance.now();
+    const particles = [];
+
+    const animate = (time) => {
+      const elapsed = time - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Current X position of scratch brush (scratches from left to right)
+      // We start slightly off-screen left and go slightly off-screen right
+      const x = -30 + progress * (width + 60);
+      
+      // Wobble y to make it look organic (brush strokes)
+      const y = height / 2 + Math.sin(progress * Math.PI * 6) * 10;
+
+      // Draw destination-out circles to scratch off the gold layer
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-out';
+      
+      // Draw a main clear circle
+      ctx.beginPath();
+      ctx.arc(x, y, 28, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Draw minor offset circles for irregular brush edges
+      ctx.beginPath();
+      ctx.arc(x - 8, y + (Math.sin(progress * 15) * 6), 20, 0, Math.PI * 2);
+      ctx.arc(x + 8, y - (Math.cos(progress * 12) * 6), 18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Spawn falling gold foil particles at the scratch head!
+      if (progress < 0.95 && Math.random() < 0.7) {
+        for (let j = 0; j < 3; j++) {
+          particles.push({
+            x: x + (Math.random() - 0.5) * 20,
+            y: y + (Math.random() - 0.5) * 20,
+            vx: -1.5 - Math.random() * 2, // fly left/backward
+            vy: -2 + Math.random() * 4, // fly vertical
+            size: Math.random() * 3 + 2,
+            life: 1.0,
+            color: Math.random() > 0.5 ? '#ca9d4c' : '#dfbe74'
+          });
+        }
+      }
+
+      // Update and Draw Particles
+      if (particles.length > 0) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-over';
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += 0.25; // gravity
+          p.life -= 0.03;
+
+          if (p.life <= 0) {
+            particles.splice(i, 1);
+          } else {
+            ctx.fillStyle = p.color;
+            ctx.globalAlpha = p.life;
+            ctx.fillRect(p.x, p.y, p.size, p.size);
+          }
+        }
+        ctx.restore();
+      }
+
+      if (progress < 1 || particles.length > 0) {
+        animationFrameId = requestAnimationFrame(animate);
+      } else {
+        setScratched(true);
+      }
+    };
+
+    animationFrameId = requestAnimationFrame(animate);
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [phase]);
+
   return (
     <>
       <div className={`zoom-overlay ${phase === 'init' ? 'closing' : ''}`} onClick={onClose} />
+      
+      {/* Outside close button positioned relative to the card's bounding rect */}
+      {isZoomed && (
+        <button 
+          className="zoom-outside-close-btn" 
+          onClick={onClose} 
+          aria-label="Close"
+          style={{
+            position: 'fixed',
+            left: rect ? `${rect.left + rect.width - 14}px` : '50%',
+            top: rect ? `${rect.top - 14}px` : '50%',
+            transform: rect ? 'none' : 'translate(146px, -236px)',
+            zIndex: 105
+          }}
+        >
+          &times;
+        </button>
+      )}
+
       <div
         className={`zoom-card-container ${isZoomed ? 'zoomed' : ''}`}
         style={containerStyle}
       >
         <div className={`zoom-card-inner ${isFlipped ? 'flipped' : ''}`}>
           {/* Front: coupon face clone */}
-          <div className={`zoom-card-front ${isBestOffer ? 'best-offer-face' : ''}`}>
+          <div className="zoom-card-front">
             <span className="front-kicker">Unlocked Offer</span>
             <span className="front-value">{coupon.num}<small>%</small></span>
             <span className="front-label">COUPON</span>
             <span className="front-subtitle">Sitewide · No minimum</span>
           </div>
 
-          {/* Back: Kristalina-style redeem ticket */}
-          <div className="zoom-card-back">
-            <button className="zoom-back-close" onClick={onClose} aria-label="Close">×</button>
-
-            <div className="kt-ticket">
-              <div className="kt-top">
-                <div className="kt-brand">Ritual</div>
-                <div className="kt-cupom"></div>
-                <div className="kt-percent">{coupon.num}<span className="kt-pct">%</span></div>
-                <div className="kt-off">OFF</div>
-              </div>
-
-              <div className="kt-divider">
-                <span className="kt-dline" />
-              </div>
-
-              <div className="kt-bottom">
-                <div className="kt-code-row">
-                  <span className="kt-utilize">Utilize:</span>
-                  <span className="kt-code">{coupon.code}</span>
-                  <button
-                    className={`kt-copy ${copyState === 'Copied!' ? 'copied' : ''}`}
-                    onClick={onCopy}
-                    aria-label="Copy code"
-                    title="Copy code"
-                  >
+          {/* Back: Scratch Card Ticket */}
+          <div className="zoom-card-back scratch-ticket-back">
+            <div className="scratch-ticket-container">
+              <div className="scratch-header">UNLOCKED OFFER</div>
+              <div className="scratch-value">{coupon.num}% OFF</div>
+              <div className="scratch-subtitle">Sitewide · No minimum</div>
+              <div className="scratch-dotted-divider"></div>
+              
+              <div className="scratch-instruction">Scratch to reveal your code</div>
+              
+              <div className="scratch-area">
+                <div className="scratch-code-container">
+                  <span className="scratch-code">{coupon.code}</span>
+                  <button className="scratch-code-copy-btn" onClick={onCopy} type="button" title="Copy code">
                     {copyState === 'Copied!' ? (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M5 13l4 4L19 7" />
-                      </svg>
+                      <span className="scratch-copied-badge">Copied ✓</span>
                     ) : (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="9" y="9" width="11" height="11" rx="2" />
-                        <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                       </svg>
                     )}
                   </button>
                 </div>
-                <div className="kt-hint">on your first order.</div>
-                <button
-                  className="kt-visit"
-                  onClick={() => window.open('https://ritual.com', '_blank', 'noopener')}
+                <canvas 
+                  className="scratch-canvas" 
+                  ref={canvasRef}
+                  style={{ display: scratched ? 'none' : 'block' }}
+                ></canvas>
+              </div>
+
+              <div className="scratch-actions">
+                <button 
+                  className="scratch-btn-use" 
+                  onClick={() => {
+                    window.open('https://ritual.com', '_blank', 'noopener');
+                    onClose();
+                  }}
+                  type="button"
                 >
-                  <span>Shop at RITUAL.COM</span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M7 17 17 7" />
-                    <path d="M8 7h9v9" />
-                  </svg>
+                  <span className="coin-icon">¢</span>
+                  <span>Use This Code</span>
                 </button>
+              </div>
+
+              <div className="scratch-lock-footer">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+                </svg>
+                <span>Your coupon is already locked in.</span>
               </div>
             </div>
           </div>

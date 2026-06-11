@@ -924,6 +924,27 @@ body {
   padding: 14px;
 }
 
+/* 确认领取弹窗:必须盖在首登欢迎流(z-index 120/130)之上 */
+#claim-confirm-modal.modal-overlay {
+  z-index: 240;
+  background-color: rgba(15, 18, 14, 0.62) !important;
+  backdrop-filter: blur(4px) saturate(1.1) !important;
+  -webkit-backdrop-filter: blur(4px) saturate(1.1) !important;
+  transition: opacity 0.35s ease;
+}
+
+.claim-confirm-lead { font-size: 0.95rem; color: #2d332b; margin-bottom: 6px; }
+.claim-confirm-lead b { color: var(--brand-primary); font-weight: 800; }
+.claim-confirm-sub { font-size: 0.82rem; color: #7c8877; margin-bottom: 18px; line-height: 1.5; }
+
+/* 确认领取弹窗的「再想想」取消按钮 */
+.claim-cancel-btn {
+  margin-top: 10px;
+  background-color: transparent;
+  color: #6b6b6b;
+}
+.claim-cancel-btn:hover { background-color: #f3f6f2; }
+
 /* ============ Challenges ============ */
 .challenges-swiper {
   display: flex;
@@ -1511,12 +1532,28 @@ body {
 }
 
 /* Survey */
+.survey-progress-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.survey-step-indicator {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--brand-primary, #5c6e58);
+  white-space: nowrap;
+  min-width: 28px;
+}
+
 .survey-progress-bar {
+  flex: 1;
   height: 4px;
   background-color: var(--bg-color);
   border-radius: 2px;
   overflow: hidden;
-  margin-bottom: 20px;
 }
 
 .survey-progress-fill {
