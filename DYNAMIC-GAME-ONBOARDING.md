@@ -93,12 +93,13 @@ curl -s -X POST "http://localhost:3001/api/fc/session/complete" \
     \"durationSeconds\":25
   }" | jq
 
-# redeem (campaignId fallback from plan)
+# redeem (campaignId must come from available API — ladder[].campaignId or targetCampaignId)
 curl -s -X POST "http://localhost:3001/api/fc/coupons/redeem" \
   -H "content-type: application/json" \
   -d "{
+    \"touchId\":\"YOUR_TOUCH_ID\",
     \"rewardPlanId\":\"$(jq -r '.rewardPlanId' /tmp/fc-plan.json)\",
-    \"campaignId\":\"$(jq -r '.targetCampaignId // .currentCampaignId // .campaignId' /tmp/fc-plan.json)\"
+    \"campaignId\":\"$(jq -r '.targetCampaignId // .ladder[0].campaignId' /tmp/fc-plan.json)\"
   }" | jq
 ```
 

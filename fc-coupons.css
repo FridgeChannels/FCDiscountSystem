@@ -2083,7 +2083,7 @@
   top: 38%;
   left: 50%;
   transform: translate(-50%, -50%);
-  z-index: 125;
+  z-index: 110;
   pointer-events: none;
   display: flex;
   flex-direction: column;

@@ -48,10 +48,7 @@ export default function DevToolbar({ activeScene, onSelectScene, onResetFirstLog
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ color: '#9fe1cb', letterSpacing: 1 }}>DEV</span>
         {activeScene ? (
-          <span style={{ color: '#b8c7b8' }}>
-            scene=
-            {activeScene}
-          </span>
+          <span style={{ color: '#b8c7b8' }}>scene={activeScene}</span>
         ) : (
           <span style={{ color: '#7a8a7a' }}>live API</span>
         )}

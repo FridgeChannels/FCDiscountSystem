@@ -30,6 +30,11 @@ const RulesFooter = memo(
 
 const INITIAL_SECONDS = 2 * 24 * 3600 + 4 * 3600 + 55 * 60;
 const DEFAULT_TOUCH_ID = 'A8SQN3V2OW';
+const DEV_SCENE_TAP = {
+  intro: { pending: 5, points: 0 },
+  welcome: { pending: 5, points: 0 },
+  'return-visit': { pending: 5, points: 10 },
+};
 
 /** 将 BFF/引擎错误文案转为用户可读提示 */
 function formatFcError(err, fallback = 'Please try again') {
@@ -61,6 +66,16 @@ function getTouchId() {
   if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]);
 
   return readRememberedTouchId() || DEFAULT_TOUCH_ID;
+}
+
+/** 非首次回访:有 welcome 标记、已领券缓存、或历史 plan 缓存 */
+function isReturnVisitor(touchId) {
+  if (!touchId) return false;
+  return (
+    readWelcomeCompleted(touchId) ||
+    !!readClaimedCode(touchId) ||
+    !!readCachedRewardPlan(touchId)
+  );
 }
 
 /** 随 URL /p/:touchId 变化更新(含 bfcache 返回) */
@@ -225,6 +240,12 @@ export default function App() {
   const pointsTweenRef = useRef(null);
   const pointsRef = useRef(0);
   const prevCountdownRef = useRef(null);
+  const pendingTapRewardRef = useRef(0);
+  const playPendingTapRewardRef = useRef(() => {});
+  const returnIntroShownRef = useRef(false);
+  const returnIntroPendingRef = useRef(false);
+  const devPreviewActiveRef = useRef(false);
+  const devSceneRef = useRef('');
 
   const touchId = useTouchId();
   const [devScene, setDevScene] = useState(() => getDevScene());
@@ -237,7 +258,7 @@ export default function App() {
   const [gameModalTitle, setGameModalTitle] = useState('Play & Earn');
   const [gameLoadingMessage, setGameLoadingMessage] = useState('Preparing game…');
   const [surveyAnswers, setSurveyAnswers] = useState([]);
-  const [welcomeStep, setWelcomeStep] = useState(0);
+  const [welcomeStep, setWelcomeStep] = useState(() => (isReturnVisitor(getTouchId()) ? 3 : 0));
   const [welcomeTargetPoints, setWelcomeTargetPoints] = useState(67);
   const [points, setPoints] = useState(0);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -257,7 +278,8 @@ export default function App() {
   const [showReceipt, setShowReceipt] = useState(false);
   const [pendingPoints, setPendingPoints] = useState(0);
   const [redeemingCoupon, setRedeemingCoupon] = useState(false);
-  const [introActive, setIntroActive] = useState(false);
+  const [introActive, setIntroActive] = useState(() => isReturnVisitor(getTouchId()));
+  const [returnIntroGate, setReturnIntroGate] = useState(() => isReturnVisitor(getTouchId()));
   const closeIntro = useCallback(() => setIntroActive(false), []);
   const [hasInitialDiscount, setHasInitialDiscount] = useState(false);
 
@@ -313,9 +335,9 @@ export default function App() {
     setDailyCapReached(vm.dailyCapReached);
     setHasInitialDiscount(vm.hasInitialDiscount);
     setWelcomeTargetPoints(vm.points);
-    setPoints(vm.points);
 
     if (devPreview) {
+      setPoints(vm.points);
       if (vm.brand.primaryColor) {
         document.documentElement.style.setProperty('--brand-primary', vm.brand.primaryColor);
       }
@@ -324,13 +346,63 @@ export default function App() {
 
     const welcomeDone = readWelcomeCompleted(touchId);
     const welcomeInProgress = vm.hasInitialDiscount && !welcomeDone;
-    if (welcomeInProgress) {
-      // 礼盒仅首屏展示;用户打开 Welcome 后不再回退到 intro
-      setIntroActive(welcomeStep === 0);
+    const storedClaim = readClaimedCode(touchId);
+    const redeemedMatch =
+      (vm.recentlyRedeemedCoupon &&
+        storedClaim &&
+        vm.recentlyRedeemedCoupon.couponCode === storedClaim) ||
+      vm.couponRedeemed;
+    const tapAwarded = vm.tapReward?.awarded ?? 0;
+    const tapFxKey = `fc_tap_fx_${touchId}`;
+    const tapFxPlayed = sessionStorage.getItem(tapFxKey);
+    const blocksTapReward =
+      fromCache ||
+      tapAwarded <= 0 ||
+      vm.cycleExpired ||
+      redeemedMatch ||
+      !!storedClaim;
+
+    if (!blocksTapReward) {
+      if (welcomeInProgress) {
+        pendingTapRewardRef.current = tapAwarded;
+        setPoints(Math.max(0, vm.points - tapAwarded));
+      } else if (welcomeDone && !tapFxPlayed) {
+        pendingTapRewardRef.current = tapAwarded;
+        setPoints(Math.max(0, vm.points - tapAwarded));
+      } else {
+        setPoints(vm.points);
+      }
     } else {
+      setPoints(vm.points);
+    }
+
+    const isReturnVisit =
+      welcomeDone ||
+      !!storedClaim ||
+      returnIntroPendingRef.current;
+    const shouldShowReturnIntro =
+      isReturnVisit &&
+      !welcomeInProgress &&
+      !fromCache &&
+      !vm.cycleExpired &&
+      !redeemedMatch &&
+      !returnIntroShownRef.current;
+
+    if (welcomeInProgress) {
+      setIntroActive(welcomeStep === 0);
+    } else if (shouldShowReturnIntro || returnIntroPendingRef.current) {
+      // 非首次回访:礼盒与 plan 并行,结束后再进首页
+      if (!welcomeDone) writeWelcomeCompleted(touchId);
+      setWelcomeStep(3);
+      setIntroActive(true);
+      setReturnIntroGate(true);
+      returnIntroPendingRef.current = true;
+    } else if (!returnIntroPendingRef.current) {
       setIntroActive(false);
+      setReturnIntroGate(false);
       if (!vm.hasInitialDiscount) {
         setWelcomeStep(3);
+        if (!welcomeDone) writeWelcomeCompleted(touchId);
       }
     }
 
@@ -338,25 +410,24 @@ export default function App() {
       document.documentElement.style.setProperty('--brand-primary', vm.brand.primaryColor);
     }
 
-    const storedClaim = readClaimedCode(touchId);
-    const redeemedMatch =
-      (vm.recentlyRedeemedCoupon &&
-        storedClaim &&
-        vm.recentlyRedeemedCoupon.couponCode === storedClaim) ||
-      vm.couponRedeemed;
-
     // 过渡页仅在权威 plan 同步时更新,避免缓存 plan 误触发 expired NC
     if (!fromCache) {
       if (redeemedMatch && storedClaim) {
         clearClaimedCode(touchId);
         setClaimedCode(null);
         setNewChallenge({ reason: 'redeemed' });
+        setIntroActive(false);
+        setReturnIntroGate(false);
+        returnIntroPendingRef.current = false;
       } else if (vm.cycleExpired && !welcomeInProgress) {
         if (storedClaim) {
           clearClaimedCode(touchId);
           setClaimedCode(null);
         }
         setNewChallenge((prev) => prev ?? { reason: 'expired' });
+        setIntroActive(false);
+        setReturnIntroGate(false);
+        returnIntroPendingRef.current = false;
       } else {
         setNewChallenge((prev) => {
           if (!vm.cycleExpired && prev?.reason === 'expired') return null;
@@ -371,22 +442,6 @@ export default function App() {
     } else if (vm.couponClaimed && vm.claimedCouponCode) {
       writeClaimedCode(touchId, vm.claimedCouponCode);
       setClaimedCode(vm.claimedCouponCode);
-    }
-
-    const tapAwarded = vm.tapReward?.awarded ?? 0;
-    if (
-      !fromCache &&
-      tapAwarded > 0 &&
-      welcomeDone &&
-      !storedClaim &&
-      !vm.cycleExpired &&
-      !redeemedMatch
-    ) {
-      const fxKey = `fc_tap_fx_${touchId}`;
-      if (!sessionStorage.getItem(fxKey)) {
-        sessionStorage.setItem(fxKey, '1');
-        window.setTimeout(() => triggerLoginBonusAnimation(tapAwarded), 200);
-      }
     }
 
     return vm;
@@ -441,6 +496,20 @@ export default function App() {
         viewportRef,
       },
     });
+
+    const devTap = DEV_SCENE_TAP[sceneId];
+    if (devTap) {
+      pendingTapRewardRef.current = devTap.pending;
+      setPoints(devTap.points);
+    }
+
+    if (sceneId === 'return-visit') {
+      returnIntroPendingRef.current = true;
+      returnIntroShownRef.current = false;
+      setReturnIntroGate(true);
+    } else {
+      setReturnIntroGate(false);
+    }
   }, [
     clearGameSessionCache,
     syncFromPlan,
@@ -448,6 +517,14 @@ export default function App() {
   ]);
 
   const reloadPlan = useCallback(async () => {
+    if (devPreviewActiveRef.current) {
+      const resolved = resolveDevScene(devSceneRef.current || 'home');
+      if (resolved) {
+        syncFromPlan(resolved.plan, { devPreview: true });
+        return resolved.plan;
+      }
+    }
+
     const plan = await fetchRewardPlan(touchId);
     clearGameSessionCache();
     writeCachedRewardPlan(touchId, plan);
@@ -457,6 +534,22 @@ export default function App() {
 
   // 领取:调用 redeem 发券(方案 A — cycle 保持 active),写入锁态。
   const issueClaimedCoupon = useCallback(async (coupon) => {
+    if (devPreviewActiveRef.current) {
+      const code = coupon?.code || `DEV${coupon?.num ?? '15'}`;
+      writeClaimedCode(touchId, code);
+      setClaimedCode(code);
+      setDiscounts((prev) =>
+        prev.map((item) =>
+          item.campaignId === coupon?.campaignId ||
+          String(item.num) === String(coupon?.num) ||
+          item.tier === coupon?.tier
+            ? { ...item, code }
+            : item,
+        ),
+      );
+      return code;
+    }
+
     if (!rewardPlanId) throw new Error('Reward plan is not ready yet');
     const campaignId = coupon?.campaignId;
     if (!campaignId) throw new Error('No campaign for this coupon tier');
@@ -503,22 +596,10 @@ export default function App() {
   }, []);
 
   const handleWelcomeEarnMore = useCallback(async () => {
-    try {
-      const plan = await reloadPlan();
-      const vm = mapPlanToViewModel(plan);
-      const awarded = vm.tapReward?.awarded ?? 0;
-      setWelcomeStep(2);
-      if (awarded > 0) {
-        window.setTimeout(() => triggerLoginBonusAnimation(awarded), 300);
-      }
-    } catch (err) {
-      dbgError('[FCDBG][App] welcome earn more failed', err);
-      showNotification(
-        'Could not load rewards',
-        formatFcError(err, 'Please try again.'),
-        '⚠️',
-      );
-    }
+    setWelcomeStep(2);
+    reloadPlan().catch((err) => {
+      dbgError('[FCDBG][App] welcome earn more reload failed', err);
+    });
   }, [reloadPlan]);
 
   const preloadGameStart = useCallback((challenge) => {
@@ -610,16 +691,30 @@ export default function App() {
       };
     }
 
-    setWelcomeStep(readWelcomeCompleted(touchId) ? 3 : 0);
+    const returnVisitorOnEntry = isReturnVisitor(touchId);
+    setWelcomeStep(returnVisitorOnEntry ? 3 : 0);
     setClaimedCode(readClaimedCode(touchId));
     setNewChallenge(null);
-    setIntroActive(false);
     setPlanLoading(true);
     setPlanError(null);
     setRewardPlanId(null);
     clearGameSessionCache();
 
     rememberTouchId(touchId);
+    returnIntroShownRef.current = false;
+    returnIntroPendingRef.current = false;
+
+    // 非首次 tap:立即播回访礼盒,与 plan 请求并行
+    if (returnVisitorOnEntry) {
+      if (!readWelcomeCompleted(touchId)) writeWelcomeCompleted(touchId);
+      returnIntroPendingRef.current = true;
+      setReturnIntroGate(true);
+      setWelcomeStep(3);
+      setIntroActive(true);
+    } else {
+      setReturnIntroGate(false);
+      setIntroActive(false);
+    }
 
     preloadRuntimeManifest(touchId).catch((err) => {
       dbgError('[FCDBG][App] runtime manifest preload failed', err);
@@ -706,7 +801,7 @@ export default function App() {
     setNewChallenge(null);
   }
 
-  // 「新挑战开启页」CTA:轻量进入首页(不 replay Welcome/礼盒)
+  // 「新挑战开启页」CTA:与首次登录相同, replay 礼盒 → 欢迎流 → 首页 → +5
   async function handleStartNewChallenge() {
     const reason = newChallenge?.reason ?? 'expired';
     setNewChallenge(null);
@@ -719,10 +814,16 @@ export default function App() {
       if (reason === 'expired') {
         await renewCycle(touchId, 'expired');
       }
-      await reloadPlan();
-      setWelcomeStep(3);
-      setIntroActive(false);
+      clearWelcomeCompleted(touchId);
       sessionStorage.removeItem(`fc_tap_fx_${touchId}`);
+      pendingTapRewardRef.current = 0;
+      returnIntroShownRef.current = false;
+      returnIntroPendingRef.current = false;
+      setReturnIntroGate(false);
+      setWelcomeStep(0);
+      setPoints(0);
+      setIntroActive(true);
+      await reloadPlan();
     } catch (err) {
       dbgError('[FCDBG][App] start new challenge failed', err);
       setNewChallenge({ reason });
@@ -760,7 +861,36 @@ export default function App() {
     if (tearTimerRef.current) window.clearTimeout(tearTimerRef.current);
   }, []);
 
-function triggerLoginBonusAnimation(pts) {
+  const playPendingTapReward = useCallback(() => {
+    const pts = pendingTapRewardRef.current;
+    if (!pts || pts <= 0) return;
+    const fxKey = `fc_tap_fx_${touchId}`;
+    if (sessionStorage.getItem(fxKey)) return;
+    sessionStorage.setItem(fxKey, '1');
+    pendingTapRewardRef.current = 0;
+    triggerLoginBonusAnimation(pts);
+  }, [touchId]);
+
+  const finishReturnIntro = useCallback(() => {
+    returnIntroShownRef.current = true;
+    returnIntroPendingRef.current = false;
+    setReturnIntroGate(false);
+    setIntroActive(false);
+  }, []);
+
+  // 回访礼盒结束且首页就绪后再播 +5(不在 intro 期间触发)
+  useEffect(() => {
+    if (introActive || planLoading) return undefined;
+    if (!returnIntroShownRef.current) return undefined;
+    if (!pendingTapRewardRef.current) return undefined;
+    const fxKey = `fc_tap_fx_${touchId}`;
+    if (sessionStorage.getItem(fxKey)) return undefined;
+
+    const timer = window.setTimeout(() => playPendingTapReward(), 280);
+    return () => window.clearTimeout(timer);
+  }, [introActive, planLoading, playPendingTapReward, touchId]);
+
+  function triggerLoginBonusAnimation(pts) {
     const viewport = viewportRef.current;
     if (!viewport) return;
 
@@ -883,7 +1013,11 @@ function triggerLoginBonusAnimation(pts) {
     if (welcomeStep < 3) {
       setWelcomeStep(3);
       writeWelcomeCompleted(touchId);
-      tweenPointsTo(welcomeTargetPoints);
+      if (pendingTapRewardRef.current > 0) {
+        playPendingTapRewardRef.current();
+      } else {
+        tweenPointsTo(welcomeTargetPoints);
+      }
     }
 
     if (showReceipt) {
@@ -1399,6 +1533,7 @@ function triggerLoginBonusAnimation(pts) {
     }
     setZoomPhase('flipped');
     setZoomActive(true);
+    window.setTimeout(() => playPendingTapRewardRef.current(), 400);
   }, [current, issueClaimedCoupon, welcomeStep]);
 
   function handleTearComplete() {
@@ -1629,6 +1764,13 @@ function triggerLoginBonusAnimation(pts) {
     });
   }
 
+  playPendingTapRewardRef.current = playPendingTapReward;
+  devSceneRef.current = devScene;
+  devPreviewActiveRef.current = Boolean(devScene);
+
+  const isReturnIntro = introActive && welcomeStep >= 3;
+  const showHome = !introActive && !planLoading && !returnIntroGate;
+
   return (
     <div
       className="mobile-viewport"
@@ -1637,9 +1779,9 @@ function triggerLoginBonusAnimation(pts) {
       style={brand.primaryColor ? { '--brand-primary': brand.primaryColor } : undefined}
     >
       <canvas id="confetti-canvas" ref={canvasRef} />
-      {introActive && hasInitialDiscount && (
+      {introActive && (hasInitialDiscount || isReturnIntro) && (
         <BrandIntro 
-          onComplete={closeIntro} 
+          onComplete={welcomeStep < 3 ? closeIntro : finishReturnIntro}
           brand={brand} 
           isWelcome={welcomeStep < 3}
           onOpenPackage={() => {
@@ -1649,12 +1791,15 @@ function triggerLoginBonusAnimation(pts) {
         />
       )}
 
-      <Header brand={brand} />
-      {(planLoading || planError) && (
+      {(planLoading || planError) && !introActive && !returnIntroGate && (
         <div className={`reward-sync-status ${planError ? 'error' : ''}`} role="status">
           {planError ? 'Using saved rewards. Refresh failed.' : 'Refreshing rewards…'}
         </div>
       )}
+
+      {showHome && (
+      <>
+      <Header brand={brand} />
 
       <main className="content-area">
         {showBestOffer ? (
@@ -1714,7 +1859,10 @@ function triggerLoginBonusAnimation(pts) {
           </>
         )}
       </main>
+      </>
+      )}
 
+      {showHome && (
       <CouponDrawer
         open={drawerOpen}
         current={current}
@@ -1725,6 +1873,7 @@ function triggerLoginBonusAnimation(pts) {
         onCopy={handleCopyCode}
         onShop={handleShopNow}
       />
+      )}
 
       <PlatformGameModal
         open={activeModal === 'platform-game'}
@@ -1759,7 +1908,10 @@ function triggerLoginBonusAnimation(pts) {
       {import.meta.env.DEV && (
         <DevToolbar
           activeScene={devScene}
-          onSelectScene={setDevScene}
+          onSelectScene={(sceneId) => {
+            navigateToDevScene(sceneId);
+            setDevScene(sceneId);
+          }}
           onResetFirstLogin={() => {
             if (devScene) {
               navigateToDevScene('intro');
@@ -1804,7 +1956,11 @@ function triggerLoginBonusAnimation(pts) {
           onComplete={() => {
             setWelcomeStep(3);
             writeWelcomeCompleted(touchId);
-            tweenPointsTo(welcomeTargetPoints);
+            if (pendingTapRewardRef.current > 0) {
+              playPendingTapReward();
+            } else {
+              tweenPointsTo(welcomeTargetPoints);
+            }
           }}
         />
       )}

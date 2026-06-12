@@ -35,7 +35,7 @@ function basePlan(overrides = {}) {
     policyVersion: 'dev-1',
     magnetId: 5001,
     customerId: 1001,
-    campaignId: 'camp_dev',
+    engineCampaignId: 'camp_dev',
     cycleId: 'cycle_dev',
     cycleDurationDays: 7,
     cycleExpiresAt: isoAfter(3 * 24 * 3600 * 1000),
@@ -82,7 +82,19 @@ function basePlan(overrides = {}) {
 export const DEV_FIXTURES = {
   intro: () => basePlan({ pointsBalance: 0, currentTier: 1 }),
 
-  welcome: () => basePlan({ pointsBalance: 0, currentTier: 1 }),
+  welcome: () =>
+    basePlan({
+      pointsBalance: 5,
+      currentTier: 1,
+      tapReward: { awarded: 5, available: true, reasonCodes: ['TAP_REWARD_GRANTED'] },
+    }),
+
+  returnVisit: () =>
+    basePlan({
+      pointsBalance: 15,
+      currentTier: 1,
+      tapReward: { awarded: 5, available: true, reasonCodes: ['TAP_REWARD_GRANTED'] },
+    }),
 
   home: () => basePlan({ pointsBalance: 45, currentTier: 1 }),
 

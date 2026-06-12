@@ -43,6 +43,17 @@ export const DEV_SCENES = [
     ui: { welcomeStep: 1, introActive: false, clearWelcome: true, clearClaimed: true },
   },
   {
+    id: 'return-visit',
+    label: '回访礼盒',
+    fixture: DEV_FIXTURES.returnVisit,
+    ui: {
+      welcomeStep: 3,
+      introActive: true,
+      setWelcomeCompleted: true,
+      clearClaimed: true,
+    },
+  },
+  {
     id: 'home',
     label: '首页',
     fixture: DEV_FIXTURES.home,
