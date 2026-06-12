@@ -17,6 +17,16 @@ export function secondsUntil(iso) {
   return Math.max(0, Math.floor(ms / 1000));
 }
 
+/** ladder 第一档 pointsThreshold=0 且有有效折扣值 → 有初始折扣(需 Welcome 流) */
+export function deriveHasInitialDiscount(ladder) {
+  const sorted = [...(ladder ?? [])].sort((a, b) => a.tier - b.tier);
+  const first = sorted[0];
+  if (!first) return false;
+  const value = first.discountValue;
+  const hasValue = value != null && value !== '' && value !== '0';
+  return first.pointsThreshold === 0 && hasValue;
+}
+
 export function mapPlanToViewModel(plan) {
   const ladder = [...plan.ladder].sort((a, b) => a.tier - b.tier);
   const currentCoupon = plan.currentCoupon;
@@ -28,13 +38,11 @@ export function mapPlanToViewModel(plan) {
     target: step.pointsThreshold,
     code: (() => {
       if (!currentCoupon) return '';
-      // 新链路优先以 campaignId 对齐，避免 tier 变动导致券码贴错卡位。
       if (currentCoupon.campaignId && step.campaignId) {
         return currentCoupon.campaignId === step.campaignId
           ? currentCoupon.couponCode
           : '';
       }
-      // 兼容回退:旧数据缺 campaignId 时继续按 tier 匹配。
       return currentCoupon.tier === step.tier ? currentCoupon.couponCode : '';
     })(),
   }));
@@ -71,13 +79,18 @@ export function mapPlanToViewModel(plan) {
     },
   ];
 
+  const countdownSeconds = secondsUntil(plan.cycleExpiresAt);
+  const cycleExpired =
+    plan.cycleStatus === 'expired' ||
+    (plan.cycleStatus !== 'redeemed' && countdownSeconds <= 0);
+
   return {
     plan,
     touchId: null,
     points: plan.pointsBalance,
     discounts,
     currentStepIndex,
-    countdownSeconds: secondsUntil(plan.cycleExpiresAt),
+    countdownSeconds,
     brand: {
       name: plan.customerBrand?.name || null,
       logoUrl: plan.customerBrand?.logoUrl,
@@ -87,10 +100,15 @@ export function mapPlanToViewModel(plan) {
     challenges,
     rewardPlanId: plan.rewardPlanId,
     dailyCapReached: plan.reasonCodes?.includes('DAILY_CAP_REACHED') ?? false,
-    // 领取/核销状态(后端字段优先,前端据此锁定/解锁最低折扣页)。
-    couponClaimed: !!(plan.currentCoupon?.claimedAt || plan.currentCoupon?.status === 'CLAIMED'),
-    couponRedeemed: !!(plan.currentCoupon?.redeemedAt || plan.currentCoupon?.status === 'REDEEMED'),
-    claimedCouponCode: plan.currentCoupon?.couponCode || null,
+    hasInitialDiscount: deriveHasInitialDiscount(ladder),
+    cycleExpired,
+    tapReward: plan.tapReward ?? null,
+    recentlyRedeemedCoupon: plan.recentlyRedeemedCoupon ?? null,
+    couponClaimed:
+      currentCoupon?.status === 'claimed' ||
+      currentCoupon?.status === 'won',
+    couponRedeemed: currentCoupon?.status === 'redeemed',
+    claimedCouponCode: currentCoupon?.couponCode || null,
   };
 }
 

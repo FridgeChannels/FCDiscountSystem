@@ -77,13 +77,6 @@ export default function IframeGameHost({ start, iframeUrl, allowedOrigin, onDone
         src={iframeSrc}
         sandbox="allow-scripts allow-same-origin"
         className="platform-game-iframe"
-        style={{
-          width: '100%',
-          minHeight: 420,
-          border: '1px solid #ddd',
-          borderRadius: 12,
-          background: '#fff',
-        }}
       />
     </div>
   );

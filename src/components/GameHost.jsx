@@ -106,11 +106,15 @@ function InlineGameHost({ start, onDone, onError }) {
     return <p className="platform-game-loading">Loading game…</p>;
   }
 
-  return createElement(Comp, {
-    gameStartPayload: normalizedStart,
-    onComplete: handleComplete,
-    onEvent: handleRuntimeEvent,
-  });
+  return (
+    <div className="inline-game-host">
+      {createElement(Comp, {
+        gameStartPayload: normalizedStart,
+        onComplete: handleComplete,
+        onEvent: handleRuntimeEvent,
+      })}
+    </div>
+  );
 }
 
 export default function GameHost({ start, onDone, onError }) {

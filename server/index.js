@@ -179,6 +179,19 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === 'POST' && url.pathname === '/api/fc/cycle/renew') {
+      const body = await readJson(req);
+      const touchId = body.touchId;
+      if (!touchId) {
+        sendJson(res, 400, { error: 'touchId required' });
+        return;
+      }
+      const data = await callEngine('/cycle/renew', body);
+      if (touchId) planCache.delete(touchId);
+      sendJson(res, 200, data);
+      return;
+    }
+
     sendJson(res, 404, { error: 'not found' });
   } catch (err) {
     sendJson(res, 400, { error: err instanceof Error ? err.message : 'request failed' });

@@ -15,8 +15,8 @@ function buildApiUrl(path) {
 // 或多个组件同时拉取 reward-plan)会复用同一个网络请求,
 // 从根上消除“接口同时请求两次”的问题。
 const inflightGets = new Map();
-let manifestCache = null;
-let manifestEtag = '';
+/** touchId -> { document, etag } */
+const manifestCacheByTouch = new Map();
 
 async function request(path, options = {}) {
   const method = options.method ?? 'GET';
@@ -87,11 +87,18 @@ export function completeGameSession(payload) {
   });
 }
 
-// 领取优惠券:用户在确认弹窗点击「确认领取」后调用,后端返回券码并标记为已领取(未核销)。
-export function claimCoupon(touchId, rewardPlanId, tier) {
-  return request('/api/fc/coupon/claim', {
+// 领取优惠券:调用 redeem 发券(方案 A — Claim 不关 cycle)
+export function claimCoupon(touchId, rewardPlanId, campaignId) {
+  return request('/api/fc/coupons/redeem', {
     method: 'POST',
-    body: JSON.stringify({ touchId, rewardPlanId, tier }),
+    body: JSON.stringify({ touchId, rewardPlanId, campaignId }),
+  });
+}
+
+export function renewCycle(touchId, reason = 'expired') {
+  return request('/api/fc/cycle/renew', {
+    method: 'POST',
+    body: JSON.stringify({ touchId, reason }),
   });
 }
 
@@ -116,24 +123,26 @@ export async function fetchGameManifest(touchId) {
   const existing = inflightGets.get(key);
   if (existing) return existing;
 
+  const cached = manifestCacheByTouch.get(touchId);
+
   const promise = (async () => {
     const res = await fetch(url, {
       headers: {
         'content-type': 'application/json',
-        ...(manifestEtag ? { 'if-none-match': manifestEtag } : {}),
+        ...(cached?.etag ? { 'if-none-match': cached.etag } : {}),
       },
     });
-    if (res.status === 304 && manifestCache) {
-      dbg('[FCDBG][API] manifest not modified');
-      return manifestCache;
+    if (res.status === 304 && cached?.document) {
+      dbg('[FCDBG][API] manifest not modified', { touchId });
+      return cached.document;
     }
 
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(json.error ?? `Request failed: ${res.status}`);
     }
-    manifestEtag = res.headers.get('etag') ?? manifestEtag;
-    manifestCache = json;
+    const etag = res.headers.get('etag') ?? cached?.etag ?? '';
+    manifestCacheByTouch.set(touchId, { document: json, etag });
     return json;
   })().finally(() => {
     inflightGets.delete(key);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
-import { claimCoupon, completeSurvey, fetchRewardPlan, redeemCoupon, startGameSession } from './api/client.js';
-import { readCachedRewardPlan, readRememberedTouchId, rememberTouchId, writeCachedRewardPlan } from './api/cache.js';
+import { claimCoupon, completeSurvey, fetchRewardPlan, redeemCoupon, renewCycle, startGameSession } from './api/client.js';
+import { readCachedRewardPlan, readRememberedTouchId, rememberTouchId, writeCachedRewardPlan, readWelcomeCompleted, writeWelcomeCompleted, readClaimedCode, writeClaimedCode, clearClaimedCode, clearWelcomeCompleted, clearLegacyMagnetStorage } from './api/cache.js';
 import { mapPlanToViewModel } from './api/mapPlan.js';
 import PlatformGameModal from './components/PlatformGameModal.jsx';
 import { dbg, dbgError } from './lib/debug.js';
@@ -21,8 +21,27 @@ const RulesFooter = memo(
 );
 
 const INITIAL_SECONDS = 2 * 24 * 3600 + 4 * 3600 + 55 * 60;
-const INTRO_REWARD_POINTS = 5;
 const DEFAULT_TOUCH_ID = 'A8SQN3V2OW';
+
+/** 将 BFF/引擎错误文案转为用户可读提示 */
+function formatFcError(err, fallback = 'Please try again') {
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  if (!msg) return fallback;
+  if (msg.includes('cycle is not expired')) {
+    return 'This challenge is still active. Refresh the page to continue.';
+  }
+  if (msg.includes('cycle is not active') || msg.includes('no active cycle')) {
+    return 'This challenge has ended. Tap Start New Challenge to begin a fresh round.';
+  }
+  if (msg.includes('COUPON_ALREADY_REDEEMED')) return 'This coupon was already used.';
+  if (msg.includes('COUPON_NOT_FOUND') || msg.includes('coupon not found')) {
+    return 'Coupon not found. Please refresh and try again.';
+  }
+  if (msg.includes('DAILY_CAP_REACHED')) {
+    return 'Daily points limit reached. Come back tomorrow for more rewards.';
+  }
+  return msg.includes(':') ? msg.split(':').slice(1).join(':').trim() || msg : msg;
+}
 
 function getTouchId() {
   const params = new URLSearchParams(window.location.search);
@@ -34,6 +53,28 @@ function getTouchId() {
   if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]);
 
   return readRememberedTouchId() || DEFAULT_TOUCH_ID;
+}
+
+/** 随 URL /p/:touchId 变化更新(含 bfcache 返回) */
+function useTouchId() {
+  const [touchId, setTouchId] = useState(getTouchId);
+
+  useEffect(() => {
+    clearLegacyMagnetStorage();
+    const sync = () => {
+      const next = getTouchId();
+      setTouchId((prev) => (prev === next ? prev : next));
+    };
+    sync();
+    window.addEventListener('popstate', sync);
+    window.addEventListener('pageshow', sync);
+    return () => {
+      window.removeEventListener('popstate', sync);
+      window.removeEventListener('pageshow', sync);
+    };
+  }, []);
+
+  return touchId;
 }
 
 const INITIAL_DISCOUNTS = [
@@ -174,10 +215,10 @@ export default function App() {
   const confettiRef = useRef({ ctx: null, particles: [], frame: null });
   const couponFaceRef = useRef(null);
   const pointsTweenRef = useRef(null);
+  const pointsRef = useRef(0);
   const prevCountdownRef = useRef(null);
-  const loginBonusGrantedRef = useRef(false);
 
-  const [touchId] = useState(getTouchId);
+  const touchId = useTouchId();
   const [planLoading, setPlanLoading] = useState(true);
   const [planError, setPlanError] = useState(null);
   const [rewardPlanId, setRewardPlanId] = useState(null);
@@ -187,14 +228,9 @@ export default function App() {
   const [gameModalTitle, setGameModalTitle] = useState('Play & Earn');
   const [gameLoadingMessage, setGameLoadingMessage] = useState('Preparing game…');
   const [surveyAnswers, setSurveyAnswers] = useState([]);
-  const [welcomeStep, setWelcomeStep] = useState(() => {
-    return localStorage.getItem('fc_welcome_completed') === 'true' ? 3 : 0;
-  });
+  const [welcomeStep, setWelcomeStep] = useState(0);
   const [welcomeTargetPoints, setWelcomeTargetPoints] = useState(67);
-  const [points, setPoints] = useState(() => {
-    const isFirstTime = localStorage.getItem('fc_welcome_completed') !== 'true';
-    return isFirstTime ? 0 : 67;
-  });
+  const [points, setPoints] = useState(0);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [countdownSeconds, setCountdownSeconds] = useState(INITIAL_SECONDS);
   const [tick, setTick] = useState(false);
@@ -205,15 +241,20 @@ export default function App() {
   const [shopLoading, setShopLoading] = useState(false);
   const [activeModal, setActiveModal] = useState(null);
   const [notification, setNotification] = useState(null);
-  const [dailyCapReached] = useState(false);
+  const [dailyCapReached, setDailyCapReached] = useState(false);
   const [targetPulse, setTargetPulse] = useState('');
   const [crediting, setCrediting] = useState(false);
   const [currentSwap, setCurrentSwap] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
   const [pendingPoints, setPendingPoints] = useState(0);
   const [redeemingCoupon, setRedeemingCoupon] = useState(false);
-  const [introActive, setIntroActive] = useState(true);
+  const [introActive, setIntroActive] = useState(false);
   const closeIntro = useCallback(() => setIntroActive(false), []);
+  const [hasInitialDiscount, setHasInitialDiscount] = useState(false);
+
+  useEffect(() => {
+    pointsRef.current = points;
+  }, [points]);
 
   useEffect(() => () => {
     if (pointsTweenRef.current) cancelAnimationFrame(pointsTweenRef.current);
@@ -246,20 +287,13 @@ export default function App() {
 
   const [discounts, setDiscounts] = useState(INITIAL_DISCOUNTS);
   // 已领取但后端未核销的券码。存在时,每次登录都强制停留在最低折扣页,直到后端标记核销。
-  const [claimedCode, setClaimedCode] = useState(() => {
-    const code = localStorage.getItem('fc_claimed_code');
-    if (code && code.includes('NaN')) {
-      localStorage.removeItem('fc_claimed_code');
-      return null;
-    }
-    return code || null;
-  });
+  const [claimedCode, setClaimedCode] = useState(null);
   // 确认领取弹窗:{ onConfirm } —— 点击「确认领取」后执行的领取动作。
   const [claimConfirm, setClaimConfirm] = useState(null);
   // 状态D · 新挑战开启过渡页:null | { reason: 'redeemed' | 'expired' }
   const [newChallenge, setNewChallenge] = useState(null);
 
-  const syncFromPlan = useCallback((plan) => {
+  const syncFromPlan = useCallback((plan, { fromCache = false } = {}) => {
     const vm = mapPlanToViewModel(plan);
     setRewardPlanId(vm.rewardPlanId);
     setDiscounts(vm.discounts.length ? vm.discounts : INITIAL_DISCOUNTS);
@@ -267,31 +301,78 @@ export default function App() {
     setCountdownSeconds(vm.countdownSeconds);
     setBrand(vm.brand);
     setChallenges(vm.challenges.length ? vm.challenges : FALLBACK_CHALLENGES);
-    
-    const isFirstTime = localStorage.getItem('fc_welcome_completed') !== 'true';
-    if (isFirstTime) {
-      setWelcomeTargetPoints(vm.points);
-      setPoints(0);
+    setDailyCapReached(vm.dailyCapReached);
+    setHasInitialDiscount(vm.hasInitialDiscount);
+    setWelcomeTargetPoints(vm.points);
+    setPoints(vm.points);
+
+    const welcomeDone = readWelcomeCompleted(touchId);
+    const welcomeInProgress = vm.hasInitialDiscount && !welcomeDone;
+    if (welcomeInProgress) {
+      // 礼盒仅首屏展示;用户打开 Welcome 后不再回退到 intro
+      setIntroActive(welcomeStep === 0);
     } else {
-      setPoints(vm.points);
+      setIntroActive(false);
+      if (!vm.hasInitialDiscount) {
+        setWelcomeStep(3);
+      }
     }
 
     if (vm.brand.primaryColor) {
       document.documentElement.style.setProperty('--brand-primary', vm.brand.primaryColor);
     }
 
-    // 以后端核销状态为准:已核销则解除锁定、开启新一轮;已领取未核销则维持锁定。
-    if (vm.couponRedeemed) {
-      const wasLocked = !!localStorage.getItem('fc_claimed_code');
-      localStorage.removeItem('fc_claimed_code');
-      setClaimedCode(null);
-      // 从「已领取锁定」转为「已核销」:展示「新挑战开启页(redeemed)」。
-      if (wasLocked) setNewChallenge({ reason: 'redeemed' });
+    const storedClaim = readClaimedCode(touchId);
+    const redeemedMatch =
+      (vm.recentlyRedeemedCoupon &&
+        storedClaim &&
+        vm.recentlyRedeemedCoupon.couponCode === storedClaim) ||
+      vm.couponRedeemed;
+
+    // 过渡页仅在权威 plan 同步时更新,避免缓存 plan 误触发 expired NC
+    if (!fromCache) {
+      if (redeemedMatch && storedClaim) {
+        clearClaimedCode(touchId);
+        setClaimedCode(null);
+        setNewChallenge({ reason: 'redeemed' });
+      } else if (vm.cycleExpired && !welcomeInProgress) {
+        if (storedClaim) {
+          clearClaimedCode(touchId);
+          setClaimedCode(null);
+        }
+        setNewChallenge((prev) => prev ?? { reason: 'expired' });
+      } else {
+        setNewChallenge((prev) => {
+          if (!vm.cycleExpired && prev?.reason === 'expired') return null;
+          if (!redeemedMatch && prev?.reason === 'redeemed') return null;
+          return prev;
+        });
+        if (vm.couponClaimed && vm.claimedCouponCode) {
+          writeClaimedCode(touchId, vm.claimedCouponCode);
+          setClaimedCode(vm.claimedCouponCode);
+        }
+      }
     } else if (vm.couponClaimed && vm.claimedCouponCode) {
-      localStorage.setItem('fc_claimed_code', vm.claimedCouponCode);
+      writeClaimedCode(touchId, vm.claimedCouponCode);
       setClaimedCode(vm.claimedCouponCode);
     }
-  }, []);
+
+    const tapAwarded = vm.tapReward?.awarded ?? 0;
+    if (
+      !fromCache &&
+      tapAwarded > 0 &&
+      welcomeDone &&
+      !storedClaim &&
+      !vm.cycleExpired &&
+      !redeemedMatch
+    ) {
+      const fxKey = `fc_tap_fx_${touchId}`;
+      if (!sessionStorage.getItem(fxKey)) {
+        sessionStorage.setItem(fxKey, '1');
+        window.setTimeout(() => triggerLoginBonusAnimation(tapAwarded), 200);
+      }
+    }
+  }, [touchId, welcomeStep]);
 
   const reloadPlan = useCallback(async () => {
     const plan = await fetchRewardPlan(touchId);
@@ -300,6 +381,72 @@ export default function App() {
     syncFromPlan(plan);
     return plan;
   }, [clearGameSessionCache, syncFromPlan, touchId]);
+
+  // 领取:调用 redeem 发券(方案 A — cycle 保持 active),写入锁态。
+  const issueClaimedCoupon = useCallback(async (coupon) => {
+    if (!rewardPlanId) throw new Error('Reward plan is not ready yet');
+    const campaignId = coupon?.campaignId;
+    if (!campaignId) throw new Error('No campaign for this coupon tier');
+
+    const issued = await claimCoupon(touchId, rewardPlanId, campaignId);
+    const code = issued?.couponCode ?? coupon?.code;
+    if (!code) throw new Error('No coupon code returned');
+
+    writeClaimedCode(touchId, code);
+    setClaimedCode(code);
+    setDiscounts((prev) =>
+      prev.map((item) =>
+        item.campaignId === campaignId || item.tier === coupon.tier
+          ? { ...item, code }
+          : item,
+      ),
+    );
+    return code;
+  }, [rewardPlanId, touchId]);
+
+  const tweenPointsTo = useCallback((target, duration = 1200) => {
+    const from = pointsRef.current;
+    if (from === target) {
+      setPoints(target);
+      return;
+    }
+    const startedAt = performance.now();
+    const step = (now) => {
+      const t = Math.min((now - startedAt) / duration, 1);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const next = Math.round(from + (target - from) * eased);
+      setPoints(next);
+      pointsRef.current = next;
+      if (t < 1) {
+        pointsTweenRef.current = requestAnimationFrame(step);
+      } else {
+        pointsTweenRef.current = null;
+        setPoints(target);
+        pointsRef.current = target;
+      }
+    };
+    if (pointsTweenRef.current) cancelAnimationFrame(pointsTweenRef.current);
+    pointsTweenRef.current = requestAnimationFrame(step);
+  }, []);
+
+  const handleWelcomeEarnMore = useCallback(async () => {
+    try {
+      const plan = await reloadPlan();
+      const vm = mapPlanToViewModel(plan);
+      const awarded = vm.tapReward?.awarded ?? 0;
+      setWelcomeStep(2);
+      if (awarded > 0) {
+        window.setTimeout(() => triggerLoginBonusAnimation(awarded), 300);
+      }
+    } catch (err) {
+      dbgError('[FCDBG][App] welcome earn more failed', err);
+      showNotification(
+        'Could not load rewards',
+        formatFcError(err, 'Please try again.'),
+        '⚠️',
+      );
+    }
+  }, [reloadPlan]);
 
   const preloadGameStart = useCallback((challenge) => {
     if (!rewardPlanId || !challenge?.gameInstanceId) return null;
@@ -375,6 +522,16 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
+
+    setWelcomeStep(readWelcomeCompleted(touchId) ? 3 : 0);
+    setClaimedCode(readClaimedCode(touchId));
+    setNewChallenge(null);
+    setIntroActive(false);
+    setPlanLoading(true);
+    setPlanError(null);
+    setRewardPlanId(null);
+    clearGameSessionCache();
+
     rememberTouchId(touchId);
 
     preloadRuntimeManifest(touchId).catch((err) => {
@@ -383,7 +540,7 @@ export default function App() {
 
     const cached = readCachedRewardPlan(touchId);
     if (cached) {
-      syncFromPlan(cached);
+      syncFromPlan(cached, { fromCache: true });
       setPlanLoading(false);
     }
 
@@ -445,46 +602,73 @@ export default function App() {
     setZoomPhase('init');
     setZoomCoupon(null);
     // 有效期归零:解除已领取锁定,从状态C回到状态A,开启新一轮挑战。
-    localStorage.removeItem('fc_claimed_code');
+    clearClaimedCode(touchId);
     setClaimedCode(null);
     setClaimConfirm(null);
   }
 
   // 完整重置回首登起点(开场礼盒 + 欢迎流)。
   function resetToFirstLogin() {
-    localStorage.removeItem('fc_welcome_completed');
-    localStorage.removeItem('fc_claimed_code');
+    clearWelcomeCompleted(touchId);
+    clearClaimedCode(touchId);
     setClaimedCode(null);
     resetRound();                       // 刷新折扣档位 / 倒计时 / 清各类卡片
     setPoints(0);                       // 首登从 0 金币开始累积
     setWelcomeStep(0);                  // 回到欢迎流起点
     setIntroActive(true);               // 重新播放开场礼盒
-    loginBonusGrantedRef.current = false;
     setNewChallenge(null);
   }
 
-  // 「新挑战开启页」CTA:开始新一轮 = 完整重放首登体验。
-  function handleStartNewChallenge() {
-    resetToFirstLogin();
+  // 「新挑战开启页」CTA:轻量进入首页(不 replay Welcome/礼盒)
+  async function handleStartNewChallenge() {
+    const reason = newChallenge?.reason ?? 'expired';
+    setNewChallenge(null);
+    setShowReceipt(false);
+    setZoomActive(false);
+    setClaimConfirm(null);
+    clearClaimedCode(touchId);
+    setClaimedCode(null);
+    try {
+      if (reason === 'expired') {
+        await renewCycle(touchId, 'expired');
+      }
+      await reloadPlan();
+      setWelcomeStep(3);
+      setIntroActive(false);
+      sessionStorage.removeItem(`fc_tap_fx_${touchId}`);
+    } catch (err) {
+      dbgError('[FCDBG][App] start new challenge failed', err);
+      setNewChallenge({ reason });
+      showNotification(
+        'Could not start new challenge',
+        formatFcError(err, 'Please check your connection and try again.'),
+        '⚠️',
+      );
+    }
   }
 
   // 仅开发环境:在无真实后端时手动预览「新挑战开启页」两态(生产构建会被 import.meta.env.DEV 摇树移除)。
   function devShowNewChallenge(reason) {
     if (reason === 'redeemed') {
-      localStorage.removeItem('fc_claimed_code');
+      clearClaimedCode(touchId);
       setClaimedCode(null);
     }
     setNewChallenge({ reason });
   }
 
   useEffect(() => {
-    // 仅在倒计时「从正数真实跳到 0」时触发,避免初次加载就拿到过期 plan 而误弹过渡页。
+    // 客户端倒计时归零且 plan 未标 expired 时的兜底(主路径为 plan.cycleExpired)
     const prev = prevCountdownRef.current;
     prevCountdownRef.current = countdownSeconds;
-    if (prev > 0 && countdownSeconds === 0 && !newChallenge) {
+    if (
+      prev > 0 &&
+      countdownSeconds === 0 &&
+      !newChallenge &&
+      readWelcomeCompleted(touchId)
+    ) {
       setNewChallenge({ reason: 'expired' });
     }
-  }, [countdownSeconds, newChallenge]);
+  }, [countdownSeconds, newChallenge, touchId]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -547,19 +731,6 @@ function triggerLoginBonusAnimation(pts) {
       }
     });
   }
-
-  // 登录奖励:点击 Earn More Rewards 按钮后发放的 5 金币动效。只发放一次。
-  useEffect(() => {
-    if (introActive || loginBonusGrantedRef.current) return;
-    loginBonusGrantedRef.current = true;
-    // 首次登录: 不在此触发,改由 onAdvanceToSettle 回调触发
-    const isFirstTime = localStorage.getItem('fc_welcome_completed') !== 'true';
-    if (isFirstTime) return;
-    // 已停留在凭证页(状态C,已领取未核销)或已达到最低折扣(isBestOffer):本次登录不发 5 金币、不展示 +5 动效。
-    if (claimedUnused || isBestOffer) return;
-    const timer = window.setTimeout(() => triggerLoginBonusAnimation(INTRO_REWARD_POINTS), 150);
-    return () => window.clearTimeout(timer);
-  }, [introActive, claimedUnused, isBestOffer]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -633,25 +804,8 @@ function triggerLoginBonusAnimation(pts) {
     // 首次登录时如果用户取消领取，标记首登欢迎流程完成，进入真正的钱包首页
     if (welcomeStep < 3) {
       setWelcomeStep(3);
-      localStorage.setItem('fc_welcome_completed', 'true');
-
-      // 让积分从 0 滚到 welcomeTargetPoints
-      const from = 0;
-      const to = welcomeTargetPoints;
-      const duration = 1200;
-      const startedAt = performance.now();
-      const step = (now) => {
-        const t = Math.min((now - startedAt) / duration, 1);
-        const eased = 1 - Math.pow(1 - t, 3);
-        setPoints(Math.round(from + (to - from) * eased));
-        if (t < 1) {
-          pointsTweenRef.current = requestAnimationFrame(step);
-        } else {
-          pointsTweenRef.current = null;
-          setPoints(to);
-        }
-      };
-      pointsTweenRef.current = requestAnimationFrame(step);
+      writeWelcomeCompleted(touchId);
+      tweenPointsTo(welcomeTargetPoints);
     }
 
     if (showReceipt) {
@@ -668,20 +822,6 @@ function triggerLoginBonusAnimation(pts) {
     const onConfirm = claimConfirm?.onConfirm;
     setClaimConfirm(null);
     if (onConfirm) onConfirm();
-  }
-
-  // 领取动作的统一副作用:乐观锁定本地状态 + 通知后端核销系统。
-  // 写入后 claimedUnused 立即为真,底层页面切到「已领取凭证页(去使用)」。
-  function writeClaimLock(coupon) {
-    const code = coupon?.code;
-    if (!code) return;
-    localStorage.setItem('fc_claimed_code', code);
-    setClaimedCode(code);
-    if (rewardPlanId) {
-      claimCoupon(touchId, rewardPlanId, coupon.tier).catch((err) => {
-        dbgError('[FCDBG][App] claimCoupon failed', err);
-      });
-    }
   }
 
   function startConfetti() {
@@ -741,6 +881,17 @@ function triggerLoginBonusAnimation(pts) {
     return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
 
+  /** 积分越高,金币数量、飞行时长与计数器滚动越久 */
+  function getPointsEffectTiming(pts) {
+    const safePts = Math.max(0, Math.round(pts));
+    const count = Math.min(22, Math.max(4, Math.round(safePts / 7) || 4));
+    const totalMs = Math.min(5200, Math.max(720, 480 + safePts * 32));
+    const staggerMs = Math.max(36, Math.floor(totalMs / (count + 1.5)));
+    const coinDuration = Math.min(1100, Math.max(420, Math.floor(staggerMs * 1.85)));
+    const creditDuration = Math.min(2400, Math.max(500, 380 + safePts * 20));
+    return { count, staggerMs, coinDuration, creditDuration };
+  }
+
   // 🅑 Landing impact: a shockwave ring + radial sparks at the coupon.
   function spawnImpact(x, y) {
     const viewport = viewportRef.current;
@@ -793,7 +944,7 @@ function triggerLoginBonusAnimation(pts) {
 
   // 🅐 Arc coin stream: bigger coins fly a parabola, spin with a glint and a
   // glowing trail, land at high opacity and trigger the impact (🅑).
-  function flyCoins(count, done, startPos) {
+  function flyCoins(count, done, startPos, { staggerMs = 58, coinDuration = 680 } = {}) {
     const viewport = viewportRef.current;
     const target = targetCouponRef.current;
     if (!viewport || !target) {
@@ -836,8 +987,8 @@ function triggerLoginBonusAnimation(pts) {
       const midX = (sx + ex) / 2 + (Math.random() - 0.5) * 44;
       const apexY = Math.min(sy, ey) - (88 + Math.random() * 64);
       const spin = (Math.random() < 0.5 ? -1 : 1) * (360 + Math.random() * 260);
-      const duration = reduce ? 340 : 600 + Math.random() * 180;
-      const delay = i * (reduce ? 24 : 58);
+      const duration = reduce ? 340 : coinDuration + Math.random() * (coinDuration * 0.22);
+      const delay = i * (reduce ? 24 : staggerMs);
 
       const anim = coin.animate(
         [
@@ -869,15 +1020,16 @@ function triggerLoginBonusAnimation(pts) {
   function addPoints(pts) {
     if (!next) return;
 
+    const timing = getPointsEffectTiming(pts);
     spawnGainCallout(pts);
-    flyCoins(Math.min(12, Math.max(8, Math.round(pts / 2))), () => {
-      creditPoints(pts);
-    });
+    flyCoins(timing.count, () => {
+      creditPoints(pts, timing.creditDuration);
+    }, null, { staggerMs: timing.staggerMs, coinDuration: timing.coinDuration });
   }
 
   // 🅓 Roll the points counter up to the new total (instead of a hard jump),
   // highlighting the counter while it credits; celebrate once at the end.
-  function creditPoints(pts) {
+  function creditPoints(pts, duration = 600) {
     if (!pts) return;
     if (pointsTweenRef.current) {
       cancelAnimationFrame(pointsTweenRef.current);
@@ -894,7 +1046,6 @@ function triggerLoginBonusAnimation(pts) {
     }
 
     setCrediting(true);
-    const duration = 600;
     const startedAt = performance.now();
     const step = (now) => {
       const t = Math.min((now - startedAt) / duration, 1);
@@ -929,9 +1080,17 @@ function triggerLoginBonusAnimation(pts) {
     setShowReceipt(true);
   };
 
-  function handleUseReceiptCoupon() {
+  async function handleUseReceiptCoupon() {
     const nextCoupon = discounts[currentStepIndex + 1];
-    writeClaimLock(nextCoupon);
+    try {
+      setRedeemingCoupon(true);
+      await issueClaimedCoupon(nextCoupon);
+    } catch (err) {
+      showNotification('Coupon unavailable', formatFcError(err, 'Could not issue coupon'), '⚠️');
+      return;
+    } finally {
+      setRedeemingCoupon(false);
+    }
     const targetPointsVal = nextCoupon?.target ?? 90;
     setCurrentStepIndex((index) => Math.min(index + 1, discounts.length - 1));
     setPoints(Math.max(pendingPoints - targetPointsVal, 0));
@@ -990,90 +1149,18 @@ function triggerLoginBonusAnimation(pts) {
     }
   }
 
-  async function ensureCouponReadyForUse() {
-    if (current?.code) return current.code;
-    if (!rewardPlanId) throw new Error('Reward plan is not ready yet');
-    setRedeemingCoupon(true);
-    try {
-      const issued = await redeemCoupon({ rewardPlanId, touchId });
-      const code = issued?.couponCode;
-      if (!code) throw new Error('No coupon code returned');
-      setDiscounts((prev) =>
-        prev.map((item, idx) =>
-          idx === currentStepIndex
-            ? { ...item, code }
-            : item
-        )
-      );
-      await reloadPlan();
-      return code;
-    } finally {
-      setRedeemingCoupon(false);
-    }
-  }
-
-  function handleShopNow() {
-    // 第一原则:交互即时反馈,去掉假延迟,点击立刻给出反馈。
-    setShopLoading(true);
-    const shopUrl = brand.shopUrl || '#';
-    showNotification('Ready to use', 'Your coupon is ready. Opening the shop with your code!', '🛍️', () => {
-      setShopLoading(false);
-      setDrawerOpen(false);
-      if (shopUrl && shopUrl !== '#') window.open(shopUrl, '_blank', 'noopener,noreferrer');
-    });
-  }
-
-  function handleShopNowDirect() {
-    const shopUrl = (brand.shopUrl && brand.shopUrl !== '#') ? brand.shopUrl : 'https://ritual.com';
-    window.open(shopUrl, '_blank', 'noopener,noreferrer');
-  }
-
-  async function handleSettlementComplete(settlement) {
-    dbg('[FCDBG][App] settlement received', settlement);
-    clearGameSessionCache();
-    setActiveModal(null);
-    setGameStart(null);
-    const pts = settlement.pointsAwarded ?? 0;
-    showNotification(
-      'Challenge Completed!',
-      pts > 0 ? `You earned +${pts} pts.` : 'Challenge completed for today.',
-      '🎮',
-      () => {
-        // 第一原则:动效不等接口。先用结算结果立即给出庆祝反馈,
-        // 真实 plan 在后台静默同步;失败只降级提示,不打断动效。
-        if (settlement.couponWon) {
-          setReceiptColors(readCouponTokens(targetCouponRef.current));
-          setShowReceipt(true);
-          startConfetti();
-        } else if (pts > 0) {
-          spawnGainCallout(pts);
-          flyCoins(Math.min(12, Math.max(8, Math.round(pts / 2))), () => {});
-        }
-
-        // 后台静默校正:重新拉取 plan,与服务端对齐(失败仅降级提示)。
-        reloadPlan().catch((err) => {
-          dbgError('[FCDBG][App] background reloadPlan failed', err);
-          setPlanError(err instanceof Error ? err.message : 'Could not refresh rewards');
-        });
-      }
-    );
-  }
-
-  // 钱包/最佳档「Claim now」:写锁后从券面放大翻牌展示券码;关闭后底层即「去使用」凭证页。
   async function handleUseCoupon() {
     if (isExpired || isTearingCoupon || redeemingCoupon) return;
 
-    if (isBestOffer) {
-      try {
-        await ensureCouponReadyForUse();
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Could not issue coupon';
-        showNotification('Coupon unavailable', msg, '⚠️');
-        return;
-      }
+    setRedeemingCoupon(true);
+    try {
+      await issueClaimedCoupon(current);
+    } catch (err) {
+      showNotification('Coupon unavailable', formatFcError(err, 'Could not issue coupon'), '⚠️');
+      return;
+    } finally {
+      setRedeemingCoupon(false);
     }
-
-    writeClaimLock(current);
 
     const faceEl = couponFaceRef.current;
     const viewport = viewportRef.current;
@@ -1129,30 +1216,83 @@ function triggerLoginBonusAnimation(pts) {
     setZoomActive(true);
   }
 
-  const handleUseWelcomeCoupon = useCallback(() => {
-    setWelcomeStep(3);
-    localStorage.setItem('fc_welcome_completed', 'true');
-    writeClaimLock(current);
-    
-    // Immediately start the points counter tweening from 0 to welcomeTargetPoints
-    const from = 0;
-    const to = welcomeTargetPoints;
-    const duration = 1200;
-    const startedAt = performance.now();
-    const step = (now) => {
-      const t = Math.min((now - startedAt) / duration, 1);
-      const eased = 1 - Math.pow(1 - t, 3);
-      setPoints(Math.round(from + (to - from) * eased));
-      if (t < 1) {
-        pointsTweenRef.current = requestAnimationFrame(step);
-      } else {
-        pointsTweenRef.current = null;
-        setPoints(to);
-      }
-    };
-    pointsTweenRef.current = requestAnimationFrame(step);
+  function handleShopNow() {
+    setShopLoading(true);
+    const shopUrl = brand.shopUrl || '#';
+    showNotification('Ready to use', 'Your coupon is ready. Opening the shop with your code!', '🛍️', () => {
+      setShopLoading(false);
+      setDrawerOpen(false);
+      if (shopUrl && shopUrl !== '#') window.open(shopUrl, '_blank', 'noopener,noreferrer');
+    });
+  }
 
-    // Zoom-and-flip card transition centered and flipped
+  function handleShopNowDirect() {
+    const shopUrl = (brand.shopUrl && brand.shopUrl !== '#') ? brand.shopUrl : 'https://ritual.com';
+    window.open(shopUrl, '_blank', 'noopener,noreferrer');
+  }
+
+  async function handleSettlementComplete(settlement) {
+    dbg('[FCDBG][App] settlement received', settlement);
+    clearGameSessionCache();
+    setActiveModal(null);
+    setGameStart(null);
+    const pts = settlement.pointsAwarded ?? 0;
+
+    const refreshPlan = () => {
+      reloadPlan().catch((err) => {
+        dbgError('[FCDBG][App] background reloadPlan failed', err);
+        setPlanError(err instanceof Error ? err.message : 'Could not refresh rewards');
+      });
+    };
+
+    if (settlement.couponWon) {
+      setReceiptColors(readCouponTokens(targetCouponRef.current));
+      setPendingPoints(points + pts);
+      setShowReceipt(true);
+      startConfetti();
+      refreshPlan();
+      return;
+    }
+
+    if (pts > 0) {
+      const timing = getPointsEffectTiming(pts);
+      const startPos = {
+        x: (viewportRef.current?.clientWidth ?? 360) / 2,
+        y: (viewportRef.current?.clientHeight ?? 640) * 0.42,
+      };
+      spawnGainCallout(pts);
+      flyCoins(
+        timing.count,
+        () => {
+          creditPoints(pts, timing.creditDuration);
+          refreshPlan();
+        },
+        startPos,
+        { staggerMs: timing.staggerMs, coinDuration: timing.coinDuration },
+      );
+      return;
+    }
+
+    refreshPlan();
+  }
+
+  const handleUseWelcomeCoupon = useCallback(async () => {
+    const prevStep = welcomeStep;
+    setWelcomeStep(3);
+    writeWelcomeCompleted(touchId);
+    try {
+      setRedeemingCoupon(true);
+      await issueClaimedCoupon(current);
+    } catch (err) {
+      clearWelcomeCompleted(touchId);
+      setWelcomeStep(prevStep);
+      dbgError('[FCDBG][App] welcome claim failed', err);
+      showNotification('Coupon unavailable', formatFcError(err, 'Please try again'), '⚠️');
+      return;
+    } finally {
+      setRedeemingCoupon(false);
+    }
+
     setZoomCoupon(current);
     const faceEl = couponFaceRef.current;
     if (faceEl) {
@@ -1166,7 +1306,7 @@ function triggerLoginBonusAnimation(pts) {
       });
     }
     setZoomCopyState('Copy');
-    
+
     const viewport = viewportRef.current;
     if (viewport) {
       const vpRect = viewport.getBoundingClientRect();
@@ -1181,7 +1321,7 @@ function triggerLoginBonusAnimation(pts) {
     }
     setZoomPhase('flipped');
     setZoomActive(true);
-  }, [current, welcomeTargetPoints]);
+  }, [current, issueClaimedCoupon, welcomeStep]);
 
   function handleTearComplete() {
     // Get bounding rect of the coupon face (the card body above the torn button)
@@ -1419,7 +1559,7 @@ function triggerLoginBonusAnimation(pts) {
       style={brand.primaryColor ? { '--brand-primary': brand.primaryColor } : undefined}
     >
       <canvas id="confetti-canvas" ref={canvasRef} />
-      {introActive && (
+      {introActive && hasInitialDiscount && (
         <BrandIntro 
           onComplete={closeIntro} 
           brand={brand} 
@@ -1594,37 +1734,18 @@ function triggerLoginBonusAnimation(pts) {
         />
       )}
 
-      {welcomeStep < 3 && !introActive && (
+      {welcomeStep < 3 && !introActive && hasInitialDiscount && (
         <WelcomeRitual
           step={welcomeStep}
           coupon={current}
           brand={brand}
           couponFaceRef={couponFaceRef}
-          onAdvanceToSettle={() => {
-            setWelcomeStep(2);
-            setTimeout(() => triggerLoginBonusAnimation(INTRO_REWARD_POINTS), 300);
-          }}
+          onAdvanceToSettle={handleWelcomeEarnMore}
           onUse={() => requestClaim(handleUseWelcomeCoupon, current.num)}
           onComplete={() => {
             setWelcomeStep(3);
-            localStorage.setItem('fc_welcome_completed', 'true');
-            // Immediately start the points counter tweening from 0 to welcomeTargetPoints
-            const from = 0;
-            const to = welcomeTargetPoints;
-            const duration = 1200;
-            const startedAt = performance.now();
-            const step = (now) => {
-              const t = Math.min((now - startedAt) / duration, 1);
-              const eased = 1 - Math.pow(1 - t, 3);
-              setPoints(Math.round(from + (to - from) * eased));
-              if (t < 1) {
-                pointsTweenRef.current = requestAnimationFrame(step);
-              } else {
-                pointsTweenRef.current = null;
-                setPoints(to);
-              }
-            };
-            pointsTweenRef.current = requestAnimationFrame(step);
+            writeWelcomeCompleted(touchId);
+            tweenPointsTo(welcomeTargetPoints);
           }}
         />
       )}

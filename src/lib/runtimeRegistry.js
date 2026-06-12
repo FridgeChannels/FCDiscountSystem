@@ -24,8 +24,16 @@ const defaultRuntimeSpecifiers = {
 };
 
 let manifestReady = false;
+let manifestTouchId = null;
 let manifestMap = new Map();
 let inflightManifest = null;
+
+function resetManifestRegistry() {
+  manifestReady = false;
+  manifestTouchId = null;
+  manifestMap = new Map();
+  inflightManifest = null;
+}
 
 function stableStringify(value) {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -125,17 +133,23 @@ async function tryLoad(specifier) {
 }
 
 export async function preloadRuntimeManifest(touchId) {
-  if (manifestReady) return;
-  if (inflightManifest) return inflightManifest;
+  if (manifestReady && manifestTouchId === touchId) return;
+  if (manifestReady && manifestTouchId !== touchId) {
+    resetManifestRegistry();
+  }
+  if (inflightManifest && manifestTouchId === touchId) return inflightManifest;
+  manifestTouchId = touchId;
   inflightManifest = fetchGameManifest(touchId)
     .then((document) => applyManifestDocument(document))
     .then(() => {
       dbg('[FCDBG][RuntimeRegistry] manifest loaded', {
+        touchId,
         entries: manifestMap.size,
       });
     })
     .catch((err) => {
       dbgError('[FCDBG][RuntimeRegistry] manifest load failed', err);
+      resetManifestRegistry();
       throw err;
     })
     .finally(() => {

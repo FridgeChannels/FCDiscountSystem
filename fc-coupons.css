@@ -3140,10 +3140,10 @@
   padding: 20px 0 24px 0 !important;
   display: flex !important;
   flex-direction: column !important;
-  align-items: center !important;
+  align-items: stretch !important;
   gap: 0 !important;
-  
-  /* Bleed to full width of the mobile viewport, matching the wallet page outer layout width */
+
+  /* 抵消 content-area 左右 padding,铺满 mobile-viewport 内容区 */
   margin-left: -20px !important;
   margin-right: -20px !important;
   margin-top: -20px !important;
@@ -3154,11 +3154,11 @@
 
 .limited-offer-banner {
   width: calc(100% - 32px) !important;
-  max-width: 343px !important;
-  background-color: #1c201a !important; /* dark charcoal */
+  max-width: none !important;
+  background-color: #1c201a !important;
   border-radius: 16px !important;
   padding: 14px 16px !important;
-  margin: 16px 0 20px 0 !important;
+  margin: 16px 16px 20px !important;
   color: #e2dbce !important;
   font-family: var(--font-sans) !important;
   font-size: 10px !important;
@@ -3237,7 +3237,9 @@
 
 .voucher-coupon-card-container {
   width: calc(100% - 32px) !important;
-  max-width: 343px !important;
+  max-width: none !important;
+  margin-left: 16px !important;
+  margin-right: 16px !important;
   position: relative !important;
   margin-bottom: 24px !important;
   display: flex !important;
