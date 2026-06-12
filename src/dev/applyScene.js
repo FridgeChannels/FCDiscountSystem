@@ -1,0 +1,136 @@
+import {
+  clearClaimedCode,
+  clearWelcomeCompleted,
+  writeWelcomeCompleted,
+} from '../api/cache.js';
+import { getSceneConfig } from './scenes.js';
+
+export function isDevPreviewEnabled() {
+  return import.meta.env.DEV;
+}
+
+export function getDevScene() {
+  if (!isDevPreviewEnabled()) return '';
+  const params = new URLSearchParams(window.location.search);
+  return params.get('scene')?.trim() ?? '';
+}
+
+export function navigateToDevScene(sceneId) {
+  if (!isDevPreviewEnabled()) return;
+  const url = new URL(window.location.href);
+  if (sceneId) {
+    url.searchParams.set('scene', sceneId);
+  } else {
+    url.searchParams.delete('scene');
+  }
+  window.history.replaceState({}, '', url);
+}
+
+/**
+ * Apply immediate UI flags after syncFromPlan in dev preview mode.
+ * @param {import('./scenes.js').DevSceneUi} ui
+ * @param {object} ctx
+ */
+export function applyDevSceneUi(ui, ctx) {
+  const { touchId, setters } = ctx;
+  const {
+    setWelcomeStep,
+    setIntroActive,
+    setClaimedCode,
+    setNewChallenge,
+    setActiveModal,
+    setSurveyStep,
+    setNotification,
+    setClaimConfirm,
+    setShowReceipt,
+    setPendingPoints,
+    setReceiptColors,
+    setZoomActive,
+    setZoomPhase,
+    setZoomCoupon,
+    setZoomColors,
+    setZoomRect,
+    setZoomCopyState,
+    setGameStart,
+    setGameModalTitle,
+    points,
+    discounts,
+    currentStepIndex,
+    readCouponTokens,
+    targetCouponRef,
+    viewportRef,
+  } = setters;
+
+  if (ui.clearWelcome) clearWelcomeCompleted(touchId);
+  if (ui.setWelcomeCompleted) writeWelcomeCompleted(touchId, true);
+  if (ui.clearClaimed) {
+    clearClaimedCode(touchId);
+    setClaimedCode(null);
+  }
+  if (ui.claimedCode) {
+    setClaimedCode(ui.claimedCode);
+  }
+  if (ui.welcomeStep != null) setWelcomeStep(ui.welcomeStep);
+  if (ui.introActive != null) setIntroActive(ui.introActive);
+
+  setNewChallenge(ui.newChallenge ?? null);
+  setActiveModal(ui.activeModal ?? null);
+  setSurveyStep(ui.surveyStep ?? 0);
+  setNotification(ui.notification ?? null);
+  setClaimConfirm(ui.claimConfirm ?? null);
+  setGameStart(null);
+  setGameModalTitle('Play & Earn');
+
+  setShowReceipt(false);
+  setZoomActive(false);
+
+  const openDomOverlays = () => {
+    if (ui.openReceipt) {
+      const targetEl = targetCouponRef?.current;
+      setReceiptColors(targetEl ? readCouponTokens(targetEl.closest('.coupon')) : null);
+      setPendingPoints(points);
+      setShowReceipt(true);
+    }
+
+    if (ui.openZoomFlip) {
+      const coupon = ui.claimedCode
+        ? (discounts.find((item) => item.code === ui.claimedCode) ||
+          discounts[currentStepIndex] ||
+          discounts[0])
+        : (discounts[currentStepIndex + 1] || discounts[currentStepIndex] || discounts[0]);
+      const targetEl = targetCouponRef?.current;
+      setZoomCoupon(coupon);
+      setZoomColors(targetEl ? readCouponTokens(targetEl.closest('.coupon')) : null);
+      setZoomCopyState('Copy');
+      setZoomPhase(ui.zoomPhase ?? 'flipped');
+
+      const viewport = viewportRef?.current;
+      if (viewport) {
+        const vpRect = viewport.getBoundingClientRect();
+        const cardW = Math.min(vpRect.width * 0.82, 320);
+        const cardH = cardW * 1.58;
+        setZoomRect({
+          left: vpRect.left + (vpRect.width - cardW) / 2,
+          top: vpRect.top + (vpRect.height - cardH) / 2,
+          width: cardW,
+          height: cardH,
+        });
+      }
+      setZoomActive(true);
+    }
+  };
+
+  if (ui.openReceipt || ui.openZoomFlip) {
+    window.requestAnimationFrame(openDomOverlays);
+  }
+}
+
+/**
+ * Load plan + UI for a dev scene.
+ * @returns {{ plan: object, ui: import('./scenes.js').DevSceneUi } | null}
+ */
+export function resolveDevScene(sceneId) {
+  const config = getSceneConfig(sceneId);
+  if (!config) return null;
+  return { plan: config.fixture(), ui: config.ui };
+}

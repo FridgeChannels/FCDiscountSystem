@@ -3,6 +3,14 @@ import { claimCoupon, completeSurvey, fetchRewardPlan, redeemCoupon, renewCycle,
 import { readCachedRewardPlan, readRememberedTouchId, rememberTouchId, writeCachedRewardPlan, readWelcomeCompleted, writeWelcomeCompleted, readClaimedCode, writeClaimedCode, clearClaimedCode, clearWelcomeCompleted, clearLegacyMagnetStorage } from './api/cache.js';
 import { mapPlanToViewModel } from './api/mapPlan.js';
 import PlatformGameModal from './components/PlatformGameModal.jsx';
+import DevToolbar from './components/DevToolbar.jsx';
+import {
+  applyDevSceneUi,
+  getDevScene,
+  isDevPreviewEnabled,
+  navigateToDevScene,
+  resolveDevScene,
+} from './dev/index.js';
 import { dbg, dbgError } from './lib/debug.js';
 import { preloadRuntimeManifest } from './lib/runtimeRegistry.js';
 
@@ -219,6 +227,7 @@ export default function App() {
   const prevCountdownRef = useRef(null);
 
   const touchId = useTouchId();
+  const [devScene, setDevScene] = useState(() => getDevScene());
   const [planLoading, setPlanLoading] = useState(true);
   const [planError, setPlanError] = useState(null);
   const [rewardPlanId, setRewardPlanId] = useState(null);
@@ -293,7 +302,7 @@ export default function App() {
   // 状态D · 新挑战开启过渡页:null | { reason: 'redeemed' | 'expired' }
   const [newChallenge, setNewChallenge] = useState(null);
 
-  const syncFromPlan = useCallback((plan, { fromCache = false } = {}) => {
+  const syncFromPlan = useCallback((plan, { fromCache = false, devPreview = false } = {}) => {
     const vm = mapPlanToViewModel(plan);
     setRewardPlanId(vm.rewardPlanId);
     setDiscounts(vm.discounts.length ? vm.discounts : INITIAL_DISCOUNTS);
@@ -305,6 +314,13 @@ export default function App() {
     setHasInitialDiscount(vm.hasInitialDiscount);
     setWelcomeTargetPoints(vm.points);
     setPoints(vm.points);
+
+    if (devPreview) {
+      if (vm.brand.primaryColor) {
+        document.documentElement.style.setProperty('--brand-primary', vm.brand.primaryColor);
+      }
+      return vm;
+    }
 
     const welcomeDone = readWelcomeCompleted(touchId);
     const welcomeInProgress = vm.hasInitialDiscount && !welcomeDone;
@@ -372,7 +388,64 @@ export default function App() {
         window.setTimeout(() => triggerLoginBonusAnimation(tapAwarded), 200);
       }
     }
+
+    return vm;
   }, [touchId, welcomeStep]);
+
+  const applyDevPreviewScene = useCallback((sceneId) => {
+    const resolved = resolveDevScene(sceneId);
+    if (!resolved) {
+      setPlanError(`Unknown dev scene: ${sceneId}`);
+      setPlanLoading(false);
+      return;
+    }
+
+    clearGameSessionCache();
+    setPlanError(null);
+    setPlanLoading(false);
+    setNewChallenge(null);
+    setShowReceipt(false);
+    setZoomActive(false);
+    setClaimConfirm(null);
+    setNotification(null);
+    setActiveModal(null);
+
+    const vm = syncFromPlan(resolved.plan, { devPreview: true });
+    applyDevSceneUi(resolved.ui, {
+      touchId,
+      setters: {
+        setWelcomeStep,
+        setIntroActive,
+        setClaimedCode,
+        setNewChallenge,
+        setActiveModal,
+        setSurveyStep,
+        setNotification,
+        setClaimConfirm,
+        setShowReceipt,
+        setPendingPoints,
+        setReceiptColors,
+        setZoomActive,
+        setZoomPhase,
+        setZoomCoupon,
+        setZoomColors,
+        setZoomRect,
+        setZoomCopyState,
+        setGameStart,
+        setGameModalTitle,
+        points: vm.points,
+        discounts: vm.discounts.length ? vm.discounts : INITIAL_DISCOUNTS,
+        currentStepIndex: vm.currentStepIndex,
+        readCouponTokens,
+        targetCouponRef,
+        viewportRef,
+      },
+    });
+  }, [
+    clearGameSessionCache,
+    syncFromPlan,
+    touchId,
+  ]);
 
   const reloadPlan = useCallback(async () => {
     const plan = await fetchRewardPlan(touchId);
@@ -521,7 +594,21 @@ export default function App() {
   }, [challenges, preloadGameStart, rewardPlanId]);
 
   useEffect(() => {
+    if (!isDevPreviewEnabled()) return;
+    const syncSceneFromUrl = () => setDevScene(getDevScene());
+    window.addEventListener('popstate', syncSceneFromUrl);
+    return () => window.removeEventListener('popstate', syncSceneFromUrl);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
+
+    if (isDevPreviewEnabled() && devScene) {
+      applyDevPreviewScene(devScene);
+      return () => {
+        cancelled = true;
+      };
+    }
 
     setWelcomeStep(readWelcomeCompleted(touchId) ? 3 : 0);
     setClaimedCode(readClaimedCode(touchId));
@@ -563,7 +650,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [clearGameSessionCache, syncFromPlan, touchId]);
+  }, [applyDevPreviewScene, clearGameSessionCache, devScene, syncFromPlan, touchId]);
 
   const current = discounts[currentStepIndex] || discounts[discounts.length - 1] || { num: '15', target: 0 };
   const next = discounts[currentStepIndex + 1] || null;
@@ -645,15 +732,6 @@ export default function App() {
         '⚠️',
       );
     }
-  }
-
-  // 仅开发环境:在无真实后端时手动预览「新挑战开启页」两态(生产构建会被 import.meta.env.DEV 摇树移除)。
-  function devShowNewChallenge(reason) {
-    if (reason === 'redeemed') {
-      clearClaimedCode(touchId);
-      setClaimedCode(null);
-    }
-    setNewChallenge({ reason });
   }
 
   useEffect(() => {
@@ -1678,38 +1756,19 @@ function triggerLoginBonusAnimation(pts) {
         <NewChallengeUnlocked reason={newChallenge.reason} onStart={handleStartNewChallenge} prevCoupon={lockedCoupon} />
       )}
 
-      {import.meta.env.DEV && !newChallenge && (
-        <div
-          style={{
-            position: 'fixed', left: 10, bottom: 10, zIndex: 9999,
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '6px 8px', borderRadius: 8,
-            background: 'rgba(20,24,20,0.82)', font: '600 11px/1 sans-serif'
+      {import.meta.env.DEV && (
+        <DevToolbar
+          activeScene={devScene}
+          onSelectScene={setDevScene}
+          onResetFirstLogin={() => {
+            if (devScene) {
+              navigateToDevScene('intro');
+              setDevScene('intro');
+            } else {
+              resetToFirstLogin();
+            }
           }}
-        >
-          <span style={{ color: '#9fe1cb', letterSpacing: 1 }}>DEV</span>
-          <button
-            type="button"
-            onClick={resetToFirstLogin}
-            style={{ padding: '5px 8px', borderRadius: 6, border: 0, cursor: 'pointer', background: '#377add', color: '#fff' }}
-          >
-            首登
-          </button>
-          <button
-            type="button"
-            onClick={() => devShowNewChallenge('redeemed')}
-            style={{ padding: '5px 8px', borderRadius: 6, border: 0, cursor: 'pointer', background: '#4f8a4a', color: '#fff' }}
-          >
-            Redeemed
-          </button>
-          <button
-            type="button"
-            onClick={() => devShowNewChallenge('expired')}
-            style={{ padding: '5px 8px', borderRadius: 6, border: 0, cursor: 'pointer', background: '#a98435', color: '#fff' }}
-          >
-            Expired
-          </button>
-        </div>
+        />
       )}
 
       {showReceipt && (
