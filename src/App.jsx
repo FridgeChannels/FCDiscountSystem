@@ -119,6 +119,8 @@ const INITIAL_DISCOUNTS = [
   { num: '30', value: '30% OFF', target: 20, code: 'FC30RITUAL' }
 ];
 
+const COUPON_THEME = 'pop'; // Switch to 'dtc' to apply the premium coupon palette globally.
+
 const FALLBACK_CHALLENGES = [
   { id: 'survey', type: 'survey', badge: 'Survey', icon: '📝', title: 'Preferences', desc: 'Share habits for rewards', reward: '+10 PTS', cta: 'Start' }
 ];
@@ -317,8 +319,104 @@ export default function App() {
   const [renewGiftIntro, setRenewGiftIntro] = useState(false);
   const [renewFlowActive, setRenewFlowActive] = useState(false);
   const [renewPlanReady, setRenewPlanReady] = useState(false);
+  const [pendingRewardSignal, setPendingRewardSignal] = useState(0);
   const closeIntro = useCallback(() => setIntroActive(false), []);
   const [hasInitialDiscount, setHasInitialDiscount] = useState(false);
+
+  const [shopifyAuthStatus, setShopifyAuthStatus] = useState('unconnected');
+  const [shopifyAuthSkipCount, setShopifyAuthSkipCount] = useState(0);
+  const [shopifyAuthLastSkippedAt, setShopifyAuthLastSkippedAt] = useState(null);
+  const [getMoreOffAuthPromptSeen, setGetMoreOffAuthPromptSeen] = useState(false);
+  const [shopifyLoginTaskStatus, setShopifyLoginTaskStatus] = useState('incomplete');
+  const [shopifyAuthOverlay, setShopifyAuthOverlay] = useState(null);
+  const [shopifyAuthSuccess, setShopifyAuthSuccess] = useState(false);
+
+  const shopifyTask = useMemo(() => {
+    if (!needsShopifyAuth()) return null;
+    return {
+      id: 'shopify_connect',
+      type: 'shopify_connect',
+      badge: shopifyAuthStatus === 'expired' ? 'Reconnect' : 'Shopify',
+      icon: '🛍️',
+      title: shopifyAuthStatus === 'expired' ? 'Reconnect Shopify Account' : 'Connect Shopify Account',
+      desc: shopifyAuthStatus === 'expired' ? 'Your connection expired. Reconnect to keep earning.' : 'Log in once and earn a big points boost.',
+      reward: '+500 PTS',
+      cta: 'Connect',
+    };
+  }, [shopifyAuthStatus]);
+
+  const displayChallenges = useMemo(() => {
+    if (!shopifyTask) return challenges;
+    return [shopifyTask, ...challenges];
+  }, [shopifyTask, challenges]);
+
+  const [isWelcomeVideoActive, setIsWelcomeVideoActive] = useState(false);
+  const [welcomeVideoFading, setWelcomeVideoFading] = useState(false);
+  const welcomeVideoRef = useRef(null);
+  const welcomeVideoFallbackTimerRef = useRef(null);
+
+  const handleWelcomeVideoEnd = useCallback(() => {
+    if (welcomeVideoFading) return;
+    if (welcomeVideoFallbackTimerRef.current) {
+      window.clearTimeout(welcomeVideoFallbackTimerRef.current);
+      welcomeVideoFallbackTimerRef.current = null;
+    }
+    setWelcomeVideoFading(true);
+
+    if (welcomeStep >= 3) {
+      returnIntroShownRef.current = true;
+      returnIntroPendingRef.current = false;
+      setReturnIntroGate(false);
+      setIntroActive(false);
+      setPendingRewardSignal((value) => value + 1);
+      if (!planLoading) {
+        window.setTimeout(() => playPendingTapRewardRef.current(), 760);
+      }
+    } else {
+      // 立即触发拆开礼包过渡到 WelcomeRitual 页面 (welcomeStep -> 1, introActive -> false)
+      setWelcomeStep(1);
+      setIntroActive(false);
+    }
+
+    if (navigator.vibrate) {
+      navigator.vibrate(60);
+    }
+
+    setTimeout(() => {
+      setIsWelcomeVideoActive(false);
+      setWelcomeVideoFading(false);
+    }, 500);
+  }, [planLoading, welcomeStep, welcomeVideoFading]);
+
+  // 同步礼盒视频状态:首登和回访礼盒都直接播放同一段开场动画。
+  useEffect(() => {
+    if ((welcomeStep === 0 || welcomeStep >= 3) && introActive) {
+      setIsWelcomeVideoActive(true);
+      setWelcomeVideoFading(false);
+    } else {
+      // 如果是非渐淡退出的切换，立即关闭视频
+      setIsWelcomeVideoActive((prev) => (welcomeVideoFading ? prev : false));
+    }
+  }, [welcomeStep, introActive, welcomeVideoFading]);
+
+  useEffect(() => {
+    if (isWelcomeVideoActive && welcomeVideoRef.current) {
+      welcomeVideoRef.current.currentTime = 0;
+      welcomeVideoFallbackTimerRef.current = window.setTimeout(() => {
+        handleWelcomeVideoEnd();
+      }, 7000);
+      welcomeVideoRef.current.play().catch((e) => {
+        console.log("React welcome video play error:", e);
+        window.setTimeout(() => handleWelcomeVideoEnd(), 600);
+      });
+    }
+    return () => {
+      if (welcomeVideoFallbackTimerRef.current) {
+        window.clearTimeout(welcomeVideoFallbackTimerRef.current);
+        welcomeVideoFallbackTimerRef.current = null;
+      }
+    };
+  }, [handleWelcomeVideoEnd, isWelcomeVideoActive]);
 
   useEffect(() => {
     pointsRef.current = points;
@@ -413,9 +511,11 @@ export default function App() {
       if (!blocksTapReward) {
         if (welcomeInProgress) {
           pendingTapRewardRef.current = tapAwarded;
+          setPendingRewardSignal((value) => value + 1);
           setPoints(Math.max(0, vm.points - tapAwarded));
         } else if (welcomeDone && !tapFxPlayed) {
           pendingTapRewardRef.current = tapAwarded;
+          setPendingRewardSignal((value) => value + 1);
           setPoints(Math.max(0, vm.points - tapAwarded));
         } else {
           setPoints(vm.points);
@@ -578,10 +678,12 @@ export default function App() {
     const devTap = DEV_SCENE_TAP[sceneId];
     if (devTap) {
       pendingTapRewardRef.current = devTap.pending;
+      setPendingRewardSignal((value) => value + 1);
       setPoints(devTap.points);
     }
 
     if (sceneId === 'return-visit') {
+      sessionStorage.removeItem(`fc_tap_fx_${touchId}`);
       returnIntroPendingRef.current = true;
       returnIntroShownRef.current = false;
       setReturnIntroGate(true);
@@ -676,11 +778,15 @@ export default function App() {
   }, []);
 
   const handleWelcomeEarnMore = useCallback(async () => {
+    if (needsShopifyAuth() && !getMoreOffAuthPromptSeen) {
+      showShopifyAuth('get_more_off');
+      return;
+    }
     setWelcomeStep(2);
     reloadPlan().catch((err) => {
       dbgError('[FCDBG][App] welcome earn more reload failed', err);
     });
-  }, [reloadPlan]);
+  }, [reloadPlan, shopifyAuthStatus, getMoreOffAuthPromptSeen]);
 
   const preloadGameStart = useCallback((challenge) => {
     if (!rewardPlanId || !challenge?.gameInstanceId) return null;
@@ -788,6 +894,7 @@ export default function App() {
     // 非首次 tap:立即播回访礼盒,与 plan 请求并行
     if (returnVisitorOnEntry) {
       if (!readWelcomeCompleted(touchId)) writeWelcomeCompleted(touchId);
+      sessionStorage.removeItem(`fc_tap_fx_${touchId}`);
       returnIntroPendingRef.current = true;
       setReturnIntroGate(true);
       setWelcomeStep(3);
@@ -1089,15 +1196,23 @@ export default function App() {
 
   // 回访礼盒结束且首页就绪后再播 +5(不在 intro 期间触发)
   useEffect(() => {
-    if (introActive || planLoading) return undefined;
+    if (introActive || planLoading || isWelcomeVideoActive || welcomeVideoFading) return undefined;
     if (!returnIntroShownRef.current) return undefined;
     if (!pendingTapRewardRef.current) return undefined;
     const fxKey = `fc_tap_fx_${touchId}`;
     if (sessionStorage.getItem(fxKey)) return undefined;
 
-    const timer = window.setTimeout(() => playPendingTapReward(), 280);
+    const timer = window.setTimeout(() => playPendingTapReward(), 220);
     return () => window.clearTimeout(timer);
-  }, [introActive, planLoading, playPendingTapReward, touchId]);
+  }, [
+    introActive,
+    isWelcomeVideoActive,
+    pendingRewardSignal,
+    planLoading,
+    playPendingTapReward,
+    touchId,
+    welcomeVideoFading,
+  ]);
 
   function triggerLoginBonusAnimation(pts) {
     const viewport = viewportRef.current;
@@ -1210,8 +1325,45 @@ export default function App() {
     if (onConfirm) onConfirm();
   }
 
-  // 任意「Claim now」按钮先弹确认弹窗,确认后再执行真正的领取动作。
+  const SHOPIFY_AUTH_URL = 'https://example.myshopify.com/admin/oauth/authorize?client_id=FAKE_CLIENT_ID&scope=read_customers,read_orders&redirect_uri=https://app.example.com/auth/shopify/callback&state=FAKE_STATE';
+
+  function needsShopifyAuth() {
+    return shopifyAuthStatus !== 'connected';
+  }
+
+  function showShopifyAuth(source) {
+    setShopifyAuthOverlay({ source });
+  }
+
+  function handleShopifyContinue() {
+    const source = shopifyAuthOverlay?.source || 'unknown';
+    window.location.href = SHOPIFY_AUTH_URL;
+  }
+
+  function handleShopifySkip() {
+    setShopifyAuthSkipCount((c) => c + 1);
+    setShopifyAuthLastSkippedAt(new Date().toISOString());
+    const source = shopifyAuthOverlay?.source;
+    setShopifyAuthOverlay(null);
+    if (source === 'get_more_off') {
+      setGetMoreOffAuthPromptSeen(true);
+    }
+  }
+
+  function handleShopifyAuthSuccess() {
+    setShopifyAuthStatus('connected');
+    setShopifyLoginTaskStatus('completed');
+    setShopifyAuthSuccess(true);
+    setShopifyAuthOverlay(null);
+    window.setTimeout(() => setShopifyAuthSuccess(false), 3500);
+  }
+
+  // 任意「Claim now」按钮先检查 Shopify 授权状态，再弹确认弹窗。
   function requestClaim(onConfirm, discount) {
+    if (needsShopifyAuth()) {
+      showShopifyAuth('claim');
+      return;
+    }
     setForceWalletView(false);
     setClaimConfirm({ onConfirm, discount });
   }
@@ -1551,6 +1703,10 @@ export default function App() {
   }
 
   function handleAccumulateMore() {
+    if (needsShopifyAuth() && !getMoreOffAuthPromptSeen) {
+      showShopifyAuth('get_more_off');
+      return;
+    }
     const targetPointsVal = discounts[currentStepIndex + 1]?.target ?? 90;
     setCurrentStepIndex((index) => Math.min(index + 1, discounts.length - 1));
     setPoints(Math.max(pendingPoints - targetPointsVal, 0));
@@ -1799,6 +1955,11 @@ export default function App() {
 
   async function openChallenge(challenge) {
     dbg('[FCDBG][App] openChallenge', challenge);
+    if (challenge.type === 'shopify_connect') {
+      showShopifyAuth('task_card');
+      return;
+    }
+
     if (challenge.type === 'survey' || challenge.id === 'survey') {
       setActiveModal('survey');
       setSurveyStep(0);
@@ -1961,7 +2122,28 @@ export default function App() {
       style={brand.primaryColor ? { '--brand-primary': brand.primaryColor } : undefined}
     >
       <canvas id="confetti-canvas" ref={canvasRef} />
-      {showBrandIntro && (
+      {isWelcomeVideoActive && (
+        <div 
+          className="gift-video-container"
+          style={{
+            opacity: welcomeVideoFading ? 0 : 1,
+            pointerEvents: welcomeVideoFading ? 'none' : 'auto'
+          }}
+          onClick={handleWelcomeVideoEnd}
+        >
+          <video
+            ref={welcomeVideoRef}
+            src="/打开礼包开场动画/首次开场动画.mov"
+            playsInline
+            webkit-playsinline="true"
+            muted
+            onEnded={handleWelcomeVideoEnd}
+            onError={handleWelcomeVideoEnd}
+            autoPlay
+          />
+        </div>
+      )}
+      {showBrandIntro && !isWelcomeVideoActive && (
         <BrandIntro 
           onComplete={brandIntroIsWelcome ? closeIntro : finishReturnIntro}
           brand={brand} 
@@ -2042,7 +2224,7 @@ export default function App() {
               onTargetClick={handleTargetClick}
             />
 
-            <Challenges challenges={challenges} dailyCapReached={dailyCapReached} onOpen={openChallenge} />
+            <Challenges challenges={displayChallenges} dailyCapReached={dailyCapReached} onOpen={openChallenge} />
             <RulesFooter rulesOpen={rulesOpen} onToggle={() => setRulesOpen((value) => !value)} />
           </>
         )}
@@ -2090,7 +2272,34 @@ export default function App() {
       <ClaimConfirmModal claim={claimConfirm} onConfirm={confirmClaim} onCancel={cancelClaim} />
 
       {newChallenge && (
-        <NewChallengeUnlocked reason={newChallenge.reason} onStart={handleStartNewChallenge} prevCoupon={lockedCoupon} />
+        <NewChallengeUnlocked
+          reason={newChallenge.reason}
+          onStart={handleStartNewChallenge}
+          onDismiss={() => setNewChallenge(null)}
+          prevCoupon={lockedCoupon}
+        />
+      )}
+
+      {shopifyAuthOverlay && (
+        <ShopifyAuthorizationPage
+          source={shopifyAuthOverlay.source}
+          onContinue={handleShopifyContinue}
+          onSkip={handleShopifySkip}
+        />
+      )}
+
+      {shopifyAuthSuccess && (
+        <div className="shopify-auth-toast" role="status" aria-label="Shopify connected">
+          <div className="shopify-auth-toast-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+          </div>
+          <div className="shopify-auth-toast-text">
+            <strong>Shopify connected</strong>
+            <span>+500 pts earned</span>
+          </div>
+        </div>
       )}
 
       {import.meta.env.DEV && (
@@ -2336,200 +2545,8 @@ function WelcomeRitual({ step, coupon, brand, couponFaceRef, onAdvanceToSettle, 
   );
 }
 
-function BrandIntro({ onComplete, brand, isWelcome, onOpenPackage }) {
-  const target = brand?.name ?? '';
-  const [exiting, setExiting] = useState(false);
-  const [settled, setSettled] = useState(false);
-  const [unboxed, setUnboxed] = useState(false);
-
-  useEffect(() => {
-    if (isWelcome) {
-      // For welcome, wait for package to drop and settle (takes about 2.5s)
-      const settleTimer = window.setTimeout(() => setSettled(true), 2500);
-      return () => window.clearTimeout(settleTimer);
-    } else {
-      // Standard auto-play intro
-      const exit = window.setTimeout(() => setExiting(true), 8000);
-      const complete = window.setTimeout(onComplete, 8800);
-      return () => {
-        window.clearTimeout(exit);
-        window.clearTimeout(complete);
-      };
-    }
-  }, [onComplete, target, isWelcome]);
-
-  const handleOpen = () => {
-    if (!settled || unboxed) return;
-    setUnboxed(true);
-    if (navigator.vibrate) {
-      navigator.vibrate(60);
-    }
-    if (onOpenPackage) {
-      onOpenPackage();
-    }
-  };
-
-  return (
-    <section className={`brand-intro ${exiting ? 'exiting' : ''} ${isWelcome ? 'interactive' : ''} ${unboxed ? 'unboxed' : ''}`} aria-label={`${target} intro`}>
-      {isWelcome && target && (
-        <div className="welcome-brand-header">
-          {brand?.logoUrl ? (
-            <img className="welcome-brand-logo" src={brand.logoUrl} alt={`${target} logo`} />
-          ) : null}
-          {target && <span className="welcome-brand-name">{target}</span>}
-        </div>
-      )}
-      {isWelcome && !target && null}
-      <div className="intro-stage" aria-hidden="true" onClick={isWelcome ? handleOpen : undefined}>
-        <div className="intro-glow" />
-        <div className="intro-rays" />
-
-        <svg className="intro-package" viewBox="0 0 180 150">
-          {isWelcome ? (
-            /* Premium Closed Gift Box for Welcome Flow */
-            <g className="closed-gift-box">
-              {/* Box Base Left Face */}
-              <path 
-                d="M46 70 L90 92 L90 136 L46 114 Z" 
-                style={{ fill: '#EADBBF', stroke: '#b8892e', strokeWidth: '2px' }} 
-              />
-              {/* Box Base Right Face */}
-              <path 
-                d="M90 92 L134 70 L134 114 L90 136 Z" 
-                style={{ fill: '#DBCBB0', stroke: '#b8892e', strokeWidth: '2px' }} 
-              />
-              
-              {/* Box Base Left vertical ribbon */}
-              <path 
-                d="M62 78 L62 122 L74 128 L74 84 Z" 
-                style={{ fill: '#f0cc82', stroke: '#b8892e', strokeWidth: '2px' }} 
-              />
-              {/* Box Base Right vertical ribbon */}
-              <path 
-                d="M106 84 L106 128 L118 122 L118 78 Z" 
-                style={{ fill: '#f0cc82', stroke: '#b8892e', strokeWidth: '2px' }} 
-              />
-
-              {/* Lid Left lip */}
-              <path 
-                d="M42 60 L90 82 L90 92 L42 70 Z" 
-                style={{ fill: '#F6E7C8', stroke: '#b8892e', strokeWidth: '2px' }} 
-              />
-              {/* Lid Right lip */}
-              <path 
-                d="M90 82 L138 60 L138 70 L90 92 Z" 
-                style={{ fill: '#EADBBF', stroke: '#b8892e', strokeWidth: '2px' }} 
-              />
-
-              {/* Lid Left lip ribbon */}
-              <path 
-                d="M60 69 L60 79 L72 85 L72 75 Z" 
-                style={{ fill: '#f0cc82', stroke: '#b8892e', strokeWidth: '2px' }} 
-              />
-              {/* Lid Right lip ribbon */}
-              <path 
-                d="M108 74 L108 84 L120 78 L120 68 Z" 
-                style={{ fill: '#f0cc82', stroke: '#b8892e', strokeWidth: '2px' }} 
-              />
-
-              {/* Lid Top Face */}
-              <path 
-                d="M42 60 L90 38 L138 60 L90 82 Z" 
-                style={{ fill: '#FDF6ED', stroke: '#b8892e', strokeWidth: '2px' }} 
-              />
-
-              {/* Lid Top crossing ribbons */}
-              <path 
-                d="M60 69 L108 46 L120 52 L72 75 Z" 
-                style={{ fill: '#f0cc82', stroke: '#b8892e', strokeWidth: '2px' }} 
-              />
-              <path 
-                d="M60 52 L108 74 L120 68 L72 46 Z" 
-                style={{ fill: '#f0cc82', stroke: '#b8892e', strokeWidth: '2px' }} 
-              />
-
-              {/* Ribbon Bow Loops */}
-              <path 
-                d="M90 60 C70 40 60 50 90 60 Z" 
-                style={{ fill: '#f0cc82', stroke: '#b8892e', strokeWidth: '2px' }} 
-              />
-              <path 
-                d="M90 60 C110 40 120 50 90 60 Z" 
-                style={{ fill: '#f0cc82', stroke: '#b8892e', strokeWidth: '2px' }} 
-              />
-              
-              {/* Bow tails */}
-              <path 
-                d="M90 60 Q75 80 70 95" 
-                style={{ fill: 'none', stroke: '#b8892e', strokeWidth: '2px' }} 
-              />
-              <path 
-                d="M90 60 Q105 80 110 95" 
-                style={{ fill: 'none', stroke: '#b8892e', strokeWidth: '2px' }} 
-              />
-
-              {/* Knot */}
-              <circle 
-                cx="90" 
-                cy="60" 
-                r="6" 
-                style={{ fill: '#b8892e', stroke: '#b8892e', strokeWidth: '2px' }} 
-              />
-            </g>
-          ) : (
-            /* Original Express Cardboard Box for Normal Loading */
-            <>
-              <g className="package-box">
-                <path d="M42 64 90 42l48 22v54l-48 22-48-22Z" />
-                <path d="M42 64 90 86l48-22M90 86v54" />
-                <path d="M69 54v28l16-8 16 8V54" />
-                <path d="M54 104h18v12H54ZM117 105h15v11h-15Z" />
-              </g>
-              <g className="package-lid lid-left">
-                <path d="M42 63 90 41l-12-21-50 22Z" />
-                <path d="M42 63 78 79" />
-              </g>
-              <g className="package-lid lid-right">
-                <path d="M90 41 138 63l14-22-50-21Z" />
-                <path d="M102 79 138 63" />
-              </g>
-            </>
-          )}
-        </svg>
-
-        {(!isWelcome || unboxed) && (
-          <>
-            <svg className="intro-ticket" viewBox="0 0 160 106">
-              <path d="M18 28 Q18 17 29 17 H61 Q64 28 80 28 Q96 28 99 17 H131 Q142 17 142 28 V43 Q128 46 128 53 Q128 60 142 63 V78 Q142 89 131 89 H99 Q96 78 80 78 Q64 78 61 89 H29 Q18 89 18 78 V63 Q32 60 32 53 Q32 46 18 43Z" />
-              <path className="ticket-dash" d="M50 23v60M110 23v60" />
-              <text x="80" y="69" textAnchor="middle">%</text>
-            </svg>
-
-            <div className="intro-orbit">
-              {[0, 1, 2, 3, 4, 5].map((coin) => (
-                <span className="intro-coin" style={{ '--coin': coin }} key={coin}>¢</span>
-              ))}
-            </div>
-          </>
-        )}
-
-        {!isWelcome && target && (
-          <div className="intro-final-logo">
-            {brand?.logoUrl ? (
-              <img className="intro-final-mark" src={brand.logoUrl} alt={`${target} logo`} />
-            ) : null}
-            <span>{target}</span>
-            <i />
-          </div>
-        )}
-        {isWelcome && settled && !unboxed && (
-          <div className="welcome-box-pulse" onClick={handleOpen}>
-            <span className="pulse-text">🎁 Click to Reveal Exclusive Discount</span>
-          </div>
-        )}
-      </div>
-    </section>
-  );
+function BrandIntro() {
+  return null;
 }
 
 function HeaderBase({ brand }) {
@@ -2596,7 +2613,7 @@ function LargeCouponTicket({
   onAction,
 }) {
   return (
-    <div className="coupon-wrap current voucher-large-coupon-wrap" data-coupon-theme="dtc">
+    <div className="coupon-wrap current voucher-large-coupon-wrap" data-coupon-theme={COUPON_THEME}>
       <div className={`coupon coupon-current voucher-large-coupon is-${variant} ${claimed ? 'is-claimed' : ''} ${isExpired ? 'expired' : ''}`} data-tier={tierForDiscount(coupon.num)}>
         <div className="coupon-face">
           <span className="coupon-kicker">{claimed ? 'Your Coupon' : 'Best offer this round'}</span>
@@ -2685,171 +2702,65 @@ function BestCouponLockedPage({
   );
 }
 
-function NewChallengeUnlocked({ reason, onStart, prevCoupon }) {
+function NewChallengeUnlocked({ reason, onStart, onDismiss, prevCoupon }) {
   const redeemed = reason === 'redeemed';
   const expired = reason === 'expired';
-  
-  // Previous offer details
-  const prevNum = prevCoupon?.num || '20';
-  const prevValue = prevCoupon?.value || '20% OFF';
-  // Subtitle for previous offer (Orders $75+ or Sitewide depending on tier)
-  const prevSubtitle = prevNum === '20' ? 'Orders $75+' : 'Sitewide · No minimum';
+  const settlementCoupon = prevCoupon || { num: expired ? '15' : '20', value: `${expired ? '15' : '20'}% OFF` };
+  const stamp = redeemed ? 'USED' : 'EARNED';
 
-  // New round details (starts at 15%)
-  const newNum = '15';
-  
   return (
-    <div className="new-challenge-overlay" role="dialog" aria-label="New challenge unlocked" data-screen-label="新挑战开启">
-      <div className="nc-container">
-        
-        {/* 1. Header badge */}
-        {expired ? (
-          <div className="nc-header-badge expired">
-            <svg className="nc-header-clock-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"></circle>
-              <polyline points="12 6 12 12 16 14"></polyline>
-            </svg>
-            <span className="nc-header-badge-text">LAST CHALLENGE ENDED</span>
-          </div>
-        ) : (
-          <div className="nc-used-badge-wrapper">
-            <div className="nc-used-circle">
-              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"></polyline>
+    <div className={`new-challenge-overlay nc-settlement ${redeemed ? 'is-redeemed' : 'is-expired'}`} role="dialog" aria-label={redeemed ? 'Reward used' : 'Round complete'} data-screen-label={redeemed ? '奖励已使用' : '回合已结束'}>
+      <div className="nc-settlement-scroll">
+        <div className="nc-settlement-hero">
+          {redeemed ? (
+            <div className="nc-hero-check" aria-hidden="true">
+              <svg viewBox="0 0 90 90" fill="none" stroke="currentColor" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M24 46 39 61 67 30" />
               </svg>
-            </div>
-            <span className="nc-used-label">OFFER USED</span>
-          </div>
-        )}
-
-        {/* 2. Main title & description */}
-        <h1 className="nc-title">New Challenge Unlocked</h1>
-        <p className="nc-subtitle">
-          {expired 
-            ? 'Your previous challenge has ended. A fresh round is now ready for you.'
-            : 'Nice! Your last offer was used successfully. Earn points to unlock your next coupon.'}
-        </p>
-
-        {/* 3. Previous Offer/Challenge Ticket */}
-        <div className="nc-ticket-previous">
-          <div className="nc-ticket-label">
-            {expired ? 'PREVIOUS CHALLENGE' : 'PREVIOUS OFFER'}
-          </div>
-          
-          <div className="nc-ticket-value-row">
-            <span className="nc-ticket-value-number">{prevNum}</span>
-            <div className="nc-ticket-percent-off-stack">
-              <span className="nc-ticket-percent-symbol">%</span>
-              <span className="nc-ticket-off-label">OFF</span>
-            </div>
-          </div>
-          
-          <div className="nc-ticket-subtitle">{prevSubtitle}</div>
-          
-          {/* Stamp */}
-          {expired ? (
-            <div className="nc-stamp-ended">
-              <span className="nc-stamp-ended-star">★</span>
-              <span className="nc-stamp-ended-text">ENDED</span>
-              <span className="nc-stamp-ended-star">★</span>
             </div>
           ) : (
-            <div className="nc-stamp-used">
-              <svg className="nc-stamp-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-              <span>USED</span>
-              <span className="nc-stamp-star">★</span>
-            </div>
-          )}
-
-          {/* Clock timer pill for expired page */}
-          {expired && (
-            <div className="nc-ticket-timer-pill">
-              <svg className="nc-pill-clock-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <polyline points="12 6 12 12 16 14"></polyline>
-              </svg>
-              <span>00:00:00</span>
+            <div className="nc-hero-flag-small" aria-hidden="true">
+              <div className="nc-flag-pole" />
+              <div className="nc-flag-banner">
+                <span>★</span>
+              </div>
             </div>
           )}
         </div>
 
-        {/* 4. Separator */}
-        {expired ? (
-          <div className="nc-connector-circle">
-            <svg className="nc-refresh-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="23 4 23 10 17 10"></polyline>
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-            </svg>
-          </div>
-        ) : (
-          <div className="nc-arrow-down">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <polyline points="19 12 12 19 5 12"></polyline>
-            </svg>
-            <div className="nc-arrow-glow"></div>
-          </div>
-        )}
+        <section className="nc-copy-block">
+          <h1>{expired ? 'Round Complete' : 'Reward Used!'}</h1>
+          <p>
+            {expired
+              ? 'This challenge period has ended.'
+              : 'You used your reward from this round.'}
+          </p>
+        </section>
 
-        {/* 5. New Round Ticket */}
-        <div className={`nc-new-round-section ${expired ? 'expired-glow' : ''}`}>
-          {expired ? (
-            /* Progress pill on top centered on the border */
-            <div className="nc-ticket-new-progress-pill">0 / 80</div>
-          ) : (
-            /* Mini Arc Path Header */
-            <div className="nc-mini-arc-container">
-              <svg className="nc-mini-arc-svg" viewBox="0 0 178 70" preserveAspectRatio="none">
-                <path d="M8 58 C52 14 126 14 170 58" fill="none" stroke="#e6e1d5" strokeWidth="2" strokeDasharray="5 5" />
-              </svg>
-              <div className="nc-mini-arc-coin">¢</div>
-              <div className="nc-mini-arc-progress">0 / 80</div>
-              <div className="nc-mini-arc-lock">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
-                </svg>
-              </div>
+        <div className="nc-settlement-coupon-wrap coupon-wrap current" data-coupon-theme={COUPON_THEME}>
+          <div
+            className={`coupon coupon-current nc-settlement-wallet-coupon ${redeemed ? 'is-used' : 'is-earned'}`}
+            data-tier={tierForDiscount(settlementCoupon.num)}
+          >
+            <div className="coupon-face">
+              <span className="coupon-kicker">Your Reward</span>
+              <span className="stub-value">{settlementCoupon.num}<small>%</small></span>
+              <span className="stub-off">OFF</span>
+              <span className="coupon-title">Sitewide · No minimum</span>
             </div>
-          )}
-
-          {/* New Round Ticket Card */}
-          <div className="nc-ticket-new-round">
-            <div className="nc-ticket-label">NEW ROUND</div>
-            
-            <div className="nc-ticket-value-row">
-              <span className="nc-ticket-value-number">{newNum}</span>
-              <div className="nc-ticket-percent-off-stack">
-                <span className="nc-ticket-percent-symbol">%</span>
-                <span className="nc-ticket-off-label">OFF</span>
-              </div>
-            </div>
-            
-            <div className="nc-ticket-value-subtitle">Orders $75+</div>
-            
-            <div className="nc-ticket-divider">
-              <span className="nc-ticket-diamond">♦</span>
-            </div>
-            
-            <div className="nc-ticket-subtitle">Start earning to unlock more</div>
+            <div className="nc-settlement-coupon-stamp">{stamp}</div>
           </div>
         </div>
 
-        {/* 6. Bottom CTA Button and Timer Footer */}
         <div className="nc-footer">
           <button className="nc-btn-start" type="button" onClick={onStart}>
-            <span>Start New Challenge</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-              <polyline points="12 5 19 12 12 19"></polyline>
+            <span>Start Next Challenge</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.7" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14" />
+              <path d="m13 5 7 7-7 7" />
             </svg>
           </button>
-          <p className="nc-footer-text">
-            {expired ? 'A new countdown has started.' : 'Your new timer has started.'}
-          </p>
         </div>
-
       </div>
     </div>
   );
@@ -2904,7 +2815,7 @@ function CouponWallet({
         </div>
       )}
 
-      <div className="coupon-pair" data-coupon-theme="dtc">
+      <div className="coupon-pair" data-coupon-theme={COUPON_THEME}>
         <div className={`coupon-wrap current ${currentSwap ? 'swap' : ''} ${isTearingCoupon ? 'tearing' : ''}`}>
           <div className={`coupon coupon-current ${isExpired ? 'expired' : ''} ${confirmOpen ? 'confirm-open-zoom' : ''}`} data-tier={tierForDiscount(current.num)}>
             <div className="coupon-face" ref={couponFaceRef}>
@@ -2977,19 +2888,20 @@ function ChallengesBase({ challenges, dailyCapReached, onOpen }) {
       <div className="challenges-swiper">
         {challenges.map((challenge) => {
           const pts = challenge.reward.replace(/[^0-9]/g, '');
+          const isShopifyConnect = challenge.type === 'shopify_connect';
           return (
-            <div className="challenge-card" key={challenge.id}>
+            <div className="challenge-card" key={challenge.id} style={isShopifyConnect ? { background: 'linear-gradient(135deg, #f6f9f4 0%, #eaf0e6 100%)', borderColor: 'rgba(94, 128, 62, 0.18)' } : undefined}>
               <span className="challenge-badge">{challenge.badge}</span>
               <div className="challenge-icon-wrapper">{challenge.icon}</div>
               <h4 className="challenge-title">{challenge.title}</h4>
               <p className="challenge-desc">{challenge.desc}</p>
               <button
-                className="btn btn-outline btn-play"
+                className={isShopifyConnect ? 'btn btn-play shopify-connect-btn' : 'btn btn-outline btn-play'}
                 id={challenge.type === 'survey' ? 'take-survey-btn' : `play-${challenge.id}-btn`}
-                disabled={dailyCapReached}
+                disabled={dailyCapReached && !isShopifyConnect}
                 onClick={() => onOpen(challenge)}
               >
-                {dailyCapReached ? (
+                {dailyCapReached && !isShopifyConnect ? (
                   <span>Cap Reached</span>
                 ) : (
                   <>
@@ -3546,7 +3458,7 @@ function TearCanvas({ active, isBestOffer, onComplete }) {
 
 const ReceiptPrinter = memo(function ReceiptPrinter({ unlockedCoupon, colors, brand, expiryDate, onUse, onAccumulate }) {
   return (
-    <div className="printer-overlay" data-coupon-theme="dtc" style={couponColorVars(colors)}>
+    <div className="printer-overlay" data-coupon-theme={COUPON_THEME} style={couponColorVars(colors)}>
       <div className="printer-machine">
         <div className="printer-slot" />
         <div className="receipt-paper-wrap">
@@ -3808,9 +3720,43 @@ function ZoomFlipCard({ coupon, colors, rect, phase, copyState, onClose, onCopy 
                 <span>Your coupon is already locked in.</span>
               </div>
             </div>
+</div>
           </div>
         </div>
-      </div>
-    </>
+      </>
   );
 }
+
+function ShopifyAuthorizationPage({ source, onContinue, onSkip }) {
+  return (
+    <div className="shopify-auth-overlay" role="dialog" aria-label="Shopify authorization" data-auth-source={source}>
+      <div className="shopify-auth-card">
+        <div className="shopify-auth-icon" aria-hidden="true">
+          <svg viewBox="0 0 40 40" fill="none">
+            <path d="M20 4C11.16 4 4 11.16 4 20s7.16 16 16 16 16-7.16 16-16S28.84 4 20 4Z" fill="#95BF47"/>
+            <path d="M27.28 17.06c-.18-1.44-.96-2.58-2.34-3.18-.66-.28-1.36-.38-2.08-.3-.48.06-.92.2-1.32.44-.34.2-.64.44-.92.72-.08-.04-.06-.12-.08-.18-.22-1.08-.56-2.12-1.1-3.08-.32-.56-.7-1.08-1.16-1.52-.2-.18-.4-.26-.56-.14-.08.06-.14.14-.2.22-.3.38-.5.82-.66 1.28-.3.88-.4 1.78-.34 2.72.02.34.08.68.16 1.02-.46-.12-.88-.2-1.32-.22-.62-.04-1.22.02-1.78.26-.72.3-1.24.82-1.56 1.52-.2.42-.3.88-.32 1.36-.02.42.02.84.14 1.24.3 1.04.88 1.88 1.74 2.5.72.52 1.54.82 2.42.92.22.02.44.04.66.04.1 0 .18-.02.22.02.04.04-.02.12-.04.16-.08.12-.18.22-.3.3-.56.44-1.2.72-1.9.86-.36.08-.72.1-1.08.06-.02 0-.04.02-.04.04 0 .02.02.04.04.04.1.04.2.06.3.08.7.1 1.38.06 2.06-.1.74-.18 1.42-.5 2.04-.96.62-.46 1.1-1.06 1.32-1.8.12-.38.18-.78.18-1.18 0-.06 0-.12-.02-.18-.02-.06-.06-.1-.12-.08l-.04.02c-.72.28-1.48.38-2.26.3-1.02-.1-1.9-.48-2.62-1.2-.44-.44-.76-.96-.94-1.56-.14-.46-.18-.94-.14-1.42.06-.72.3-1.36.74-1.92.06-.08.14-.16.22-.22.02-.02.04-.04.04-.06-.02-.04-.06-.02-.1 0-.56.28-1.04.64-1.46 1.08-.54.56-.86 1.24-.94 2.02-.02.24-.02.48 0 .72.02.24.06.48.12.72-.42-.1-.8-.28-1.12-.54-.32-.26-.56-.56-.78-.9-.32-.5-.54-1.04-.64-1.62-.04-.22-.06-.44-.08-.66-.02-.36.02-.72.12-1.06.2-.76.6-1.42 1.14-1.98.5-.52 1.08-.94 1.76-1.18.44-.16.88-.24 1.34-.22.4.02.78.1 1.14.26.52.22.96.54 1.34.96.04.04.08.06.12.04.04-.02.04-.06.04-.1-.06-.36-.06-.74-.02-1.1.1-.78.38-1.5.8-2.14.38-.56.84-1.04 1.4-1.42.04-.02.08-.06.08-.12 0-.04-.04-.06-.08-.06-.14.02-.28.06-.42.1-.98.32-1.76.96-2.24 1.86-.32.6-.48 1.24-.46 1.92 0 .2.02.4.06.6.02.1.04.2.08.3.02.04 0 .06-.02.08Z" fill="#FFF"/>
+          </svg>
+        </div>
+
+        <h2 className="shopify-auth-title">Connect your Shopify account</h2>
+        <p className="shopify-auth-desc">
+          Log in with Shopify to sync your coupon status, track your rewards, and earn more points.
+        </p>
+
+        <button className="shopify-auth-cta" type="button" onClick={onContinue}>
+          <svg className="shopify-auth-cta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M16 8h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h2" />
+            <rect x="8" y="2" width="8" height="4" rx="1" />
+          </svg>
+          Continue with Shopify
+        </button>
+
+        <button className="shopify-auth-skip" type="button" onClick={onSkip}>
+          Skip
+        </button>
+      </div>
+    </div>
+  );
+}
+
+

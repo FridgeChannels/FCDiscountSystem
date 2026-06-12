@@ -2944,6 +2944,549 @@
 }
 
 /* ==========================================================================
+   Settlement Screens: Redeemed / Expired
+   Aligned with homepage visual system (fc-style.css)
+   ========================================================================== */
+.new-challenge-overlay.nc-settlement {
+  --settle-green: #5c6e58;
+  --settle-green-deep: #4a5947;
+  --settle-gold: #b89855;
+  --settle-gold-light: #cda756;
+  --settle-cream: #f4f1e8;
+  --settle-ink: #2d332b;
+  --settle-muted: #60695d;
+  --settle-line: #e2dbce;
+  --settle-card: #fdfdfb;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 24%, rgba(205, 167, 86, 0.12) 0 26%, transparent 44%),
+    radial-gradient(circle at 16% 52%, rgba(92, 110, 88, 0.06), transparent 34%),
+    linear-gradient(180deg, #f4f1e8 0%, #ebe6d8 100%);
+}
+
+.new-challenge-overlay.nc-settlement * {
+  pointer-events: auto;
+}
+
+.nc-settlement-scroll {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 44px 28px 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--settle-ink);
+}
+
+.nc-phone-chrome {
+  position: absolute;
+  top: 18px;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 34px;
+  color: #11131a;
+  font-weight: 900;
+  font-size: 1.05rem;
+}
+
+.nc-status-icons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nc-bars {
+  width: 22px;
+  height: 15px;
+  display: inline-block;
+  background:
+    linear-gradient(#11131a, #11131a) 0 9px / 4px 6px no-repeat,
+    linear-gradient(#11131a, #11131a) 6px 6px / 4px 9px no-repeat,
+    linear-gradient(#11131a, #11131a) 12px 3px / 4px 12px no-repeat,
+    linear-gradient(#11131a, #11131a) 18px 0 / 4px 15px no-repeat;
+  border-radius: 2px;
+}
+
+.nc-wifi {
+  width: 21px;
+  height: 15px;
+  display: inline-block;
+  border: 4px solid #11131a;
+  border-color: #11131a transparent transparent transparent;
+  border-radius: 18px 18px 0 0;
+  position: relative;
+}
+
+.nc-wifi::before,
+.nc-wifi::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 3px solid #11131a;
+  border-color: #11131a transparent transparent transparent;
+  border-radius: 14px 14px 0 0;
+}
+
+.nc-wifi::before {
+  top: 2px;
+  width: 13px;
+  height: 8px;
+}
+
+.nc-wifi::after {
+  top: 8px;
+  width: 3px;
+  height: 3px;
+  border: 0;
+  background: #11131a;
+  border-radius: 50%;
+}
+
+.nc-battery {
+  width: 25px;
+  height: 13px;
+  display: inline-block;
+  border: 2px solid #11131a;
+  border-radius: 4px;
+  position: relative;
+  box-shadow: inset 0 0 0 2px #fffdf8;
+}
+
+.nc-battery::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  background: #11131a;
+  border-radius: 2px;
+}
+
+.nc-battery::after {
+  content: '';
+  position: absolute;
+  right: -5px;
+  top: 3px;
+  width: 3px;
+  height: 7px;
+  background: #11131a;
+  border-radius: 0 3px 3px 0;
+}
+
+.nc-settlement-hero {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.nc-hero-check {
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  color: var(--settle-green);
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffffff 0 48%, rgba(205, 167, 86, 0.15) 50% 68%, transparent 70%);
+  box-shadow: 0 0 0 12px rgba(92, 110, 88, 0.12);
+}
+
+.nc-hero-check svg {
+  width: 44px;
+  height: 44px;
+}
+
+.nc-hero-flag-small {
+  position: relative;
+  width: 64px;
+  height: 80px;
+}
+
+.nc-flag-pole {
+  position: absolute;
+  left: 10px;
+  top: 0;
+  width: 6px;
+  height: 80px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--settle-gold-light), var(--settle-gold));
+}
+
+.nc-flag-banner {
+  position: absolute;
+  left: 16px;
+  top: 6px;
+  width: 48px;
+  height: 34px;
+  background: linear-gradient(135deg, var(--settle-green), var(--settle-green-deep));
+  border-radius: 4px 8px 8px 4px;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 6px 12px rgba(92, 110, 88, 0.2);
+}
+
+.nc-flag-banner span {
+  color: #fff8ed;
+  font-size: 1.1rem;
+}
+
+.nc-copy-block {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  width: 100%;
+}
+
+.nc-copy-block h1 {
+  margin: 0;
+  color: var(--settle-ink);
+  font-family: var(--font-serif);
+  font-size: clamp(2.4rem, 11vw, 3.6rem);
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.nc-settlement.is-redeemed .nc-copy-block h1 {
+  font-size: clamp(2.4rem, 10.5vw, 3.2rem);
+  white-space: nowrap;
+}
+
+.nc-copy-block p {
+  margin: 14px auto 0;
+  max-width: 320px;
+  color: var(--settle-muted);
+  font-size: clamp(0.96rem, 4vw, 1.16rem);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+/* Settlement Coupon - uses homepage coupon style with zigzag edges */
+.nc-settlement-coupon {
+  --tooth: 12px;
+  --depth: calc(var(--tooth) / 2);
+  --notch: 13px;
+  --perf: 0px;
+  position: relative;
+  width: min(100%, 340px);
+  min-height: 200px;
+  margin-top: 32px;
+  border-radius: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
+  color: var(--coupon-ink);
+  background: var(--coupon-gradient);
+  filter: drop-shadow(0 14px 22px color-mix(in srgb, var(--coupon-main) 50%, transparent));
+  -webkit-mask:
+    radial-gradient(circle var(--notch) at left  calc(100% - var(--perf)), #0000 98%, #000) 0 0 / 100% 100% no-repeat,
+    radial-gradient(circle var(--notch) at right calc(100% - var(--perf)), #0000 98%, #000) 0 0 / 100% 100% no-repeat,
+    conic-gradient(from 315deg at 50% var(--depth), #0000 0 90deg, #000 90deg) 0 0 / var(--tooth) 100% repeat-x,
+    conic-gradient(from 135deg at 50% calc(100% - var(--depth)), #0000 0 90deg, #000 90deg) 0 0 / var(--tooth) 100% repeat-x;
+  -webkit-mask-composite: source-in, source-in, source-in;
+  mask:
+    radial-gradient(circle var(--notch) at left  calc(100% - var(--perf)), #0000 98%, #000) 0 0 / 100% 100% no-repeat,
+    radial-gradient(circle var(--notch) at right calc(100% - var(--perf)), #0000 98%, #000) 0 0 / 100% 100% no-repeat,
+    conic-gradient(from 315deg at 50% var(--depth), #0000 0 90deg, #000 90deg) 0 0 / var(--tooth) 100% repeat-x,
+    conic-gradient(from 135deg at 50% calc(100% - var(--depth)), #0000 0 90deg, #000 90deg) 0 0 / var(--tooth) 100% repeat-x;
+  mask-composite: intersect;
+}
+
+.nc-settlement-coupon::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 78% 24%, rgba(255, 255, 255, 0.18), transparent 30%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.08), transparent 48%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.nc-settlement-coupon.used {
+  filter: grayscale(0.6) drop-shadow(0 14px 22px color-mix(in srgb, var(--coupon-main) 30%, transparent));
+  opacity: 0.78;
+}
+
+.nc-settlement-coupon.earned {
+  filter: drop-shadow(0 14px 22px color-mix(in srgb, var(--coupon-main) 50%, transparent)) drop-shadow(0 0 24px rgba(205, 167, 86, 0.25));
+}
+
+.nc-settlement-coupon-face {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.nc-settlement-coupon-kicker {
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  opacity: 0.78;
+}
+
+.nc-settlement-coupon-value {
+  margin-top: 8px;
+  font-family: var(--font-serif);
+  font-size: clamp(3.5rem, 16vw, 5rem);
+  font-weight: 800;
+  line-height: 0.95;
+  letter-spacing: 0;
+}
+
+.nc-settlement-coupon-value small {
+  font-size: 0.48em;
+  font-weight: 800;
+}
+
+.nc-settlement-coupon-off {
+  margin-top: 8px;
+  font-size: 1.2rem;
+  font-weight: 900;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  opacity: 0.76;
+}
+
+.nc-settlement-coupon-code {
+  margin-top: 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1.5px dashed currentColor;
+  opacity: 0.85;
+}
+
+.nc-settlement-coupon-stamp {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 3px solid currentColor;
+  display: grid;
+  place-items: center;
+  font-size: 0.9rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  transform: translate3d(0, 0, 0) rotate(-12deg) scale(1);
+  transform-origin: 50% 50%;
+  opacity: 0;
+  z-index: 4;
+  animation: settlement-stamp-drop 0.78s cubic-bezier(0.18, 0.88, 0.2, 1.18) 0.48s both;
+  will-change: transform, opacity, filter;
+}
+
+.nc-settlement-coupon-stamp::before,
+.nc-settlement-coupon-stamp::after {
+  content: '★ ★ ★';
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.5rem;
+  letter-spacing: 0.2em;
+  opacity: 0.8;
+}
+
+.nc-settlement-coupon-stamp::before {
+  top: 8px;
+}
+
+.nc-settlement-coupon-stamp::after {
+  bottom: 8px;
+}
+
+.nc-settlement-coupon-wrap {
+  position: relative;
+  width: min(100%, 286px);
+  margin-top: 32px;
+}
+
+.nc-settlement-wallet-coupon {
+  grid-template-rows: 1fr;
+  min-height: 268px;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--coupon-accent) 34%, transparent),
+    0 18px 32px color-mix(in srgb, var(--coupon-main) 32%, transparent);
+  animation: settlement-coupon-impact 0.82s ease-out 0.48s both;
+}
+
+.nc-settlement-wallet-coupon::after {
+  content: '';
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  opacity: 0;
+  transform: rotate(-12deg) scale(0.7);
+  pointer-events: none;
+  z-index: 3;
+  animation: settlement-stamp-ring 0.58s ease-out 0.86s both;
+}
+
+.nc-settlement-wallet-coupon .coupon-face {
+  min-height: 268px;
+  padding: 34px 18px 32px;
+}
+
+.nc-settlement-wallet-coupon .coupon-face::after {
+  display: none;
+}
+
+.nc-settlement-wallet-coupon .coupon-title {
+  margin-top: 10px;
+}
+
+.nc-settlement-wallet-coupon .coupon-kicker {
+  font-size: 0.68rem;
+}
+
+.nc-settlement-wallet-coupon .stub-value {
+  margin-top: 10px;
+  font-size: clamp(5rem, 18vw, 6.35rem);
+}
+
+.nc-settlement-wallet-coupon .stub-off {
+  margin-top: 18px;
+  font-size: 1.36rem;
+}
+
+.nc-settlement-wallet-coupon.is-used {
+  filter: grayscale(0.18) drop-shadow(0 14px 22px color-mix(in srgb, var(--coupon-main) 34%, transparent));
+}
+
+.nc-settlement-wallet-coupon.is-used .coupon-face {
+  opacity: 0.9;
+}
+
+@keyframes settlement-stamp-drop {
+  0% {
+    opacity: 0;
+    transform: translate3d(44px, -86px, 0) rotate(8deg) scale(1.85);
+    filter: blur(1px);
+  }
+  48% {
+    opacity: 0.95;
+    transform: translate3d(5px, -7px, 0) rotate(-15deg) scale(1.16);
+    filter: blur(0);
+  }
+  58% {
+    opacity: 0.84;
+    transform: translate3d(0, 0, 0) rotate(-12deg) scale(0.88);
+    filter: brightness(0.82);
+  }
+  72% {
+    opacity: 0.76;
+    transform: translate3d(0, 0, 0) rotate(-12deg) scale(1.06);
+    filter: brightness(1.04);
+  }
+  100% {
+    opacity: 0.7;
+    transform: translate3d(0, 0, 0) rotate(-12deg) scale(1);
+    filter: none;
+  }
+}
+
+@keyframes settlement-coupon-impact {
+  0%,
+  42%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  56% {
+    transform: translateY(3px) scale(0.992);
+  }
+  72% {
+    transform: translateY(-1px) scale(1.004);
+  }
+}
+
+@keyframes settlement-stamp-ring {
+  0% {
+    opacity: 0;
+    transform: rotate(-12deg) scale(0.64);
+  }
+  22% {
+    opacity: 0.26;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(-12deg) scale(1.24);
+  }
+}
+
+.nc-settlement .nc-footer {
+  width: 100%;
+  padding-top: 28px;
+}
+
+.nc-settlement .nc-btn-start {
+  width: min(100%, 390px);
+  max-width: none;
+  height: 56px;
+  border-radius: 8px;
+  color: #ffffff;
+  background: var(--settle-green);
+  box-shadow: 0 8px 24px rgba(92, 110, 88, 0.2);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  gap: 12px;
+  transition: background 0.2s ease;
+}
+
+.nc-settlement .nc-btn-start svg {
+  width: 22px;
+  height: 22px;
+  color: #ffffff;
+}
+
+.nc-settlement .nc-btn-start:hover {
+  background: var(--settle-green-deep);
+}
+
+@media (max-width: 390px) {
+  .nc-settlement-scroll {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .nc-settlement-coupon,
+  .nc-settlement-coupon-wrap {
+    width: 100%;
+  }
+}
+
+/* ==========================================================================
    Redesigned M1 Confirmation Modal (ClaimConfirmModal)
    ========================================================================== */
 

@@ -86,6 +86,10 @@ export function applyDevSceneUi(ui, ctx) {
   setGameStart(null);
   setGameModalTitle('Play & Earn');
 
+  if (setters.setShopifyAuthOverlay) {
+    setters.setShopifyAuthOverlay(ui.shopifyAuthOverlay ?? null);
+  }
+
   setShowReceipt(false);
   setZoomActive(false);
 

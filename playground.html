@@ -1,0 +1,3021 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>优惠券系统动效游乐场 - UX Animation Playground</title>
+  
+  <!-- 引入优质字体 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Inter:wght@400;600;800&family=Orbitron:wght@700;900&family=Outfit:wght@500;700;900&display=swap" rel="stylesheet">
+
+  <style>
+    /* ==================== 游乐场基础框架样式 ==================== */
+    :root {
+      --bg-dark: #0f1319;
+      --panel-bg: rgba(22, 28, 38, 0.85);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --accent-color: #ffd700;
+      
+      /* 豪华金主题变量 */
+      --gold-primary: #C5A059;
+      --gold-light: #F6E7C8;
+      --gold-dark: #6E4E23;
+      --gold-gradient: linear-gradient(135deg, #FAF4E8 0%, #EADBBF 50%, #C5A059 100%);
+      
+      /* 赛博霓虹主题变量 */
+      --cyber-primary: #a855f7;
+      --cyber-secondary: #06b6d4;
+      --cyber-accent: #f43f5e;
+      --cyber-bg: #030712;
+      --cyber-gradient: linear-gradient(135deg, #030712 0%, #1e1b4b 50%, #311042 100%);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg-dark);
+      color: #e2e8f0;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+    }
+
+    /* 侧边控制栏 */
+    .sidebar {
+      width: 420px;
+      background-color: var(--panel-bg);
+      border-right: 1px solid var(--border-color);
+      backdrop-filter: blur(20px);
+      padding: 30px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      z-index: 10;
+      overflow-y: auto;
+    }
+
+    .logo-area {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .logo-area h1 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 900;
+      background: linear-gradient(135deg, #fff 30%, #a855f7 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
+    }
+
+    .logo-area p {
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+
+    .section-title {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #64748b;
+      margin-bottom: 10px;
+      font-weight: 700;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 6px;
+    }
+
+    /* 选项组按钮 */
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .btn-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      background: rgba(0, 0, 0, 0.2);
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-toggle {
+      background: none;
+      border: none;
+      color: #94a3b8;
+      padding: 10px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+
+    .btn-toggle.active {
+      background-color: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    /* 三通道选择 */
+    .btn-group-three {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.2);
+      padding: 4px;
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-group-three .btn-toggle {
+      font-size: 0.8rem;
+      padding: 8px 4px;
+    }
+
+    /* 操作按钮 */
+    .btn-action {
+      width: 100%;
+      background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+      color: white;
+      border: none;
+      padding: 12px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 14px rgba(59, 130, 246, 0.3);
+      transition: all 0.2s ease;
+    }
+
+    .btn-action:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(59, 130, 246, 0.45);
+    }
+
+    .btn-action:active {
+      transform: translateY(0);
+    }
+
+    .btn-action.reset {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #e2e8f0;
+      box-shadow: none;
+    }
+    .btn-action.reset:hover {
+      background: rgba(255, 255, 255, 0.1);
+      transform: none;
+      box-shadow: none;
+    }
+
+    .design-note-card {
+      background: rgba(255, 255, 255, 0.02);
+      border-left: 3px solid #6366f1;
+      padding: 14px;
+      border-radius: 0 8px 8px 0;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      color: #cbd5e1;
+    }
+
+    .design-note-card h4 {
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: #fff;
+    }
+
+    /* 舞台展示区 */
+    .stage {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+    }
+
+    /* 模拟手机外壳 */
+    .phone-mockup {
+      width: 380px;
+      height: 780px;
+      background-color: #000;
+      border-radius: 44px;
+      box-shadow: 
+        0 25px 50px -12px rgba(0, 0, 0, 0.5),
+        0 0 0 12px #27272a,
+        0 0 0 13px #3f3f46;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 听筒胶囊刘海 */
+    .notch {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 110px;
+      height: 28px;
+      background-color: #000;
+      border-radius: 20px;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .notch::after {
+      content: '';
+      width: 10px;
+      height: 10px;
+      background: #18181b;
+      border-radius: 50%;
+      position: absolute;
+      right: 15px;
+    }
+
+    /* 手机主屏幕容器 */
+    .screen {
+      flex: 1;
+      position: relative;
+      background-color: #111;
+      overflow: hidden;
+      user-select: none;
+      display: flex;
+      flex-direction: column;
+      transition: background 0.5s ease;
+    }
+
+    /* 粒子及粒子爆炸 Canvas */
+    .particle-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 5;
+    }
+    #confetti-canvas {
+      z-index: 30; /* 亮片在最上层 */
+    }
+
+    /* ==================== 动效及视觉主题定义 ==================== */
+
+    /* ---------------- Theme A: 3D Holographic Gold ---------------- */
+    .screen.theme-gold {
+      background: var(--gold-gradient);
+      color: #3f2e15;
+    }
+    .screen.theme-gold::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: 
+        radial-gradient(circle at 50% 30%, rgba(255, 245, 220, 0.7), transparent 45%),
+        radial-gradient(circle at 50% 70%, rgba(197, 160, 89, 0.15), transparent 60%);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* ---------------- Theme B: Cyber Neon ---------------- */
+    .screen.theme-cyber {
+      background: var(--cyber-gradient);
+      color: #e2e8f0;
+    }
+    .screen.theme-cyber::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: 
+        radial-gradient(circle at 50% 25%, rgba(168, 85, 247, 0.25), transparent 45%),
+        radial-gradient(circle at 50% 80%, rgba(6, 182, 212, 0.2), transparent 50%);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* ==================== 场景样式定义 ==================== */
+    .scene-view {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transform: scale(0.96);
+      transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      z-index: 10;
+    }
+
+    .scene-view.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: scale(1);
+    }
+
+    /* ---------------- SCENE 1: LOADING SCREEN ---------------- */
+    /* Theme A: Gold Loading */
+    .theme-gold .loader-vortex {
+      width: 120px;
+      height: 120px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+    .theme-gold .vortex-ring {
+      position: absolute;
+      inset: 0;
+      border: 3px solid transparent;
+      border-top-color: var(--gold-primary);
+      border-radius: 50%;
+      animation: spin 2.5s linear infinite;
+    }
+    .theme-gold .vortex-ring::before {
+      content: '';
+      position: absolute;
+      top: 10px; right: 10px;
+      width: 12px; height: 12px;
+      background-color: var(--gold-light);
+      border-radius: 50%;
+      box-shadow: 0 0 15px var(--gold-light);
+    }
+    .theme-gold .vortex-core {
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #fff 0%, var(--gold-light) 60%, var(--gold-primary) 100%);
+      box-shadow: 
+        0 0 25px rgba(197, 160, 89, 0.6),
+        inset 0 0 10px rgba(255, 255, 255, 0.8);
+      animation: pulse-grow 2s ease-in-out infinite;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Cinzel', serif;
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--gold-dark);
+    }
+
+    /* Theme B: Cyber Loading */
+    .theme-cyber .loader-vortex {
+      width: 140px;
+      height: 140px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+    .theme-cyber .vortex-ring {
+      position: absolute;
+      inset: 0;
+      border: 2px dashed var(--cyber-secondary);
+      border-radius: 50%;
+      animation: spin 8s linear infinite;
+      box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+    }
+    .theme-cyber .vortex-ring.inner {
+      inset: 15px;
+      border: 2px solid transparent;
+      border-left-color: var(--cyber-primary);
+      border-right-color: var(--cyber-accent);
+      animation: spin-reverse 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+    .theme-cyber .vortex-core {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: #020617;
+      border: 2px solid var(--cyber-secondary);
+      box-shadow: 
+        0 0 30px rgba(6, 182, 212, 0.4),
+        inset 0 0 15px rgba(168, 85, 247, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1.1rem;
+      color: #fff;
+      text-shadow: 0 0 8px var(--cyber-secondary);
+    }
+
+    /* 流体进度条 */
+    .progress-container {
+      width: 80%;
+      margin-top: 50px;
+      z-index: 10;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: rgba(0, 0, 0, 0.15);
+      border-radius: 10px;
+      overflow: hidden;
+      position: relative;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .theme-cyber .progress-bar {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(6, 182, 212, 0.15);
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+    }
+    .progress-fill {
+      width: 0%;
+      height: 100%;
+      border-radius: 10px;
+      position: relative;
+      transition: width 0.1s linear;
+    }
+    .theme-gold .progress-fill {
+      background: linear-gradient(90deg, var(--gold-dark) 0%, var(--gold-primary) 70%, var(--gold-light) 100%);
+      box-shadow: 0 0 10px var(--gold-primary);
+    }
+    .theme-cyber .progress-fill {
+      background: linear-gradient(90deg, var(--cyber-primary) 0%, var(--cyber-secondary) 100%);
+      box-shadow: 0 0 12px var(--cyber-secondary);
+    }
+    /* 进度条浪花 */
+    .progress-fill::after {
+      content: '';
+      position: absolute;
+      right: 0; top: 0; bottom: 0;
+      width: 10px;
+      background: #fff;
+      filter: blur(2px);
+      animation: pulse 1s infinite alternate;
+    }
+
+    .loading-hint {
+      margin-top: 16px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-align: center;
+      transition: color 0.3s ease;
+      z-index: 10;
+    }
+    .theme-gold .loading-hint { color: var(--gold-dark); }
+    .theme-cyber .loading-hint { color: #94a3b8; text-shadow: 0 0 5px rgba(255,255,255,0.1); }
+
+    /* ---------------- SCENE 2: GIFT UNBOXING ---------------- */
+    .brand-header-area {
+      position: absolute;
+      top: 50px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 10;
+    }
+    .theme-gold .brand-logo-sim {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: #3f2e15;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Cinzel', serif;
+      font-weight: 800;
+      color: var(--gold-light);
+      border: 2px solid var(--gold-primary);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+    }
+    .theme-cyber .brand-logo-sim {
+      width: 44px; height: 44px;
+      border-radius: 8px;
+      background: rgba(168, 85, 247, 0.15);
+      border: 1px solid var(--cyber-primary);
+      box-shadow: 0 0 10px var(--cyber-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+    }
+    .brand-title-sim {
+      font-weight: 800;
+      font-size: 1.25rem;
+    }
+    .theme-gold .brand-title-sim {
+      color: var(--gold-dark);
+      font-family: 'Cinzel', serif;
+    }
+    .theme-cyber .brand-title-sim {
+      color: #fff;
+      font-family: 'Orbitron', sans-serif;
+      text-shadow: 0 0 8px var(--cyber-primary);
+    }
+
+    .package-stage {
+      position: relative;
+      width: 270px;
+      height: 270px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 20;
+    }
+
+    /* 礼盒从天而降动画 */
+    .package-stage.preload-drop {
+      animation: welcome-package-drop 2.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    /* 礼盒呼吸/抖动 */
+    .gift-box-wrapper {
+      position: relative;
+      width: 170px;
+      height: 170px;
+      transform-style: preserve-3d;
+      transition: transform 0.5s ease;
+    }
+    .package-stage:hover .gift-box-wrapper {
+      transform: scale(1.05);
+    }
+    .package-stage.active-press .gift-box-wrapper {
+      transform: scale(0.9) translateY(10px); /* 蓄力压缩 */
+    }
+
+    /* 豪华金 礼盒 (SVG 绘制，配合阴影) */
+    .gold-box {
+      width: 100%;
+      height: 100%;
+      filter: drop-shadow(0 15px 20px rgba(110, 78, 35, 0.25));
+    }
+    .gold-box .bow-tail {
+      transform-origin: 90px 60px;
+      animation: bow-swing 3s ease-in-out infinite alternate;
+    }
+
+    /* 赛博礼盒 */
+    .cyber-box-element {
+      position: absolute;
+      inset: 15px;
+      background: rgba(30, 27, 75, 0.4);
+      border: 3px solid var(--cyber-secondary);
+      border-radius: 12px;
+      box-shadow: 
+        0 0 25px rgba(6, 182, 212, 0.4),
+        inset 0 0 15px rgba(6, 182, 212, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .cyber-box-element::after {
+      content: '';
+      position: absolute;
+      inset: -6px;
+      border: 1px solid var(--cyber-primary);
+      border-radius: 16px;
+      opacity: 0.5;
+      animation: pulse-grow 2s infinite;
+    }
+    .cyber-lid {
+      position: absolute;
+      top: 5px; left: 10px; right: 10px;
+      height: 30px;
+      background: rgba(168, 85, 247, 0.6);
+      border: 2px solid var(--cyber-primary);
+      border-radius: 6px;
+      box-shadow: 0 0 15px var(--cyber-primary);
+      z-index: 2;
+      transform-origin: center bottom;
+      transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .cyber-core-glow {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 0 25px #fff, 0 0 50px var(--cyber-secondary);
+      animation: pulse 1.2s ease-in-out infinite alternate;
+    }
+
+    /* 繁华奖品组合容器 */
+    .reward-bundle {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      z-index: 25;
+    }
+
+    /* 默认卡券隐藏聚集在礼盒底部 */
+    .reward-bundle .unboxed-ticket {
+      position: absolute;
+      width: 155px;
+      height: 220px;
+      border-radius: 16px;
+      opacity: 0;
+      transform: translateY(120px) scale(0.3) rotate(0deg);
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 14px;
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+      transition: all 1.2s cubic-bezier(0.25, 1, 0.3, 1.15);
+    }
+
+    /* 副券尺寸略小 */
+    .reward-bundle .card-sub {
+      width: 125px;
+      height: 180px;
+      padding: 16px 10px;
+    }
+    .reward-bundle .card-sub .ticket-value {
+      font-size: 1.8rem;
+    }
+    .reward-bundle .card-sub .ticket-label {
+      font-size: 0.65rem;
+      letter-spacing: 1px;
+    }
+
+    /* 开箱后的散开飞升效果 */
+    .package-stage.unboxed ~ .reward-bundle .card-main {
+      opacity: 1;
+      transform: translateY(-80px) scale(1.05) rotate(0deg);
+      pointer-events: auto;
+      z-index: 3;
+      box-shadow: 0 20px 45px rgba(0,0,0,0.5), 0 0 20px rgba(255, 215, 0, 0.2);
+      animation: ticket-float 4s ease-in-out infinite 1.2s;
+    }
+
+    .package-stage.unboxed ~ .reward-bundle .card-left {
+      opacity: 0.95;
+      transform: translateY(-90px) translateX(-70px) scale(0.85) rotate(-18deg);
+      pointer-events: auto;
+      z-index: 1;
+    }
+
+    .package-stage.unboxed ~ .reward-bundle .card-right {
+      opacity: 0.95;
+      transform: translateY(-90px) translateX(70px) scale(0.85) rotate(18deg);
+      pointer-events: auto;
+      z-index: 2;
+    }
+
+    /* 漂浮装饰元素 */
+    .floating-deco {
+      position: absolute;
+      font-size: 1.8rem;
+      opacity: 0;
+      transform: scale(0.2) translate(0, 0);
+      transition: all 1.4s cubic-bezier(0.19, 1, 0.22, 1);
+      z-index: 22;
+      pointer-events: none;
+    }
+
+    .package-stage.unboxed ~ .reward-bundle .deco-star1 {
+      opacity: 1;
+      transform: scale(1.1) translate(-105px, -190px) rotate(-20deg);
+    }
+
+    .package-stage.unboxed ~ .reward-bundle .deco-star2 {
+      opacity: 1;
+      transform: scale(1) translate(105px, -180px) rotate(15deg);
+    }
+
+    .package-stage.unboxed ~ .reward-bundle .deco-crown {
+      opacity: 1;
+      transform: scale(1.4) translate(-40px, -225px) rotate(-10deg);
+      text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+    }
+
+    .package-stage.unboxed ~ .reward-bundle .deco-bag {
+      opacity: 1;
+      transform: scale(1.1) translate(80px, -235px) rotate(15deg);
+    }
+
+    /* Theme A: 豪华金卡片 */
+    .theme-gold .unboxed-ticket {
+      background: var(--gold-gradient);
+      border: 2px solid #fff;
+      color: var(--gold-dark);
+    }
+    .theme-gold .unboxed-ticket::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 14px;
+      background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.8) 50%, transparent 60%);
+      background-size: 200% 200%;
+      animation: sheen-sweep 3.5s infinite;
+      pointer-events: none;
+    }
+    /* Theme B: 赛博卡片 */
+    .theme-cyber .unboxed-ticket {
+      background: rgba(30, 27, 75, 0.75);
+      border: 2px solid var(--cyber-secondary);
+      backdrop-filter: blur(16px);
+      color: #fff;
+      box-shadow: 0 0 30px rgba(6, 182, 212, 0.4);
+    }
+    .theme-cyber .unboxed-ticket::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 14px;
+      background: linear-gradient(135deg, transparent 40%, rgba(6,182,212,0.4) 50%, transparent 60%);
+      background-size: 200% 200%;
+      animation: sheen-sweep 3s infinite;
+      pointer-events: none;
+    }
+
+    /* 视频开场覆盖层样式 */
+    .gift-video-container {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      z-index: 30;
+      transition: opacity 0.5s ease;
+      cursor: pointer;
+    }
+    .gift-video-container video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .ticket-value {
+      font-size: 2.5rem;
+      font-weight: 900;
+      text-align: center;
+      line-height: 1;
+    }
+    .theme-gold .ticket-value { font-family: 'Cinzel', serif; }
+    .theme-cyber .ticket-value { font-family: 'Orbitron', sans-serif; text-shadow: 0 0 10px var(--cyber-secondary); }
+
+    .ticket-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-weight: 800;
+    }
+    .theme-gold .ticket-label { color: #8c6834; }
+    .theme-cyber .ticket-label { color: var(--cyber-accent); text-shadow: 0 0 5px var(--cyber-accent); }
+
+    .ticket-btn {
+      width: 100%;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 800;
+      border: none;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: all 0.2s;
+    }
+    .theme-gold .ticket-btn {
+      background: var(--gold-dark);
+      color: var(--gold-light);
+    }
+    .theme-cyber .ticket-btn {
+      background: linear-gradient(90deg, var(--cyber-primary), var(--cyber-secondary));
+      color: #fff;
+      box-shadow: 0 0 10px var(--cyber-primary);
+    }
+
+    /* ---------------- SCENE 3: RETURN VISIT ---------------- */
+    .return-vip-card {
+      width: 260px;
+      height: 380px;
+      perspective: 1000px;
+      z-index: 20;
+      opacity: 0;
+      transform: scale(0.6);
+      transition: all 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .return-vip-card.active {
+      opacity: 1;
+      transform: scale(1);
+    }
+    .card-inner {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      text-align: center;
+      transition: transform 1.2s cubic-bezier(0.2, 0.85, 0.25, 1);
+      transform-style: preserve-3d;
+      cursor: pointer;
+    }
+    /* 卡牌翻转 */
+    .return-vip-card.flipped .card-inner {
+      transform: rotateY(180deg);
+    }
+    .card-face {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      backface-visibility: hidden;
+      border-radius: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 30px 20px;
+      box-shadow: 0 25px 50px rgba(0,0,0,0.3);
+    }
+
+    /* 卡牌正面 (Holographic Back Cover) */
+    .theme-gold .card-front {
+      background: linear-gradient(135deg, #1e251c 0%, #3a4736 100%);
+      border: 3px solid var(--gold-primary);
+    }
+    .theme-gold .card-front-pattern {
+      width: 80px; height: 80px;
+      border-radius: 50%;
+      border: 2px solid var(--gold-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--gold-light);
+      font-family: 'Cinzel', serif;
+      font-size: 2.2rem;
+      text-shadow: 0 0 10px rgba(255,255,255,0.4);
+    }
+    .theme-cyber .card-front {
+      background: linear-gradient(135deg, #0b0f19 0%, #1e1b4b 100%);
+      border: 2px solid var(--cyber-primary);
+      box-shadow: 0 0 25px rgba(168, 85, 247, 0.3);
+    }
+    .theme-cyber .card-front-pattern {
+      width: 80px; height: 80px;
+      border-radius: 12px;
+      border: 1px solid var(--cyber-secondary);
+      background: rgba(6, 182, 212, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--cyber-secondary);
+      font-family: 'Orbitron', sans-serif;
+      font-size: 2rem;
+      text-shadow: 0 0 15px var(--cyber-secondary);
+      animation: pulse-grow 2s infinite;
+    }
+
+    .card-tap-hint {
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      animation: pulse 1s infinite alternate;
+    }
+    .theme-gold .card-tap-hint { color: var(--gold-primary); }
+    .theme-cyber .card-tap-hint { color: var(--cyber-secondary); }
+
+    /* 卡牌背面 (Info Reveal) */
+    .card-back {
+      transform: rotateY(180deg);
+    }
+    /* 豪华全息金卡背面 */
+    .theme-gold .card-back {
+      background: linear-gradient(135deg, #fff 0%, #faf3e0 50%, #e8d7b0 100%);
+      border: 3px solid #fff;
+      color: var(--gold-dark);
+    }
+    .theme-gold .card-back::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 20px;
+      background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.9) 50%, transparent 60%);
+      background-size: 200% 200%;
+      animation: sheen-sweep 3s infinite;
+      pointer-events: none;
+    }
+    /* 赛步玻璃拟态背面 */
+    .theme-cyber .card-back {
+      background: rgba(15, 23, 42, 0.8);
+      border: 2px solid rgba(6, 182, 212, 0.5);
+      backdrop-filter: blur(20px);
+      color: #fff;
+      box-shadow: 
+        0 20px 40px rgba(0,0,0,0.4),
+        0 0 30px rgba(6, 182, 212, 0.2);
+    }
+    .theme-cyber .card-back::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 20px;
+      background: linear-gradient(135deg, transparent 40%, rgba(6,182,212,0.3) 50%, transparent 60%);
+      background-size: 200% 200%;
+      animation: sheen-sweep 4.5s infinite;
+      pointer-events: none;
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .theme-gold .card-title { color: #80612c; font-family: 'Cinzel', serif; }
+    .theme-cyber .card-title { color: var(--cyber-secondary); font-family: 'Orbitron', sans-serif; }
+
+    .bonus-display {
+      text-align: center;
+      margin: 20px 0;
+    }
+    .bonus-value {
+      font-size: 3.5rem;
+      font-weight: 900;
+      line-height: 1;
+    }
+    .theme-gold .bonus-value { font-family: 'Cinzel', serif; }
+    .theme-cyber .bonus-value { font-family: 'Orbitron', sans-serif; text-shadow: 0 0 15px var(--cyber-primary); }
+    .bonus-label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 3px;
+      margin-top: 8px;
+    }
+    .theme-gold .bonus-label { color: #80612c; }
+    .theme-cyber .bonus-label { color: var(--cyber-accent); }
+
+    /* 底部钱包收集区域 */
+    .wallet-dock {
+      position: absolute;
+      bottom: 40px;
+      width: 82%;
+      height: 70px;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      z-index: 10;
+      transform: translateY(20px);
+      opacity: 0;
+      transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .wallet-dock.active {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    
+    .theme-gold .wallet-dock {
+      background: linear-gradient(135deg, #423016 0%, #1e1509 100%);
+      border: 1.5px solid var(--gold-primary);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+      color: var(--gold-light);
+    }
+    .theme-cyber .wallet-dock {
+      background: rgba(30, 27, 75, 0.8);
+      border: 1px solid var(--cyber-primary);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+      color: #fff;
+    }
+
+    .wallet-icon {
+      font-size: 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    /* 接收硬币时的撞击膨胀 */
+    .wallet-icon.pulse {
+      transform: scale(1.3);
+    }
+    .theme-gold .wallet-icon { color: var(--gold-primary); }
+    .theme-cyber .wallet-icon { color: var(--cyber-secondary); text-shadow: 0 0 10px var(--cyber-secondary); }
+
+    .wallet-info {
+      text-align: right;
+    }
+    .wallet-balance-label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      opacity: 0.6;
+    }
+    .wallet-balance {
+      font-size: 1.2rem;
+      font-weight: 800;
+      transition: all 0.2s ease;
+    }
+    .theme-gold .wallet-balance { font-family: 'Cinzel', serif; }
+    .theme-cyber .wallet-balance { font-family: 'Orbitron', sans-serif; }
+
+    /* ==================== 公用基础 CSS 关键帧动画 ==================== */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes spin-reverse {
+      to { transform: rotate(-360deg); }
+    }
+    @keyframes pulse {
+      from { opacity: 0.6; }
+      to { opacity: 1; }
+    }
+    @keyframes pulse-grow {
+      0% { transform: scale(1); opacity: 0.6; }
+      50% { transform: scale(1.08); opacity: 1; }
+      100% { transform: scale(1); opacity: 0.6; }
+    }
+    @keyframes sheen-sweep {
+      0% { background-position: -200% -200%; }
+      35%, 100% { background-position: 200% 200%; }
+    }
+    @keyframes bow-swing {
+      from { transform: rotate(-3deg); }
+      to { transform: rotate(3deg); }
+    }
+    
+    /* 天降礼盒动画 */
+    @keyframes welcome-package-drop {
+      0% { opacity: 0; transform: translateY(-380px) scaleX(0.8) scaleY(1.2); }
+      40% { opacity: 1; transform: translateY(-340px) scaleX(0.8) scaleY(1.2); }
+      75% { transform: translateY(15px) scaleX(1.15) scaleY(0.8); } /* 地面撞击压缩 */
+      85% { transform: translateY(-10px) scaleX(0.92) scaleY(1.08); } /* 反弹拉伸 */
+      95% { transform: translateY(4px) scaleX(1.02) scaleY(0.98); }
+      100% { transform: translateY(0) scaleX(1) scaleY(1); opacity: 1; }
+    }
+
+    /* 地面撞击导致的手机外壳震动 */
+    .phone-mockup.shake {
+      animation: phone-shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+    }
+    @keyframes phone-shake {
+      0%, 100% { transform: translate(0, 0) rotate(0deg); }
+      15% { transform: translate(-3px, 5px) rotate(-0.5deg); }
+      30% { transform: translate(3px, -4px) rotate(0.5deg); }
+      45% { transform: translate(-3px, -2px) rotate(-0.3deg); }
+      60% { transform: translate(2px, 3px) rotate(0deg); }
+      75% { transform: translate(-1px, -1px) rotate(0.2deg); }
+      90% { transform: translate(1px, 1px) rotate(0deg); }
+    }
+
+    /* ==================== 已使用/已过期 页面通用样式 ==================== */
+    .nc-used-badge-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+      z-index: 2;
+    }
+    
+    .nc-used-circle {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #22c55e;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.65rem;
+      font-weight: bold;
+      box-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
+    }
+    .theme-gold .nc-used-circle {
+      width: 20px;
+      height: 20px;
+      background: radial-gradient(circle, #fff 0%, var(--gold-primary) 70%, var(--gold-dark) 100%);
+      color: #fff;
+      font-weight: 900;
+      box-shadow: 0 0 10px rgba(197, 160, 89, 0.4);
+      border: 1px solid #fff;
+    }
+    
+    .nc-used-label {
+      font-size: 0.7rem;
+      letter-spacing: 1px;
+      font-weight: 700;
+      color: #22c55e;
+      text-shadow: 0 0 8px rgba(34, 197, 94, 0.2);
+    }
+    .theme-gold .nc-used-label {
+      font-weight: 800;
+      color: var(--gold-dark);
+      font-family: 'Cinzel', serif;
+      letter-spacing: 1.5px;
+    }
+    .theme-cyber .nc-used-circle {
+      background: var(--cyber-secondary);
+      color: #030712;
+      font-weight: 900;
+      box-shadow: 0 0 8px var(--cyber-secondary);
+      border-radius: 2px;
+    }
+    .theme-cyber .nc-used-label {
+      color: var(--cyber-secondary);
+      font-family: 'Orbitron', sans-serif;
+      text-shadow: 0 0 8px rgba(6, 182, 212, 0.4);
+      letter-spacing: 1.5px;
+    }
+
+    .nc-header-badge.expired {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.65rem;
+      font-weight: 800;
+      color: #ef4444;
+      letter-spacing: 1.2px;
+      margin-bottom: 8px;
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.15);
+    }
+
+    .nc-title {
+      font-size: 1.15rem;
+      font-weight: 900;
+      text-align: center;
+      margin-bottom: 6px;
+      z-index: 2;
+    }
+    .theme-gold .nc-title { color: var(--gold-dark); font-family: 'Cinzel', serif; }
+    .theme-cyber .nc-title { color: #fff; font-family: 'Orbitron', sans-serif; text-shadow: 0 0 10px rgba(6, 182, 212, 0.3); }
+
+    .nc-subtitle {
+      font-size: 0.75rem;
+      color: #64748b;
+      text-align: center;
+      margin-bottom: 15px;
+      padding: 0 16px;
+      z-index: 2;
+    }
+    .theme-gold .nc-subtitle { color: #5c4e3a; }
+
+    /* 3D 撕裂分裂卡券容器 */
+    .nc-ticket-split-container {
+      position: relative;
+      width: 82%;
+      height: 125px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      margin-bottom: 5px;
+    }
+
+    /* 劈裂处的流光熔缝 */
+    .nc-split-seam {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, var(--seam-glow-start), var(--seam-glow-end));
+      clip-path: polygon(53% 0, 55% 0, 43% 100%, 41% 100%);
+      opacity: 0;
+      transform: scale(0.95);
+      z-index: 12;
+      pointer-events: none;
+      filter: drop-shadow(0 0 8px var(--seam-glow-shadow));
+      transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .theme-gold .nc-split-seam {
+      --seam-glow-start: #ffea7a;
+      --seam-glow-end: #d97706;
+      --seam-glow-shadow: rgba(217, 119, 6, 0.8);
+    }
+    .theme-cyber .nc-split-seam {
+      --seam-glow-start: #00ffff;
+      --seam-glow-end: #d946ef;
+      --seam-glow-shadow: rgba(6, 182, 212, 0.8);
+    }
+    .nc-ticket-split-container.stamped .nc-split-seam {
+      opacity: 1;
+      transform: scale(1.05);
+      animation: seam-pulse 0.8s ease-in-out infinite alternate;
+    }
+    @keyframes seam-pulse {
+      0% { opacity: 0.8; filter: drop-shadow(0 0 4px var(--seam-glow-shadow)) brightness(1); }
+      100% { opacity: 1; filter: drop-shadow(0 0 12px var(--seam-glow-shadow)) brightness(1.4); }
+    }
+
+    /* 旧券与新券样式 */
+    .nc-ticket-previous, .nc-ticket-new-round, .nc-ticket-shard {
+      border-radius: 16px;
+      padding: 16px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.18);
+      z-index: 10;
+      overflow: hidden;
+      transition: all 0.8s cubic-bezier(0.25, 1, 0.3, 1.1);
+    }
+
+    /* 添加金属流光扫掠 */
+    .nc-ticket-previous::before, .nc-ticket-new-round::before, .nc-ticket-shard::before {
+      content: '';
+      position: absolute;
+      inset: -100%;
+      background: linear-gradient(
+        120deg,
+        transparent 35%,
+        rgba(255, 255, 255, 0) 40%,
+        rgba(255, 255, 255, 0.18) 45%,
+        rgba(255, 255, 255, 0.28) 48%,
+        rgba(255, 215, 0, 0.12) 50%,
+        rgba(255, 255, 255, 0.28) 52%,
+        rgba(255, 255, 255, 0.18) 55%,
+        rgba(255, 255, 255, 0) 60%,
+        transparent 65%
+      );
+      transform: rotate(-20deg);
+      pointer-events: none;
+      z-index: 8;
+      animation: metallic-shimmer-sweep 4.5s infinite linear;
+    }
+    .theme-gold .nc-ticket-previous::before, .theme-gold .nc-ticket-new-round::before, .theme-gold .nc-ticket-shard::before {
+      background: linear-gradient(
+        120deg,
+        transparent 35%,
+        rgba(255, 255, 255, 0) 40%,
+        rgba(255, 255, 255, 0.25) 45%,
+        rgba(255, 243, 196, 0.45) 48%,
+        rgba(217, 119, 6, 0.15) 50%,
+        rgba(255, 243, 196, 0.45) 52%,
+        rgba(255, 255, 255, 0.25) 55%,
+        rgba(255, 255, 255, 0) 60%,
+        transparent 65%
+      );
+    }
+    .theme-cyber .nc-ticket-previous::before, .theme-cyber .nc-ticket-new-round::before, .theme-cyber .nc-ticket-shard::before {
+      background: linear-gradient(
+        120deg,
+        transparent 35%,
+        rgba(255, 255, 255, 0) 40%,
+        rgba(6, 182, 212, 0.15) 45%,
+        rgba(255, 255, 255, 0.25) 48%,
+        rgba(244, 63, 94, 0.18) 51%,
+        rgba(255, 255, 255, 0.25) 54%,
+        rgba(6, 182, 212, 0.15) 57%,
+        rgba(255, 255, 255, 0) 62%,
+        transparent 65%
+      );
+    }
+    @keyframes metallic-shimmer-sweep {
+      0% { transform: translate(-50%, -50%) rotate(-20deg); }
+      100% { transform: translate(50%, 50%) rotate(-20deg); }
+    }
+
+    .nc-ticket-previous {
+      width: 82%;
+      height: 120px;
+    }
+
+    /* 重构分裂卡券样式 */
+    .nc-ticket-split-container .nc-ticket-previous {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+    }
+
+    /* 分裂斜切左半截 */
+    .nc-ticket-split-container .split-left {
+      clip-path: polygon(0 0, 54% 0, 42% 100%, 0 100%);
+      z-index: 11;
+    }
+
+    /* 分裂斜切右半截 */
+    .nc-ticket-split-container .split-right {
+      clip-path: polygon(54% 0, 100% 0, 100% 100%, 42% 100%);
+      z-index: 10;
+    }
+
+    .theme-gold .nc-ticket-previous, .theme-gold .nc-ticket-shard {
+      background: linear-gradient(135deg, rgba(255, 255, 248, 0.9) 0%, rgba(246, 235, 215, 0.8) 50%, rgba(197, 160, 89, 0.2) 100%);
+      border: 1.5px solid rgba(197, 160, 89, 0.45);
+      color: #5c411a;
+      box-shadow: 
+        0 12px 25px rgba(0,0,0,0.16), 
+        inset 0 0 15px rgba(255, 215, 0, 0.15), 
+        inset 0 0 0 1px rgba(255,255,255,0.7);
+      text-shadow: 0 1px 0.5px rgba(255, 255, 255, 0.6);
+      backdrop-filter: blur(12px);
+    }
+    .theme-cyber .nc-ticket-previous, .theme-cyber .nc-ticket-shard {
+      background: 
+        linear-gradient(135deg, rgba(8, 8, 12, 0.92) 0%, rgba(16, 12, 28, 0.88) 60%, rgba(5, 5, 8, 0.94) 100%),
+        linear-gradient(rgba(6, 182, 212, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(6, 182, 212, 0.03) 1px, transparent 1px);
+      background-size: 100% 100%, 8px 8px, 8px 8px;
+      border: 1px solid rgba(6, 182, 212, 0.5);
+      color: #e2e8f0;
+      box-shadow: 
+        0 15px 30px rgba(0,0,0,0.5), 
+        0 0 15px rgba(6, 182, 212, 0.2), 
+        inset 0 0 12px rgba(6, 182, 212, 0.1),
+        inset 0 0 0 1px rgba(255,255,255,0.05);
+      text-shadow: 0 0 8px rgba(6, 182, 212, 0.5);
+      backdrop-filter: blur(10px);
+    }
+
+    /* 钢印砸落后，两半截卡片撕裂飞散 */
+    .nc-ticket-split-container.stamped .split-left {
+      transform: translate(-32px, -18px) rotate(-10deg);
+      opacity: 0.45;
+    }
+    .nc-ticket-split-container.stamped .split-right {
+      transform: translate(32px, 18px) rotate(10deg);
+      opacity: 0.45;
+    }
+
+    /* 中间显现的尊贵省钱勋章 */
+    .nc-saving-badge {
+      position: absolute;
+      width: 88px;
+      height: 88px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transform: scale(0.2) rotate(-90deg);
+      transition: all 1s cubic-bezier(0.34, 1.56, 0.64, 1) 0.3s;
+      z-index: 15;
+    }
+    .nc-ticket-split-container.stamped .nc-saving-badge {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+      animation: badge-hover 3s ease-in-out infinite 1.3s;
+    }
+    @keyframes badge-hover {
+      0%, 100% { transform: scale(1) translateY(0); }
+      50% { transform: scale(1.05) translateY(-6px); }
+    }
+
+    /* 勋章SVG相关样式 */
+    .svg-badge-medal {
+      width: 100%;
+      height: 100%;
+      color: var(--medal-glow);
+      filter: drop-shadow(0 0 10px var(--medal-shadow));
+    }
+    .theme-gold .svg-badge-medal {
+      --medal-glow: #ffd700;
+      --medal-shadow: rgba(197, 160, 89, 0.5);
+      --medal-ribbon: #ef4444;
+      --medal-body-bg: radial-gradient(circle, #fff3c4 0%, #d9aa43 60%, #8c6211 100%);
+      --medal-star: #fff;
+      --medal-star-stroke: #b45309;
+    }
+    .theme-cyber .svg-badge-medal {
+      --medal-glow: #06b6d4;
+      --medal-shadow: rgba(6, 182, 212, 0.5);
+      --medal-ribbon: #a855f7;
+      --medal-body-bg: radial-gradient(circle, #0284c7 0%, #0f172a 100%);
+      --medal-star: #22d3ee;
+      --medal-star-stroke: #0369a1;
+    }
+    .medal-ring-outer {
+      transform-origin: center;
+      animation: spin-clockwise 15s linear infinite;
+    }
+
+    /* 已过期旧券冰封与碎裂容器 */
+    .nc-ticket-shatter-container {
+      position: relative;
+      width: 82%;
+      height: 120px;
+      margin-bottom: 5px;
+      z-index: 10;
+    }
+    .nc-ticket-shard {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      filter: grayscale(0.8) contrast(0.95);
+      opacity: 0.9;
+    }
+
+    /* 象限斜切片 */
+    .shard-tl { clip-path: polygon(0 0, 52% 0, 48% 50%, 0 52%); }
+    .shard-tr { clip-path: polygon(52% 0, 100% 0, 100% 48%, 48% 50%); }
+    .shard-bl { clip-path: polygon(0 52%, 48% 50%, 45% 100%, 0 100%); }
+    .shard-br { clip-path: polygon(48% 50%, 100% 48%, 100% 100%, 45% 100%); }
+
+    /* 砸碎后向四周飞出并模糊风化 (带边缘裂解高能红/蓝流光) */
+    .nc-ticket-shatter-container.fractured .shard-tl {
+      transform: translate(-48px, -36px) rotate(-22deg) scale(0.5);
+      opacity: 0;
+      filter: blur(5px) grayscale(1);
+      box-shadow: 0 0 25px var(--shatter-glow);
+      border-color: var(--shatter-border);
+    }
+    .nc-ticket-shatter-container.fractured .shard-tr {
+      transform: translate(48px, -32px) rotate(22deg) scale(0.5);
+      opacity: 0;
+      filter: blur(5px) grayscale(1);
+      box-shadow: 0 0 25px var(--shatter-glow);
+      border-color: var(--shatter-border);
+    }
+    .nc-ticket-shatter-container.fractured .shard-bl {
+      transform: translate(-38px, 42px) rotate(-28deg) scale(0.5);
+      opacity: 0;
+      filter: blur(5px) grayscale(1);
+      box-shadow: 0 0 25px var(--shatter-glow);
+      border-color: var(--shatter-border);
+    }
+    .nc-ticket-shatter-container.fractured .shard-br {
+      transform: translate(42px, 38px) rotate(28deg) scale(0.5);
+      opacity: 0;
+      filter: blur(5px) grayscale(1);
+      box-shadow: 0 0 25px var(--shatter-glow);
+      border-color: var(--shatter-border);
+    }
+    .theme-gold {
+      --shatter-glow: rgba(217, 119, 6, 0.7);
+      --shatter-border: #ffd700;
+    }
+    .theme-cyber {
+      --shatter-glow: rgba(6, 182, 212, 0.7);
+      --shatter-border: #06b6d4;
+    }
+
+    /* 冰霜图层 */
+    .expired-ice-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(147, 197, 253, 0.3) 0%, rgba(30, 64, 175, 0.25) 100%);
+      backdrop-filter: blur(0.5px);
+      z-index: 5;
+      pointer-events: none;
+      display: block;
+    }
+    .expired-ice-overlay::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' opacity='0.2'%3E%3Cpath d='M10,10 L30,40 L10,60 M90,10 L70,40 L90,60 M50,10 L50,90 M10,50 L90,50 M30,30 L70,70 M70,30 L30,70' stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-size: cover;
+      opacity: 0.75;
+    }
+
+    /* 连接器 */
+    .nc-arrow-down {
+      margin: 12px 0;
+      height: 35px;
+      width: 2px;
+      background: #cbd5e1;
+      position: relative;
+      z-index: 5;
+    }
+    .theme-gold .nc-arrow-down { background: var(--gold-primary); }
+    .theme-cyber .nc-arrow-down {
+      background: linear-gradient(180deg, var(--cyber-secondary), var(--cyber-primary));
+      box-shadow: 0 0 8px var(--cyber-secondary);
+    }
+
+    .nc-arrow-glow-ball {
+      position: absolute;
+      top: -4px;
+      left: -3px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #fff;
+      display: none;
+    }
+    .theme-gold .nc-arrow-glow-ball { background: var(--gold-light); box-shadow: 0 0 10px var(--gold-primary); }
+    .theme-cyber .nc-arrow-glow-ball { background: var(--cyber-secondary); box-shadow: 0 0 10px var(--cyber-secondary); }
+
+    /* 新券默认样式 */
+    .nc-ticket-new-round {
+      height: 150px;
+    }
+    .theme-gold .nc-ticket-new-round {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(253, 244, 225, 0.85) 60%, rgba(197, 160, 89, 0.25) 100%);
+      border: 1.5px solid rgba(197, 160, 89, 0.5);
+      color: #5c411a;
+      box-shadow: 
+        0 15px 30px rgba(197, 160, 89, 0.18), 
+        inset 0 0 18px rgba(255, 215, 0, 0.2), 
+        inset 0 0 0 1.5px rgba(255,255,255,0.85);
+      text-shadow: 0 1px 0.5px rgba(255, 255, 255, 0.6);
+      backdrop-filter: blur(12px);
+    }
+    .theme-cyber .nc-ticket-new-round {
+      background: 
+        linear-gradient(135deg, rgba(10, 10, 16, 0.94) 0%, rgba(24, 18, 42, 0.9) 60%, rgba(6, 6, 10, 0.96) 100%),
+        linear-gradient(rgba(168, 85, 247, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(168, 85, 247, 0.03) 1px, transparent 1px);
+      background-size: 100% 100%, 8px 8px, 8px 8px;
+      border: 1px solid rgba(168, 85, 247, 0.5);
+      color: #fff;
+      box-shadow: 
+        0 18px 35px rgba(0,0,0,0.55), 
+        0 0 20px rgba(168, 85, 247, 0.25), 
+        inset 0 0 15px rgba(168, 85, 247, 0.15),
+        inset 0 0 0 1px rgba(255,255,255,0.05);
+      text-shadow: 0 0 8px rgba(168, 85, 247, 0.5);
+      backdrop-filter: blur(10px);
+    }
+
+    .theme-gold .nc-stamp-used {
+      background: rgba(253, 244, 225, 0.55);
+      border: 2px solid #c29543;
+      color: #b45309;
+      font-family: 'Cinzel', serif;
+      box-shadow: 
+        0 6px 15px rgba(0,0,0,0.1),
+        inset 0 0 8px rgba(197, 160, 89, 0.25),
+        inset 0 0 0 1.5px #fff3c4,
+        0 0 10px rgba(197, 160, 89, 0.3);
+      text-shadow: 0 1px 1px rgba(255, 255, 255, 0.7);
+      width: 66px;
+      height: 66px;
+      border-radius: 50%;
+      backdrop-filter: blur(4px);
+    }
+    .theme-cyber .nc-stamp-used {
+      background: rgba(244, 63, 94, 0.05);
+      border: 1.5px solid rgba(244, 63, 94, 0.7);
+      color: rgba(244, 63, 94, 0.95);
+      font-family: 'Orbitron', sans-serif;
+      box-shadow: 
+        0 0 12px rgba(244, 63, 94, 0.35),
+        inset 0 0 6px rgba(244, 63, 94, 0.2);
+      text-shadow: 0 0 5px rgba(244, 63, 94, 0.8);
+      clip-path: polygon(0 15%, 15% 0, 100% 0, 100% 85%, 85% 100%, 0 100%);
+      border-radius: 0;
+      width: 72px;
+      height: 58px;
+      background-image: repeating-linear-gradient(0deg, rgba(244, 63, 94, 0.1) 0px, rgba(244, 63, 94, 0.1) 1px, transparent 1px, transparent 3px);
+    }
+    .nc-stamp-used.stamped {
+      transform: scale(1.05) rotate(-15deg);
+      opacity: 0.95;
+    }
+
+    .nc-stamp-ended {
+      position: absolute;
+      right: 15px;
+      top: 25px;
+      font-size: 0.75rem;
+      font-weight: 900;
+      transform: scale(3) rotate(25deg);
+      opacity: 0;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.45);
+      z-index: 12;
+      letter-spacing: 1px;
+    }
+    .theme-gold .nc-stamp-ended {
+      background: rgba(15, 23, 42, 0.65);
+      border: 1.5px solid #94a3b8;
+      color: #e2e8f0;
+      font-family: 'Cinzel', serif;
+      box-shadow: 
+        0 8px 16px rgba(0,0,0,0.3),
+        inset 0 0 8px rgba(0,0,0,0.4);
+      border-radius: 2px;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+      letter-spacing: 2px;
+      padding: 4px 10px;
+      backdrop-filter: blur(2px);
+    }
+    .theme-cyber .nc-stamp-ended {
+      background: rgba(239, 68, 68, 0.08);
+      border: 1.5px solid rgba(239, 68, 68, 0.7);
+      color: rgba(239, 68, 68, 0.9);
+      font-family: 'Orbitron', sans-serif;
+      box-shadow: 
+        0 0 12px rgba(239, 68, 68, 0.35),
+        inset 0 0 6px rgba(239, 68, 68, 0.25);
+      text-shadow: 0 0 5px rgba(239, 68, 68, 0.8);
+      clip-path: polygon(0 0, 100% 0, 95% 100%, 5% 100%);
+      border-radius: 0;
+      padding: 4px 14px;
+      background-image: repeating-linear-gradient(0deg, rgba(239, 68, 68, 0.1) 0px, rgba(239, 68, 68, 0.1) 1px, transparent 1px, transparent 3px);
+    }
+    .nc-stamp-ended.stamped {
+      transform: scale(1.05) rotate(15deg);
+      opacity: 0.95;
+    }
+
+    /* 能量桥动画球 */
+    .nc-arrow-glow-ball.animate-flow {
+      display: block;
+      animation: energy-flow 1.2s ease-in-out forwards;
+    }
+    @keyframes energy-flow {
+      0% { top: -4px; transform: scale(1); opacity: 1; }
+      80% { top: 32px; transform: scale(1.5); opacity: 1; }
+      100% { top: 35px; transform: scale(0.2); opacity: 0; }
+    }
+
+    /* 新挑战进度条 */
+    .nc-ticket-progress-meter {
+      width: 100%;
+      margin-top: 8px;
+    }
+    .progress-meter-label {
+      font-size: 0.6rem;
+      font-weight: 700;
+      color: #94a3b8;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      text-align: left;
+    }
+    .theme-gold .progress-meter-label { color: #8c785c; }
+    .progress-meter-bar {
+      width: 100%;
+      height: 6px;
+      background: rgba(0, 0, 0, 0.08);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .theme-cyber .progress-meter-bar { background: rgba(255, 255, 255, 0.05); }
+    .progress-meter-fill {
+      width: 0%;
+      height: 100%;
+      border-radius: 3px;
+      transition: width 1.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .theme-gold .progress-meter-fill { background: var(--gold-primary); }
+    .theme-cyber .progress-meter-fill { background: var(--cyber-secondary); box-shadow: 0 0 8px var(--cyber-secondary); }
+    
+    .progress-meter-text {
+      font-size: 0.65rem;
+      font-weight: 800;
+      margin-top: 4px;
+      text-align: right;
+    }
+    .theme-gold .progress-meter-text { color: var(--gold-dark); }
+    .theme-cyber .progress-meter-text { color: var(--cyber-secondary); }
+
+    /* 文本与标签详情 */
+    .nc-ticket-label {
+      font-size: 0.65rem;
+      letter-spacing: 2px;
+      font-weight: 800;
+      color: #94a3b8;
+    }
+    .theme-gold .nc-ticket-label { color: #8c7c63; }
+    .nc-ticket-value-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      margin: 8px 0;
+    }
+    .nc-ticket-value-number {
+      font-size: 2.2rem;
+      font-weight: 900;
+    }
+    .theme-gold .nc-ticket-value-number { font-family: 'Cinzel', serif; }
+    .theme-cyber .nc-ticket-value-number { font-family: 'Orbitron', sans-serif; }
+    
+    .nc-ticket-percent-off-stack {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      margin-left: 4px;
+      line-height: 1;
+    }
+    .nc-ticket-percent-symbol {
+      font-size: 1.1rem;
+      font-weight: 800;
+    }
+    .nc-ticket-off-label {
+      font-size: 0.55rem;
+      font-weight: 800;
+      letter-spacing: 1px;
+    }
+
+    .nc-ticket-subtitle {
+      font-size: 0.65rem;
+      font-weight: 800;
+      opacity: 0.85;
+    }
+    .nc-ticket-divider {
+      font-size: 0.6rem;
+      margin: 4px 0;
+      color: rgba(0,0,0,0.15);
+    }
+    .theme-cyber .nc-ticket-divider { color: rgba(255,255,255,0.15); }
+    .nc-ticket-value-subtitle {
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: #64748b;
+    }
+
+    /* 过期重生旋转门 */
+    .nc-connector-circle.vortex {
+      margin: 8px 0;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: 2px dashed var(--cyber-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 12;
+      animation: spin 5s linear infinite;
+      box-shadow: 0 0 10px rgba(168, 85, 247, 0.2);
+    }
+    .theme-gold .nc-connector-circle.vortex {
+      border-color: var(--gold-primary);
+      box-shadow: 0 0 8px rgba(197, 160, 89, 0.3);
+    }
+    .vortex-portal-ring {
+      position: absolute;
+      inset: 4px;
+      border: 1px solid var(--cyber-secondary);
+      border-radius: 50%;
+      opacity: 0.5;
+    }
+    .vortex-portal-core {
+      font-size: 1.1rem;
+      animation: spin-reverse 2s linear infinite;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* 全新升级：全息网格防护罩与金色力场罩 */
+    .force-shield-bubble {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at center, rgba(6, 182, 212, 0.05) 0%, rgba(6, 182, 212, 0.22) 100%);
+      border: 2px solid var(--cyber-secondary);
+      border-radius: 16px;
+      backdrop-filter: blur(3px);
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.65s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      box-shadow: 
+        0 0 25px rgba(6, 182, 212, 0.45),
+        inset 0 0 25px rgba(6, 182, 212, 0.2);
+      overflow: hidden;
+    }
+    
+    .theme-gold .force-shield-bubble {
+      background: radial-gradient(circle at center, rgba(197, 160, 89, 0.05) 0%, rgba(197, 160, 89, 0.16) 100%);
+      border-color: var(--gold-primary);
+      box-shadow: 
+        0 0 20px rgba(197, 160, 89, 0.35),
+        inset 0 0 20px rgba(197, 160, 89, 0.15);
+    }
+
+    /* SVG 蜂窝底纹样式 */
+    .shield-hex-grid {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      color: var(--shield-grid-color);
+      pointer-events: none;
+      z-index: 1;
+    }
+    .theme-gold .shield-hex-grid {
+      --shield-grid-color: var(--gold-primary);
+    }
+    .theme-cyber .shield-hex-grid {
+      --shield-grid-color: var(--cyber-secondary);
+    }
+
+    .shield-ripple {
+      position: absolute;
+      inset: -5px;
+      border: 1.5px solid rgba(6, 182, 212, 0.4);
+      border-radius: 20px;
+      animation: pulse-grow 2s infinite;
+      z-index: 2;
+    }
+    .shield-ripple.index2 {
+      animation-delay: 1s;
+    }
+    .theme-gold .shield-ripple {
+      border-color: rgba(197, 160, 89, 0.3);
+    }
+
+    .shield-lock-wrapper {
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .svg-shield-lock {
+      color: var(--lock-color);
+      filter: drop-shadow(0 0 8px var(--lock-color));
+      transition: all 0.4s ease;
+      animation: bounce-slow 2s infinite ease-in-out;
+    }
+    .theme-gold .svg-shield-lock {
+      --lock-color: #ffd700;
+      --lock-body-bg: #451a03;
+    }
+    .theme-cyber .svg-shield-lock {
+      --lock-color: #06b6d4;
+      --lock-body-bg: #0f172a;
+    }
+
+    @keyframes bounce-slow {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+
+    /* 破灭力场罩 */
+    .force-shield-bubble.popped {
+      transform: scale(1.45);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* 破灭解锁 shackle 开锁动效 */
+    .force-shield-bubble.popped .lock-shackle {
+      transform: translateY(-8px) rotate(-20deg);
+      transform-origin: 20px 28px;
+    }
+
+    /* 震荡波圈 */
+    .shield-shockwave {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 40px;
+      height: 40px;
+      margin-top: -20px;
+      margin-left: -20px;
+      border: 3px solid var(--shield-shockwave-color);
+      border-radius: 50%;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 21;
+      transform: scale(0.1);
+      transition: none;
+    }
+    .shield-shockwave.active {
+      animation: shockwave-expand 0.65s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+    }
+    @keyframes shockwave-expand {
+      0% { transform: scale(0.1); opacity: 1; border-width: 5px; }
+      100% { transform: scale(3.5); opacity: 0; border-width: 1px; }
+    }
+    .theme-gold .shield-shockwave {
+      --shield-shockwave-color: var(--gold-light);
+    }
+    .theme-cyber .shield-shockwave {
+      --shield-shockwave-color: var(--cyber-secondary);
+    }
+
+    /* 底部开启挑战按钮 */
+    .nc-btn-start {
+      width: 100%;
+      background: linear-gradient(90deg, #10b981, #059669);
+      color: white;
+      border: none;
+      padding: 12px;
+      border-radius: 8px;
+      font-weight: 800;
+      font-size: 0.9rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+      transition: all 0.2s;
+    }
+    .theme-gold .nc-btn-start {
+      background: linear-gradient(90deg, #d97706, #b45309);
+      box-shadow: 0 4px 15px rgba(180, 83, 9, 0.4);
+      color: #fff3c4;
+      font-family: 'Cinzel', serif;
+      font-weight: 900;
+      border: 1px solid rgba(255, 243, 196, 0.25);
+    }
+    .theme-cyber .nc-btn-start {
+      background: linear-gradient(90deg, var(--cyber-primary), var(--cyber-secondary));
+      box-shadow: 0 0 15px rgba(168, 85, 247, 0.45);
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+      letter-spacing: 1px;
+    }
+    .nc-btn-start:active {
+      transform: scale(0.98);
+    }
+    .nc-footer-text {
+      font-size: 0.65rem;
+      color: #94a3b8;
+      text-align: center;
+      margin-top: 8px;
+    }
+
+    .nc-ticket-timer-pill {
+      position: absolute;
+      bottom: 8px;
+      background: rgba(0, 0, 0, 0.25);
+      color: #fff;
+      font-size: 0.6rem;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.08);
+      z-index: 10;
+    }
+
+  </style>
+</head>
+<body>
+
+  <!-- 侧边栏：操作面板 -->
+  <div class="sidebar">
+    <div class="logo-area">
+      <h1>UX/UI PLAYGROUND</h1>
+      <p>优惠券系统首页动效实验场</p>
+    </div>
+
+    <!-- 控件 1：场景页面切换 -->
+    <div class="control-group">
+      <div class="section-title">1. 选择预览场景</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: rgba(0, 0, 0, 0.2); padding: 4px; border-radius: 10px; border: 1px solid var(--border-color);">
+        <button class="btn-toggle active" id="btn-scene-loading" onclick="switchScene('loading')">加载页面</button>
+        <button class="btn-toggle" id="btn-scene-gift" onclick="switchScene('gift')">礼盒开启</button>
+        <button class="btn-toggle" id="btn-scene-return" onclick="switchScene('return')">回访画面</button>
+        <button class="btn-toggle" id="btn-scene-redeemed" onclick="switchScene('redeemed')">已兑换页</button>
+        <button class="btn-toggle" id="btn-scene-expired" onclick="switchScene('expired')" style="grid-column: span 2;">已过期页</button>
+      </div>
+    </div>
+
+    <!-- 控件 2：画风方向切换 -->
+    <div class="control-group">
+      <div class="section-title">2. 切换优化画风</div>
+      <div class="btn-group">
+        <button class="btn-toggle active" id="btn-theme-gold" onclick="switchTheme('gold')">方案A：全息金</button>
+        <button class="btn-toggle" id="btn-theme-cyber" onclick="switchTheme('cyber')">方案B：赛博霓虹</button>
+      </div>
+    </div>
+
+    <!-- 控件 3：动画指令控制 -->
+    <div class="control-group">
+      <div class="section-title">3. 触发动画动作</div>
+      <button class="btn-action" onclick="runTrigger()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 3l14 9-14 9V3z"/></svg>
+        触发选中场景动效
+      </button>
+      <button class="btn-action reset" onclick="resetCurrentScene()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        重置场景状态
+      </button>
+    </div>
+
+    <!-- 视觉设计说明 -->
+    <div class="control-group">
+      <div class="section-title">视觉设计说明</div>
+      <div class="design-note-card" id="design-note">
+        <h4>方案 A：全息金色 (3D拟物与全息镭射)</h4>
+        <p>适合尊贵仪式感路线。背景采用渐变奢华面，配合柔和的丁达尔金光射入。礼盒下坠带重力回弹，开启后优惠券具有金属流光漫反射以及细腻浮空星光粒子，大幅拉满获得的惊喜感。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 主舞台：手机模拟器 -->
+  <div class="stage">
+    <div class="phone-mockup" id="phone-container">
+      <div class="notch"></div>
+      
+      <!-- 手机显示区域 -->
+      <div class="screen theme-gold" id="screen-container">
+        
+        <!-- 背景漂浮粒子 Layer -->
+        <canvas class="particle-canvas" id="ambient-particles"></canvas>
+        <!-- 核心大爆炸亮片 Layer -->
+        <canvas class="particle-canvas" id="confetti-canvas"></canvas>
+
+        <!-- ==================== SCENE 1: LOADING ==================== -->
+        <div class="scene-view active" id="view-loading">
+          <div class="loader-vortex">
+            <div class="vortex-ring"></div>
+            <div class="vortex-ring inner"></div>
+            <div class="vortex-core" id="vortex-text">0%</div>
+          </div>
+          
+          <div class="progress-container">
+            <div class="progress-bar">
+              <div class="progress-fill" id="progress-fill"></div>
+            </div>
+          </div>
+          
+          <div class="loading-hint" id="loading-hint-text">正在为您打包专属礼券...</div>
+        </div>
+
+        <!-- ==================== SCENE 2: GIFT ==================== -->
+        <div class="scene-view" id="view-gift">
+          <!-- 视频开场覆盖层 (不删代码，通过JS控制播放与飞入) -->
+          <div class="gift-video-container" id="gift-video-wrapper" style="display: flex;">
+            <video id="gift-opening-video" src="打开礼包开场动画/首次开场动画.mov" playsinline webkit-playsinline muted></video>
+          </div>
+
+          <!-- 模拟品牌标题 -->
+          <div class="brand-header-area">
+            <div class="brand-logo-sim" id="gift-brand-mark">R</div>
+            <span class="brand-title-sim">Ritual App</span>
+          </div>
+
+          <!-- 礼盒本体阶段 (定位占位符，内部礼品盒由开场视频直接替代) -->
+          <div class="package-stage" id="package-clicker">
+            <div class="gift-box-wrapper"></div>
+          </div>
+
+          <!-- 飞升出来的繁华券包组合 (3张卡牌呈扇形飞出 + 闪耀挂饰) -->
+          <div class="reward-bundle" id="gift-bundle">
+            
+            <!-- 卡牌 1 (左侧副券) -->
+            <div class="unboxed-ticket card-sub card-left">
+              <div class="ticket-label">Points Gift</div>
+              <div class="ticket-value">+200</div>
+              <div class="ticket-label">赠送金币</div>
+            </div>
+
+            <!-- 卡牌 2 (右侧副券) -->
+            <div class="unboxed-ticket card-sub card-right">
+              <div class="ticket-label">Store Coupon</div>
+              <div class="ticket-value">¥30</div>
+              <div class="ticket-label">全场通用券</div>
+            </div>
+
+            <!-- 卡牌 3 (中央大额主券) -->
+            <div class="unboxed-ticket card-main">
+              <div class="ticket-label">Grand Prize</div>
+              <div class="ticket-value">¥100</div>
+              <div class="ticket-label">新人特惠立减券</div>
+              <button class="ticket-btn">一键收下礼包</button>
+            </div>
+            
+            <!-- 丰富氛围饰品 -->
+            <div class="floating-deco deco-star1">⭐</div>
+            <div class="floating-deco deco-star2">✨</div>
+            <div class="floating-deco deco-crown">👑</div>
+            <div class="floating-deco deco-bag">🎁</div>
+          </div>
+        </div>
+
+        <!-- ==================== SCENE 3: RETURN VISIT ==================== -->
+        <div class="scene-view" id="view-return">
+          <!-- 3D 翻转卡牌 -->
+          <div class="return-vip-card" id="vip-card" onclick="triggerCardFlip()">
+            <div class="card-inner">
+              <!-- 卡牌正面 -->
+              <div class="card-face card-front">
+                <div class="card-front-pattern">R</div>
+                <div class="card-tap-hint">点击卡牌注入欧气</div>
+              </div>
+              
+              <!-- 卡牌背面 (爆开奖励) -->
+              <div class="card-face card-back">
+                <div class="card-title">老友专享特权</div>
+                <div class="bonus-display">
+                  <div class="bonus-value">+5</div>
+                  <div class="bonus-label">Coins</div>
+                </div>
+                <div class="card-tap-hint" style="opacity: 0.8">已自动存入金币包</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 底部积分储蓄钱包 -->
+          <div class="wallet-dock" id="wallet-dock">
+            <div class="wallet-icon" id="wallet-icon" style="display: flex; align-items: center; justify-content: center;">
+              <svg class="svg-gold-coin" viewBox="0 0 32 32" width="22" height="22">
+                <circle cx="16" cy="16" r="14" fill="var(--coin-bg)" stroke="var(--coin-border)" stroke-width="2" />
+                <circle cx="16" cy="16" r="10" fill="none" stroke="var(--coin-inner-border)" stroke-width="1" stroke-dasharray="2 2" />
+                <polygon points="16,8 18.5,13.5 24.5,14 20,18 21.5,24 16,21 10.5,24 12,18 7.5,14 13.5,13.5" fill="var(--coin-star)" />
+              </svg>
+            </div>
+            <div class="wallet-info">
+              <div class="wallet-balance-label">我的金币包</div>
+              <div class="wallet-balance" id="wallet-balance">85</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== SCENE 4: REDEEMED ==================== -->
+        <div class="scene-view" id="view-redeemed">
+          <div class="nc-used-badge-wrapper" id="redeemed-badge">
+            <div class="nc-used-circle">✓</div>
+            <span class="nc-used-label">OFFER USED</span>
+          </div>
+
+          <h2 class="nc-title" id="redeemed-title">Bravo! You saved like a pro.</h2>
+          <p class="nc-subtitle" id="redeemed-subtitle">Nice! Your last offer was used successfully.</p>
+
+          <!-- 旧优惠券 (即将盖章 & 3D 分裂) -->
+          <div class="nc-ticket-split-container" id="redeemed-split-container">
+            <!-- 背后隐藏的至尊省钱勋章 (SVG Medal) -->
+            <div class="nc-saving-badge" id="redeemed-saving-badge">
+              <svg class="svg-badge-medal" viewBox="0 0 100 100" width="100%" height="100%">
+                <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 4" class="medal-ring-outer"/>
+                <circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" stroke-width="2" class="medal-ring-inner"/>
+                <path d="M 25,50 C 22,35 32,25 40,25 C 38,30 35,40 38,50 C 35,55 30,62 25,50 Z" fill="currentColor" opacity="0.3"/>
+                <path d="M 75,50 C 78,35 68,25 60,25 C 62,30 65,40 62,50 C 65,55 70,62 75,50 Z" fill="currentColor" opacity="0.3"/>
+                <path d="M 32,60 C 35,72 45,78 50,78 C 55,78 65,72 68,60 C 62,68 50,70 32,60 Z" fill="currentColor" opacity="0.3"/>
+                <path d="M 35,65 L 50,90 L 65,65 Z" fill="var(--medal-ribbon)" />
+                <circle cx="50" cy="50" r="28" fill="var(--medal-body-bg)" stroke="currentColor" stroke-width="2.5"/>
+                <polygon points="50,34 54,43 64,45 56,53 58,63 50,58 42,63 44,53 36,45 46,43" fill="var(--medal-star)" stroke="var(--medal-star-stroke)" stroke-width="0.8" />
+              </svg>
+            </div>
+            
+            <!-- 斜切left半部分 -->
+            <div class="nc-ticket-previous split-left" id="redeemed-prev-ticket-left">
+              <div class="nc-ticket-label">PREVIOUS OFFER</div>
+              <div class="nc-ticket-value-row">
+                <span class="nc-ticket-value-number">20</span>
+                <div class="nc-ticket-percent-off-stack">
+                  <span class="nc-ticket-percent-symbol">%</span>
+                  <span class="nc-ticket-off-label">OFF</span>
+                </div>
+              </div>
+              <div class="nc-ticket-subtitle">Orders $75+</div>
+            </div>
+
+            <!-- 斜切right半部分 -->
+            <div class="nc-ticket-previous split-right" id="redeemed-prev-ticket-right">
+              <div class="nc-ticket-label">PREVIOUS OFFER</div>
+              <div class="nc-ticket-value-row">
+                <span class="nc-ticket-value-number">20</span>
+                <div class="nc-ticket-percent-off-stack">
+                  <span class="nc-ticket-percent-symbol">%</span>
+                  <span class="nc-ticket-off-label">OFF</span>
+                </div>
+              </div>
+              <div class="nc-ticket-subtitle">Orders $75+</div>
+            </div>
+
+            <!-- 劈裂处的流光熔缝 -->
+            <div class="nc-split-seam" id="redeemed-seam"></div>
+            
+            <!-- 物理红蜡USED钢印 -->
+            <div class="nc-stamp-used" id="redeemed-stamp">
+              <span style="font-size:0.85rem; font-weight:900; line-height:1;">USED</span>
+              <span style="font-size:0.5rem; opacity:0.8; margin-top:2px;">★★★★★</span>
+            </div>
+          </div>
+
+          <!-- 连接器：能量桥 -->
+          <div class="nc-arrow-down" id="redeemed-connector">
+            <div class="nc-arrow-glow-ball" id="redeemed-flow-ball"></div>
+          </div>
+
+          <!-- 新挑战卡券 (锁定状态) -->
+          <div class="nc-ticket-new-round" id="redeemed-new-ticket">
+            <div class="nc-ticket-label">NEW ROUND</div>
+            <div class="nc-ticket-value-row">
+              <span class="nc-ticket-value-number">15</span>
+              <div class="nc-ticket-percent-off-stack">
+                <span class="nc-ticket-percent-symbol">%</span>
+                <span class="nc-ticket-off-label">OFF</span>
+              </div>
+            </div>
+            <div class="nc-ticket-value-subtitle">Orders $75+</div>
+            <div class="nc-ticket-divider">♦</div>
+            <div class="nc-ticket-progress-meter">
+              <div class="progress-meter-label">解锁进度</div>
+              <div class="progress-meter-bar">
+                <div class="progress-meter-fill" id="redeemed-progress-fill"></div>
+              </div>
+              <div class="progress-meter-text" id="redeemed-progress-text" style="font-variant-numeric: tabular-nums;">0 / 80 Coins</div>
+            </div>
+          </div>
+
+          <!-- 底部按钮 -->
+          <div class="nc-footer" style="width: 100%; padding: 0 24px; margin-top: 15px;">
+            <button class="nc-btn-start" type="button">
+              <span>Start New Challenge</span>
+              <span style="margin-left: 8px;">→</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ==================== SCENE 5: EXPIRED ==================== -->
+        <div class="scene-view" id="view-expired">
+          <div class="nc-header-badge expired" id="expired-badge">
+            <span>LAST CHALLENGE ENDED</span>
+          </div>
+
+          <h2 class="nc-title" id="expired-title">Time’s up, but a new door opens!</h2>
+          <p class="nc-subtitle" id="expired-subtitle">Your previous challenge has ended. A fresh round is ready.</p>
+
+          <!-- 旧优惠券 (即将被砸碎风化) - 象限分裂碎裂容器 -->
+          <div class="nc-ticket-shatter-container" id="expired-prev-ticket">
+            
+            <!-- Shard 1: Top Left -->
+            <div class="nc-ticket-shard shard-tl">
+              <div class="expired-ice-overlay"></div>
+              <div class="nc-ticket-label">PREVIOUS CHALLENGE</div>
+              <div class="nc-ticket-value-row">
+                <span class="nc-ticket-value-number">20</span>
+                <div class="nc-ticket-percent-off-stack">
+                  <span class="nc-ticket-percent-symbol">%</span>
+                  <span class="nc-ticket-off-label">OFF</span>
+                </div>
+              </div>
+              <div class="nc-ticket-subtitle">Orders $75+</div>
+              <div class="nc-ticket-timer-pill">00:00:00</div>
+            </div>
+
+            <!-- Shard 2: Top Right -->
+            <div class="nc-ticket-shard shard-tr">
+              <div class="expired-ice-overlay"></div>
+              <div class="nc-ticket-label">PREVIOUS CHALLENGE</div>
+              <div class="nc-ticket-value-row">
+                <span class="nc-ticket-value-number">20</span>
+                <div class="nc-ticket-percent-off-stack">
+                  <span class="nc-ticket-percent-symbol">%</span>
+                  <span class="nc-ticket-off-label">OFF</span>
+                </div>
+              </div>
+              <div class="nc-ticket-subtitle">Orders $75+</div>
+              <div class="nc-ticket-timer-pill">00:00:00</div>
+            </div>
+
+            <!-- Shard 3: Bottom Left -->
+            <div class="nc-ticket-shard shard-bl">
+              <div class="expired-ice-overlay"></div>
+              <div class="nc-ticket-label">PREVIOUS CHALLENGE</div>
+              <div class="nc-ticket-value-row">
+                <span class="nc-ticket-value-number">20</span>
+                <div class="nc-ticket-percent-off-stack">
+                  <span class="nc-ticket-percent-symbol">%</span>
+                  <span class="nc-ticket-off-label">OFF</span>
+                </div>
+              </div>
+              <div class="nc-ticket-subtitle">Orders $75+</div>
+              <div class="nc-ticket-timer-pill">00:00:00</div>
+            </div>
+
+            <!-- Shard 4: Bottom Right -->
+            <div class="nc-ticket-shard shard-br">
+              <div class="expired-ice-overlay"></div>
+              <div class="nc-ticket-label">PREVIOUS CHALLENGE</div>
+              <div class="nc-ticket-value-row">
+                <span class="nc-ticket-value-number">20</span>
+                <div class="nc-ticket-percent-off-stack">
+                  <span class="nc-ticket-percent-symbol">%</span>
+                  <span class="nc-ticket-off-label">OFF</span>
+                </div>
+              </div>
+              <div class="nc-ticket-subtitle">Orders $75+</div>
+              <div class="nc-ticket-timer-pill">00:00:00</div>
+            </div>
+
+            <!-- 盖章印 (盖在碎裂卡片之上) -->
+            <div class="nc-stamp-ended" id="expired-stamp">
+              <span>ENDED</span>
+            </div>
+          </div>
+
+          <!-- 连接器：重生旋转传送门 -->
+          <div class="nc-connector-circle vortex" id="expired-connector">
+            <svg class="svg-vortex-portal" viewBox="0 0 100 100" width="38" height="38">
+              <circle cx="50" cy="50" r="44" fill="none" stroke="var(--portal-color-outer)" stroke-width="2.5" stroke-dasharray="8 6" class="portal-ring-1" />
+              <circle cx="50" cy="50" r="32" fill="none" stroke="var(--portal-color-mid)" stroke-width="1.5" stroke-dasharray="4 4" class="portal-ring-2" />
+              <g class="portal-swirl">
+                <path d="M 50,50 A 15,15 0 0,0 65,35" fill="none" stroke="var(--portal-color-inner)" stroke-width="2.5" stroke-linecap="round" />
+                <path d="M 50,50 A 15,15 0 0,0 35,65" fill="none" stroke="var(--portal-color-inner)" stroke-width="2.5" stroke-linecap="round" />
+                <path d="M 50,50 A 15,15 0 0,0 65,65" fill="none" stroke="var(--portal-color-inner)" stroke-width="2.5" stroke-linecap="round" />
+                <path d="M 50,50 A 15,15 0 0,0 35,35" fill="none" stroke="var(--portal-color-inner)" stroke-width="2.5" stroke-linecap="round" />
+              </g>
+              <circle cx="50" cy="50" r="8" fill="var(--portal-core-bg)" class="portal-core" />
+            </svg>
+          </div>
+
+          <!-- 新挑战卡券 (力场保护) -->
+          <div class="nc-ticket-new-round expired-glow" id="expired-new-ticket">
+            <!-- 震荡波圈 -->
+            <div class="shield-shockwave" id="expired-shockwave"></div>
+            
+            <!-- 能量力场罩 -->
+            <div class="force-shield-bubble" id="expired-shield">
+              <svg class="shield-hex-grid" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <defs>
+                  <pattern id="hex-grid" width="12" height="20.78" patternUnits="userSpaceOnUse">
+                    <path d="M 6 0 L 12 3.46 L 12 10.39 L 6 13.86 L 0 10.39 L 0 3.46 Z M 0 20.78 L 6 17.32 L 12 20.78 M 6 13.86 L 6 17.32" fill="none" stroke="currentColor" stroke-width="0.3" opacity="0.4"/>
+                  </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#hex-grid)" />
+              </svg>
+              <div class="shield-ripple"></div>
+              <div class="shield-ripple index2"></div>
+              <div class="shield-lock-wrapper">
+                <svg class="svg-shield-lock" viewBox="0 0 64 64" width="48" height="48">
+                  <path class="lock-shackle" d="M 20,28 V 20 C 20,12 25,8 32,8 C 39,8 44,12 44,20 V 28" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" />
+                  <rect class="lock-body" x="14" y="26" width="36" height="28" rx="6" fill="var(--lock-body-bg)" stroke="currentColor" stroke-width="3" />
+                  <circle class="lock-keyhole-top" cx="32" cy="37" r="4" fill="currentColor" />
+                  <path class="lock-keyhole-bottom" d="M 30,37 L 34,37 L 35,46 L 29,46 Z" fill="currentColor" />
+                  <path class="lock-circuit" d="M 18,34 H 24 M 40,34 H 46 M 18,44 H 24 M 40,44 H 46" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.6" />
+                </svg>
+              </div>
+            </div>
+            
+            <div class="nc-ticket-label">NEW ROUND</div>
+            <div class="nc-ticket-value-row">
+              <span class="nc-ticket-value-number">15</span>
+              <div class="nc-ticket-percent-off-stack">
+                <span class="nc-ticket-percent-symbol">%</span>
+                <span class="nc-ticket-off-label">OFF</span>
+              </div>
+            </div>
+            <div class="nc-ticket-value-subtitle">Orders $75+</div>
+            <div class="nc-ticket-divider">♦</div>
+            <div class="nc-ticket-subtitle" id="expired-new-subtitle">Start earning to unlock more…</div>
+          </div>
+
+          <!-- 底部按钮 (点击打破力场) -->
+          <div class="nc-footer" style="width: 100%; padding: 0 24px; margin-top: 15px;">
+            <button class="nc-btn-start" type="button" id="expired-start-btn" onclick="popShieldAndStart()">
+              <span>Start New Challenge</span>
+              <span style="margin-left: 8px;">→</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 动效及交互引擎 (JS) ==================== -->
+  <script>
+    let activeScene = 'loading';
+    let activeTheme = 'gold';
+    
+    // 获取核心DOM
+    const screenContainer = document.getElementById('screen-container');
+    const phoneContainer = document.getElementById('phone-container');
+    const noteCard = document.getElementById('design-note');
+    
+    // Canvas 粒子渲染器
+    const ambientCanvas = document.getElementById('ambient-particles');
+    const ambientCtx = ambientCanvas.getContext('2d');
+    const confettiCanvas = document.getElementById('confetti-canvas');
+    const confettiCtx = confettiCanvas.getContext('2d');
+    
+    let ambientParticles = [];
+    let confettiParticles = [];
+    let particleAnimationId = null;
+
+    // 定位 Canvas 尺寸
+    function resizeCanvases() {
+      ambientCanvas.width = screenContainer.clientWidth;
+      ambientCanvas.height = screenContainer.clientHeight;
+      confettiCanvas.width = screenContainer.clientWidth;
+      confettiCanvas.height = screenContainer.clientHeight;
+    }
+    window.addEventListener('resize', resizeCanvases);
+    resizeCanvases();
+
+    // ---------------- 粒子系统 ----------------
+    class Particle {
+      constructor(type) {
+        this.type = type; // 'ambient-gold', 'ambient-cyber', 'confetti'
+        this.reset();
+      }
+
+      reset() {
+        this.x = Math.random() * ambientCanvas.width;
+        if (this.type === 'confetti') {
+          // 爆炸初始位置在屏幕中央
+          this.x = ambientCanvas.width / 2;
+          this.y = ambientCanvas.height * 0.42; 
+          const angle = Math.random() * Math.PI * 2;
+          const speed = Math.random() * 8 + 4;
+          this.vx = Math.cos(angle) * speed;
+          this.vy = Math.sin(angle) * speed - 2; // 给一个向上的力
+          this.size = Math.random() * 8 + 6;
+          this.color = activeTheme === 'gold' 
+            ? `hsl(${Math.random() * 25 + 35}, 100%, ${Math.random() * 30 + 50}%)` // 碎金
+            : `hsl(${Math.random() * 60 + 180}, 100%, 60%)`; // 赛博青/紫
+          this.alpha = 1;
+          this.rotation = Math.random() * 360;
+          this.rotationSpeed = Math.random() * 10 - 5;
+        } else if (this.type === 'ash') {
+          // 灰尘/灰化碎落
+          this.x = ambientCanvas.width * (0.25 + Math.random() * 0.5);
+          this.y = ambientCanvas.height * 0.28;
+          const angle = Math.random() * Math.PI + Math.PI; // 偏向上方吹落
+          const speed = Math.random() * 4 + 1;
+          this.vx = Math.cos(angle) * speed;
+          this.vy = Math.sin(angle) * speed - 1;
+          this.size = Math.random() * 6 + 3;
+          this.color = activeTheme === 'gold'
+            ? `rgba(210, 185, 144, ${Math.random() * 0.4 + 0.5})` // 金沙
+            : `rgba(103, 232, 249, ${Math.random() * 0.4 + 0.5})`; // 冰晶蓝/灰烬
+          this.alpha = 1;
+          this.rotation = Math.random() * 360;
+          this.rotationSpeed = Math.random() * 6 - 3;
+        } else {
+          // 漂浮背景粒子
+          this.y = Math.random() * ambientCanvas.height;
+          this.vx = Math.random() * 0.6 - 0.3;
+          this.vy = -(Math.random() * 0.5 + 0.3); // 向上升腾
+          this.size = Math.random() * 3 + 1;
+          this.alpha = Math.random() * 0.5 + 0.1;
+          this.color = this.type === 'ambient-gold' ? '255, 230, 160' : '6, 182, 212';
+        }
+      }
+
+      update() {
+        if (this.type === 'confetti' || this.type === 'ash') {
+          this.x += this.vx;
+          this.y += this.vy;
+          if (this.type === 'confetti') {
+            this.vy += 0.22; // 重力影响
+            this.vx *= 0.98; // 空气阻力
+          } else {
+            // 灰尘随风漂移
+            this.vy += 0.05;
+            this.vx += Math.random() * 0.1 - 0.05;
+          }
+          this.alpha -= 0.015; // 渐淡
+          this.rotation += this.rotationSpeed;
+          if (this.alpha <= 0) this.alpha = 0;
+        } else {
+          this.x += this.vx;
+          this.y += this.vy;
+          if (this.y < -10) {
+            this.y = ambientCanvas.height + 10;
+            this.x = Math.random() * ambientCanvas.width;
+          }
+        }
+      }
+
+      draw(ctx) {
+        ctx.save();
+        if (this.type === 'confetti') {
+          ctx.translate(this.x, this.y);
+          ctx.rotate(this.rotation * Math.PI / 180);
+          ctx.fillStyle = this.color;
+          ctx.globalAlpha = this.alpha;
+          // 绘制四角星片或长方形纸屑
+          if (Math.random() > 0.5) {
+            ctx.fillRect(-this.size/2, -this.size/2, this.size, this.size);
+          } else {
+            ctx.beginPath();
+            ctx.moveTo(0, -this.size);
+            ctx.lineTo(this.size/2, 0);
+            ctx.lineTo(0, this.size);
+            ctx.lineTo(-this.size/2, 0);
+            ctx.closePath();
+            ctx.fill();
+          }
+        } else {
+          ctx.beginPath();
+          ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${this.color}, ${this.alpha})`;
+          ctx.shadowBlur = this.size * 2;
+          ctx.shadowColor = `rgba(${this.color}, 0.8)`;
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+
+    // 初始化漂浮粒子
+    function initAmbientParticles() {
+      ambientParticles = [];
+      const particleType = activeTheme === 'gold' ? 'ambient-gold' : 'ambient-cyber';
+      for (let i = 0; i < 40; i++) {
+        ambientParticles.push(new Particle(particleType));
+      }
+    }
+
+    // 触发大爆炸纸屑
+    function spawnExplosionConfetti() {
+      confettiParticles = [];
+      for (let i = 0; i < 80; i++) {
+        confettiParticles.push(new Particle('confetti'));
+      }
+    }
+
+    // 触发灰化风化消逝
+    function spawnAshDissolve() {
+      confettiParticles = [];
+      for (let i = 0; i < 60; i++) {
+        confettiParticles.push(new Particle('ash'));
+      }
+    }
+
+    // 突破防护罩开始挑战
+    function popShieldAndStart() {
+      const shield = document.getElementById('expired-shield');
+      if (shield && !shield.classList.contains('popped')) {
+        shield.classList.add('popped');
+        
+        // 激活震荡波圈
+        const shockwave = document.getElementById('expired-shockwave');
+        if (shockwave) {
+          shockwave.classList.add('active');
+          setTimeout(() => {
+            shockwave.classList.remove('active');
+          }, 650);
+        }
+        
+        // 播放破裂碎冰/火花粒子
+        spawnExplosionConfetti();
+        
+        // 手机微小震动
+        phoneContainer.classList.add('shake');
+        setTimeout(() => phoneContainer.classList.remove('shake'), 400);
+        
+        // 解锁文案更改
+        document.getElementById('expired-new-subtitle').innerText = '🎉 挑战已开始！快去赢取金币吧';
+        
+        setTimeout(() => {
+          shield.style.display = 'none';
+        }, 650);
+      }
+    }
+
+    // 绘制循环
+    function renderLoop() {
+      ambientCtx.clearRect(0, 0, ambientCanvas.width, ambientCanvas.height);
+      confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+      
+      // 更新与绘制环境背景粒子
+      ambientParticles.forEach(p => {
+        p.update();
+        p.draw(ambientCtx);
+      });
+
+      // 更新与绘制爆裂纸屑
+      confettiParticles.forEach((p, idx) => {
+        p.update();
+        p.draw(confettiCtx);
+        if (p.alpha <= 0) {
+          confettiParticles.splice(idx, 1);
+        }
+      });
+
+      particleAnimationId = requestAnimationFrame(renderLoop);
+    }
+    
+    // 启动粒子系统
+    initAmbientParticles();
+    renderLoop();
+
+    // ---------------- 场景管理逻辑 ----------------
+    function switchScene(sceneName) {
+      // 停止所有运行中的定时器
+      stopLoadingTimer();
+      
+      // 暂停礼包视频
+      const video = document.getElementById('gift-opening-video');
+      if (video) {
+        video.pause();
+      }
+      
+      // 移除旧场景 active
+      document.querySelectorAll('.scene-view').forEach(view => {
+        view.classList.remove('active');
+      });
+
+      // 激活选中场景
+      activeScene = sceneName;
+      const targetView = document.getElementById(`view-${sceneName}`);
+      targetView.classList.add('active');
+
+      // 同步侧边栏按钮样式
+      document.querySelectorAll('.sidebar .btn-toggle').forEach(btn => {
+        if (btn.id === `btn-scene-${sceneName}`) {
+          btn.classList.add('active');
+        } else if (btn.id.startsWith('btn-scene-')) {
+          btn.classList.remove('active');
+        }
+      });
+
+      resetCurrentScene();
+      
+      // 切换场景后自动运行动效播放，无需手动再点击触发按钮
+      runTrigger();
+    }
+
+    function switchTheme(themeName) {
+      activeTheme = themeName;
+      
+      // 替换样式表
+      screenContainer.className = `screen theme-${themeName}`;
+      
+      // 同步按钮
+      document.getElementById('btn-theme-gold').classList.toggle('active', themeName === 'gold');
+      document.getElementById('btn-theme-cyber').classList.toggle('active', themeName === 'cyber');
+
+      // 同步说明卡片
+      const note = document.getElementById('design-note');
+      if (themeName === 'gold') {
+        note.innerHTML = `
+          <h4>方案 A：全息金色 (3D拟物与全息镭射)</h4>
+          <p>适合尊贵仪式感路线。背景采用渐变奢华面，配合柔和的丁达尔金光射入。礼盒下坠带重力回弹，开启后优惠券具有金属流光漫反射以及细腻浮空星光粒子，大幅拉满获得的惊喜感。</p>
+        `;
+        document.getElementById('gold-box-svg').style.display = 'block';
+        document.getElementById('cyber-box-div').style.display = 'none';
+      } else {
+        note.innerHTML = `
+          <h4>方案 B：赛博霓虹 (电竞霓虹与能量超载)</h4>
+          <p>科技感与新潮路线。采用暗深紫背景搭配青绿/玫红脉冲流光。加载指示器为双轨反向旋转漩涡。卡片采用发光边框，开启时炸裂大量霓虹质感碎屑，具备极强视觉张力与存在感。</p>
+        `;
+        document.getElementById('gold-box-svg').style.display = 'none';
+        document.getElementById('cyber-box-div').style.display = 'block';
+      }
+
+      // 重启环境粒子
+      initAmbientParticles();
+      resetCurrentScene();
+    }
+
+    // ---------------- 重置当前场景 ----------------
+    function resetCurrentScene() {
+      stopLoadingTimer();
+      confettiParticles = []; // 清除纸屑
+
+      if (activeScene === 'loading') {
+        document.getElementById('progress-fill').style.width = '0%';
+        document.getElementById('vortex-text').innerText = '0%';
+        document.getElementById('loading-hint-text').innerText = '正在为您打包专属礼券...';
+      } 
+      else if (activeScene === 'gift') {
+        const stage = document.getElementById('package-clicker');
+        stage.className = 'package-stage';
+        stage.style.pointerEvents = 'auto';
+        
+        // 重置视频容器状态
+        const videoWrapper = document.getElementById('gift-video-wrapper');
+        const video = document.getElementById('gift-opening-video');
+        if (videoWrapper && video) {
+          videoWrapper.style.display = 'flex';
+          videoWrapper.style.opacity = '1';
+          video.currentTime = 0;
+          video.pause();
+        }
+        
+        // 赛博礼盒盖重置
+        const cyberLid = document.getElementById('cyber-box-lid');
+        if (cyberLid) {
+          cyberLid.style.transform = 'rotate(0deg) translateY(0)';
+          cyberLid.style.opacity = '1';
+        }
+        
+        // 优惠券与饰品重置
+        const bundle = document.getElementById('gift-bundle');
+        if (bundle) {
+          const elements = bundle.querySelectorAll('.unboxed-ticket, .floating-deco');
+          elements.forEach(el => el.style.transition = 'none');
+          setTimeout(() => {
+            elements.forEach(el => el.style.transition = '');
+          }, 50);
+        }
+      } 
+      else if (activeScene === 'return') {
+        const vipCard = document.getElementById('vip-card');
+        vipCard.classList.remove('active', 'flipped');
+        vipCard.style.pointerEvents = 'auto';
+
+        const dock = document.getElementById('wallet-dock');
+        dock.classList.remove('active');
+
+        document.getElementById('wallet-balance').innerText = '85';
+        document.getElementById('wallet-icon').classList.remove('pulse');
+      }
+      else if (activeScene === 'redeemed') {
+        const splitContainer = document.getElementById('redeemed-split-container');
+        splitContainer.classList.remove('stamped');
+        document.getElementById('redeemed-stamp').classList.remove('stamped');
+        document.getElementById('redeemed-flow-ball').classList.remove('animate-flow');
+        document.getElementById('redeemed-progress-fill').style.width = '0%';
+        document.getElementById('redeemed-progress-text').innerText = '0 / 80 Coins';
+      }
+      else if (activeScene === 'expired') {
+        const prev = document.getElementById('expired-prev-ticket');
+        prev.classList.remove('fractured');
+        
+        document.getElementById('expired-stamp').classList.remove('stamped');
+        
+        const shield = document.getElementById('expired-shield');
+        shield.classList.remove('popped');
+        shield.style.display = 'flex';
+        const shockwave = document.getElementById('expired-shockwave');
+        if (shockwave) {
+          shockwave.classList.remove('active');
+        }
+        document.getElementById('expired-new-subtitle').innerText = 'Start earning to unlock more…';
+      }
+    }
+
+    // ---------------- 触发场景动效 ----------------
+    function runTrigger() {
+      resetCurrentScene();
+      
+      if (activeScene === 'loading') {
+        runLoadingAnimation();
+      } 
+      else if (activeScene === 'gift') {
+        // 1. 播放开场掉礼包视频 (不删原本的天降震动逻辑代码，仅增加视频自动播放触发)
+        const videoWrapper = document.getElementById('gift-video-wrapper');
+        const video = document.getElementById('gift-opening-video');
+        if (videoWrapper && video) {
+          videoWrapper.style.display = 'flex';
+          videoWrapper.style.opacity = '1';
+          video.currentTime = 0;
+          video.play().catch(e => console.log("Video play error:", e));
+        }
+
+        // 天降重力撞击 (继续保留在底下运行，让底层盒子同步做动作)
+        const stage = document.getElementById('package-clicker');
+        stage.classList.add('preload-drop');
+        
+        setTimeout(() => {
+          phoneContainer.classList.add('shake');
+        }, 700);
+
+        setTimeout(() => {
+          phoneContainer.classList.remove('shake');
+          stage.classList.remove('preload-drop');
+        }, 1300);
+      } 
+      else if (activeScene === 'return') {
+        // 快速传送门入场 + 卡牌旋转到位
+        setTimeout(() => {
+          document.getElementById('vip-card').classList.add('active');
+          document.getElementById('wallet-dock').classList.add('active');
+        }, 100);
+      }
+      else if (activeScene === 'redeemed') {
+        // 1. 盖章撞击并发生 3D 撕裂分裂
+        setTimeout(() => {
+          const splitContainer = document.getElementById('redeemed-split-container');
+          splitContainer.classList.add('stamped');
+          document.getElementById('redeemed-stamp').classList.add('stamped');
+          
+          phoneContainer.classList.add('shake');
+          setTimeout(() => phoneContainer.classList.remove('shake'), 400);
+          spawnExplosionConfetti();
+        }, 400);
+
+        // 2. 能量光点流动
+        setTimeout(() => {
+          document.getElementById('redeemed-flow-ball').classList.add('animate-flow');
+        }, 1300);
+
+        // 3. 填满进度条并解锁新一轮卡券
+        setTimeout(() => {
+          document.getElementById('redeemed-progress-fill').style.width = '100%';
+          document.getElementById('redeemed-progress-text').innerText = '80 / 80 Coins';
+          
+          // 再次震动并喷洒礼花
+          phoneContainer.classList.add('shake');
+          setTimeout(() => phoneContainer.classList.remove('shake'), 200);
+          spawnExplosionConfetti();
+        }, 2300);
+      }
+      else if (activeScene === 'expired') {
+        // 1. 结束印盖章
+        setTimeout(() => {
+          document.getElementById('expired-stamp').classList.add('stamped');
+          phoneContainer.classList.add('shake');
+          setTimeout(() => phoneContainer.classList.remove('shake'), 400);
+        }, 400);
+
+        // 2. 冰封破碎，风化消逝
+        setTimeout(() => {
+          const prev = document.getElementById('expired-prev-ticket');
+          prev.classList.add('fractured');
+          spawnAshDissolve();
+        }, 1300);
+      }
+    }
+
+    // ---------------- 1. 加载页动画引擎 ----------------
+    let loadingInterval = null;
+    function runLoadingAnimation() {
+      let progress = 0;
+      const progressFill = document.getElementById('progress-fill');
+      const vortexText = document.getElementById('vortex-text');
+      const hintText = document.getElementById('loading-hint-text');
+
+      const hints = [
+        '正在为您打包专属礼券…',
+        '小游戏正在注入满满欧气…',
+        '金币准备就绪，即将开启…',
+        '心动时刻，正式开启！'
+      ];
+
+      loadingInterval = setInterval(() => {
+        // 模拟非线性加载速率突增
+        const increment = Math.random() > 0.8 ? Math.random() * 12 + 6 : Math.random() * 4 + 1;
+        progress = Math.min(100, progress + increment);
+        
+        progressFill.style.width = `${progress}%`;
+        vortexText.innerText = `${Math.floor(progress)}%`;
+
+        // 切换情境微文案
+        if (progress > 85) {
+          hintText.innerText = hints[3];
+        } else if (progress > 55) {
+          hintText.innerText = hints[2];
+        } else if (progress > 25) {
+          hintText.innerText = hints[1];
+        } else {
+          hintText.innerText = hints[0];
+        }
+
+        if (progress >= 100) {
+          stopLoadingTimer();
+          // 加载完成时来一个小爆破
+          spawnExplosionConfetti();
+        }
+      }, 100);
+    }
+
+    function stopLoadingTimer() {
+      if (loadingInterval) {
+        clearInterval(loadingInterval);
+        loadingInterval = null;
+      }
+    }
+
+    // ---------------- 2. 礼盒拆箱动作 ----------------
+    function triggerUnboxing() {
+      const stage = document.getElementById('package-clicker');
+      if (stage.classList.contains('unboxed') || stage.classList.contains('preload-drop')) return;
+      
+      // 1. 蓄能反馈
+      stage.classList.add('active-press');
+      
+      setTimeout(() => {
+        // 释放爆发
+        stage.classList.remove('active-press');
+        stage.classList.add('unboxed');
+        stage.style.pointerEvents = 'none';
+
+        // 手机短促震动两次
+        phoneContainer.classList.add('shake');
+        setTimeout(() => phoneContainer.classList.remove('shake'), 400);
+
+        // 2. 喷射亮片大爆炸
+        spawnExplosionConfetti();
+
+        // 3. 盒盖飞散 (如果是赛博主题，直接把盖子飞走)
+        if (activeTheme === 'cyber') {
+          const cyberLid = document.getElementById('cyber-box-lid');
+          if (cyberLid) {
+            cyberLid.style.transform = 'translateY(-150px) rotate(60deg) scale(1.4)';
+            cyberLid.style.opacity = '0';
+          }
+        }
+
+      }, 350);
+    }
+
+    // ---------------- 3. 回访特权卡翻转与收集 ----------------
+    function triggerCardFlip() {
+      const vipCard = document.getElementById('vip-card');
+      if (vipCard.classList.contains('flipped') || !vipCard.classList.contains('active')) return;
+
+      vipCard.classList.add('flipped');
+      vipCard.style.pointerEvents = 'none';
+
+      // 卡牌翻开后 800ms 开始喷射亮金币并飞向钱包
+      setTimeout(() => {
+        spawnExplosionConfetti();
+        flyCoinsToWallet();
+      }, 800);
+    }
+
+    // 模拟金币从卡牌飞入底部钱包的动画
+    function flyCoinsToWallet() {
+      const walletDock = document.getElementById('wallet-dock');
+      const walletIcon = document.getElementById('wallet-icon');
+      const balanceEl = document.getElementById('wallet-balance');
+      const cardRect = document.getElementById('vip-card').getBoundingClientRect();
+      const walletRect = walletIcon.getBoundingClientRect();
+
+      // 创建金币发射源
+      const startX = cardRect.left + cardRect.width / 2;
+      const startY = cardRect.top + cardRect.height / 2;
+      const endX = walletRect.left + walletRect.width / 2;
+      const endY = walletRect.top + walletRect.height / 2;
+
+      let balance = 85;
+
+      for (let i = 0; i < 5; i++) {
+        setTimeout(() => {
+          const coin = document.createElement('div');
+          coin.innerText = activeTheme === 'gold' ? '🪙' : '💎';
+          coin.style.position = 'fixed';
+          coin.style.left = `${startX}px`;
+          coin.style.top = `${startY}px`;
+          coin.style.fontSize = '1.5rem';
+          coin.style.zIndex = '1000';
+          coin.style.pointerEvents = 'none';
+          coin.style.transition = 'all 0.8s cubic-bezier(0.19, 1, 0.22, 1)';
+          
+          document.body.appendChild(coin);
+
+          // 先给一个斜向的扰动，随后吸入钱包 (贝塞尔曲线星轨轨迹)
+          const angle = Math.random() * Math.PI * 2;
+          const radius = Math.random() * 40 + 20;
+          const offsetX = Math.cos(angle) * radius;
+          const offsetY = Math.sin(angle) * radius - 30;
+
+          requestAnimationFrame(() => {
+            coin.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(1.2)`;
+            
+            // 第二帧开始飞向钱包
+            setTimeout(() => {
+              coin.style.left = `${endX}px`;
+              coin.style.top = `${endY}px`;
+              coin.style.transform = 'scale(0.4) rotate(360deg)';
+              coin.style.opacity = '0.3';
+            }, 150);
+          });
+
+          // 飞入后碰撞反馈
+          setTimeout(() => {
+            coin.remove();
+            walletIcon.classList.add('pulse');
+            balance++;
+            balanceEl.innerText = balance;
+            
+            // 短暂脉冲后移除类
+            setTimeout(() => walletIcon.classList.remove('pulse'), 200);
+          }, 950);
+
+        }, i * 120); // 间隔抛射金币
+      }
+    }
+
+    // ---------------- 4. 视频事件监听绑定 ----------------
+    (function initVideoEvents() {
+      const videoWrapper = document.getElementById('gift-video-wrapper');
+      const video = document.getElementById('gift-opening-video');
+      const stage = document.getElementById('package-clicker');
+      
+      if (video && videoWrapper && stage) {
+        // 视频播放结束时触发卡券飞出
+        video.onended = () => {
+          videoWrapper.style.opacity = '0';
+          setTimeout(() => {
+            videoWrapper.style.display = 'none';
+          }, 500);
+
+          if (!stage.classList.contains('unboxed')) {
+            stage.classList.add('unboxed');
+            stage.style.pointerEvents = 'none';
+            
+            // 喷射亮片大爆炸
+            spawnExplosionConfetti();
+            
+            // 触发两次震屏
+            phoneContainer.classList.add('shake');
+            setTimeout(() => phoneContainer.classList.remove('shake'), 400);
+          }
+        };
+
+        // 点击视频区域可跳过视频，直接触发飞出
+        videoWrapper.onclick = () => {
+          video.pause();
+          video.dispatchEvent(new Event('ended'));
+        };
+      }
+    })();
+
+  </script>
+</body>
+</html>

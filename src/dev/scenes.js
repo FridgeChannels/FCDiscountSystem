@@ -184,6 +184,18 @@ export const DEV_SCENES = [
       activeModal: 'platform-game',
     },
   },
+  {
+    id: 'shopify-auth',
+    label: 'Shopify Auth',
+    fixture: DEV_FIXTURES.game,
+    ui: {
+      welcomeStep: 3,
+      introActive: false,
+      setWelcomeCompleted: true,
+      clearClaimed: true,
+      shopifyAuthOverlay: { source: 'claim' },
+    },
+  },
 ];
 
 const SCENE_BY_ID = new Map(DEV_SCENES.map((scene) => [scene.id, scene]));

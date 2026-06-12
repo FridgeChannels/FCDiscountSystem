@@ -17,6 +17,7 @@
    ════════════════════════════════════════════════════════════════ */
 
 /* 任意带主题的容器：统一推导出渐变（高最高级会单独覆盖） */
+[data-coupon-theme][data-tier],
 [data-coupon-theme] [data-tier] {
   --coupon-gradient: linear-gradient(
     160deg,

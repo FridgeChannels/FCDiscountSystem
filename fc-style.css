@@ -1072,6 +1072,16 @@ body {
   font-weight: 800;
 }
 
+.btn-play.shopify-connect-btn {
+  background-color: var(--brand-primary);
+  color: #ffffff;
+  border-color: var(--brand-primary);
+}
+
+.btn-play.shopify-connect-btn:hover {
+  background-color: #4a5947;
+}
+
 .btn-play-reward {
   display: inline-flex;
   align-items: center;
@@ -1930,5 +1940,223 @@ body {
   0% { opacity: 0; transform: rotate(var(--angle)) translateX(55px) scale(0.35); }
   45% { opacity: 1; transform: rotate(calc(var(--angle) + 150deg)) translateX(145px) scale(1); }
   100% { opacity: 1; transform: rotate(calc(var(--angle) + 600deg)) translateX(145px) scale(1); }
+}
+
+/* 视频开场覆盖层样式 */
+.gift-video-container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  z-index: 130;
+  transition: opacity 0.5s ease;
+  cursor: pointer;
+}
+.gift-video-container video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ==========================================================================
+   Shopify Authorization Overlay
+   ========================================================================== */
+.shopify-auth-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(15, 18, 14, 0.55);
+  backdrop-filter: blur(4px) saturate(1.1);
+  -webkit-backdrop-filter: blur(4px) saturate(1.1);
+  animation: shopify-auth-fade-in 0.25s ease;
+}
+
+@keyframes shopify-auth-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.shopify-auth-card {
+  width: min(88%, 380px);
+  padding: 36px 28px 28px;
+  background: var(--card-bg);
+  border-radius: 16px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.18), 0 8px 16px rgba(0, 0, 0, 0.08);
+  text-align: center;
+  animation: shopify-auth-slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes shopify-auth-slide-up {
+  from { opacity: 0; transform: translateY(24px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.shopify-auth-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #95BF47 0%, #5E8E3E 100%);
+  box-shadow: 0 8px 18px rgba(94, 128, 62, 0.22);
+}
+
+.shopify-auth-icon svg {
+  width: 34px;
+  height: 34px;
+}
+
+.shopify-auth-title {
+  margin: 0 0 10px;
+  font-family: var(--font-serif);
+  font-size: clamp(1.35rem, 5.8vw, 1.65rem);
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.shopify-auth-desc {
+  margin: 0 0 24px;
+  font-size: 0.92rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.shopify-auth-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 52px;
+  border: 0;
+  border-radius: 10px;
+  background: #5E8E3E;
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 8px 18px rgba(94, 128, 62, 0.22);
+}
+
+.shopify-auth-cta:hover {
+  background: #4f7a35;
+  box-shadow: 0 8px 22px rgba(94, 128, 62, 0.32);
+}
+
+.shopify-auth-cta:active {
+  transform: translateY(1px);
+}
+
+.shopify-auth-cta-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.shopify-auth-skip {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  padding: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s ease;
+  text-align: center;
+}
+
+.shopify-auth-skip:hover {
+  color: var(--text-primary);
+}
+
+/* Shopify Auth Success Toast */
+.shopify-auth-toast {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 260;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 22px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(45, 51, 43, 0.14);
+  animation: shopify-toast-in 0.4s ease, shopify-toast-out 0.3s ease 3s forwards;
+}
+
+@keyframes shopify-toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-18px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@keyframes shopify-toast-out {
+  from { opacity: 1; transform: translateX(-50%) translateY(0); }
+  to { opacity: 0; transform: translateX(-50%) translateY(-18px); }
+}
+
+.shopify-auth-toast-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--brand-primary), #4a5947);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.shopify-auth-toast-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.shopify-auth-toast-text {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.shopify-auth-toast-text strong {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.shopify-auth-toast-text span {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--brand-secondary);
+}
+
+
+
+.coin-ic {
+  display: inline-block;
+  width: 1.1em;
+  height: 1.1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 25%, #fff8da 0% 18%, #f3d472 42%, #c2913c 100%);
+  font-size: inherit;
+  font-weight: 900;
+  text-align: center;
+  line-height: 1;
+  color: #6b4a16;
 }
 
