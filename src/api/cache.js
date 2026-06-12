@@ -2,6 +2,7 @@ const REWARD_PLAN_CACHE_PREFIX = 'fc.rewardPlan.';
 const TOUCH_ID_COOKIE = 'fc_touch_id';
 const REWARD_PLAN_MAX_STALE_MS = 24 * 60 * 60 * 1000;
 const REWARD_PLAN_CACHE_VERSION = 2;
+const CLAIM_RECORD_VERSION = 1;
 
 function canUseBrowserStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -57,6 +58,11 @@ export function writeCachedRewardPlan(touchId, plan) {
   }
 }
 
+export function clearCachedRewardPlan(touchId) {
+  if (!canUseBrowserStorage() || !touchId) return;
+  window.localStorage.removeItem(`${REWARD_PLAN_CACHE_PREFIX}${touchId}`);
+}
+
 function welcomeKey(touchId) {
   return `fc.welcome_completed.${touchId}`;
 }
@@ -80,20 +86,55 @@ export function writeWelcomeCompleted(touchId, completed = true) {
   }
 }
 
-/** 每个 magnet 独立的已领取券码(强锁定态) */
-export function readClaimedCode(touchId) {
-  if (!canUseBrowserStorage() || !touchId) return null;
-  const code = window.localStorage.getItem(claimedKey(touchId));
-  if (code && code.includes('NaN')) {
-    window.localStorage.removeItem(claimedKey(touchId));
-    return null;
+function parseClaimRecord(raw) {
+  if (!raw) return null;
+  if (raw.includes('NaN')) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed?.version === CLAIM_RECORD_VERSION && parsed.code) {
+      return {
+        code: String(parsed.code),
+        couponId: parsed.couponId ? String(parsed.couponId) : undefined,
+        tier: parsed.tier != null ? Number(parsed.tier) : undefined,
+        cycleId: parsed.cycleId ? String(parsed.cycleId) : undefined,
+        claimedAt: parsed.claimedAt ? String(parsed.claimedAt) : undefined,
+      };
+    }
+  } catch {
+    // legacy plain string
   }
-  return code || null;
+  return { code: raw };
 }
 
+/** 本周期已领券记录（含 cycleId，用于跨刷新恢复展示） */
+export function readClaimRecord(touchId) {
+  if (!canUseBrowserStorage() || !touchId) return null;
+  return parseClaimRecord(window.localStorage.getItem(claimedKey(touchId)));
+}
+
+export function writeClaimRecord(touchId, record) {
+  if (!canUseBrowserStorage() || !touchId || !record?.code) return;
+  window.localStorage.setItem(
+    claimedKey(touchId),
+    JSON.stringify({
+      version: CLAIM_RECORD_VERSION,
+      code: record.code,
+      couponId: record.couponId,
+      tier: record.tier,
+      cycleId: record.cycleId,
+      claimedAt: record.claimedAt ?? new Date().toISOString(),
+    }),
+  );
+}
+
+/** @deprecated 使用 readClaimRecord */
+export function readClaimedCode(touchId) {
+  return readClaimRecord(touchId)?.code ?? null;
+}
+
+/** @deprecated 使用 writeClaimRecord */
 export function writeClaimedCode(touchId, code) {
-  if (!canUseBrowserStorage() || !touchId || !code) return;
-  window.localStorage.setItem(claimedKey(touchId), code);
+  writeClaimRecord(touchId, { code });
 }
 
 export function clearClaimedCode(touchId) {

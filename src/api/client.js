@@ -88,10 +88,22 @@ export function completeGameSession(payload) {
 }
 
 // 领取优惠券:调用 redeem 发券(方案 A — Claim 不关 cycle)
-export function claimCoupon(touchId, rewardPlanId, campaignId) {
+export function claimCoupon(touchId, rewardPlanId, couponId) {
   return request('/api/fc/coupons/redeem', {
     method: 'POST',
-    body: JSON.stringify({ touchId, rewardPlanId, campaignId }),
+    body: JSON.stringify({
+      touchId,
+      rewardPlanId,
+      couponId,
+      campaignId: couponId,
+    }),
+  });
+}
+
+export function observeCoupon(touchId) {
+  return request('/api/fc/coupons/observe', {
+    method: 'POST',
+    body: JSON.stringify({ touchId }),
   });
 }
 

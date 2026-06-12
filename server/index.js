@@ -12,7 +12,7 @@ const ENGINE_REWARD_PLAN_TIMEOUT_MS = Number(
 // 阶段5:reward-plan 服务端短缓存 + 在途去重。
 // - 同一 touchId 的并发请求只打一次引擎(去重)
 // - 命中短缓存的请求直接返回,降低引擎压力与首屏延迟
-const PLAN_CACHE_TTL_MS = Number(process.env.PLAN_CACHE_TTL_MS ?? 15000);
+const PLAN_CACHE_TTL_MS = Number(process.env.PLAN_CACHE_TTL_MS ?? 60000);
 const planCache = new Map(); // touchId -> { data, expiresAt }
 const planInflight = new Map(); // touchId -> Promise
 
@@ -161,6 +161,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/fc/session/complete') {
       const body = await readJson(req);
       const data = await callEngine('/games/session/complete', body);
+      if (body.touchId) planCache.delete(body.touchId);
       sendJson(res, 200, data);
       return;
     }
@@ -175,6 +176,15 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/fc/coupons/redeem') {
       const body = await readJson(req);
       const data = await callEngine('/coupons/redeem', body);
+      if (body.touchId) planCache.delete(body.touchId);
+      sendJson(res, 200, data);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/fc/coupons/observe') {
+      const body = await readJson(req);
+      const data = await callEngine('/coupons/observe', body);
+      if (body.touchId) planCache.delete(body.touchId);
       sendJson(res, 200, data);
       return;
     }

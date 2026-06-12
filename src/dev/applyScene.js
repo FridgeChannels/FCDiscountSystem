@@ -1,6 +1,7 @@
 import {
   clearClaimedCode,
   clearWelcomeCompleted,
+  writeClaimRecord,
   writeWelcomeCompleted,
 } from '../api/cache.js';
 import { getSceneConfig } from './scenes.js';
@@ -32,7 +33,7 @@ export function navigateToDevScene(sceneId) {
  * @param {object} ctx
  */
 export function applyDevSceneUi(ui, ctx) {
-  const { touchId, setters } = ctx;
+  const { touchId, rewardPlanId, planCycleId, setters } = ctx;
   const {
     setWelcomeStep,
     setIntroActive,
@@ -69,6 +70,10 @@ export function applyDevSceneUi(ui, ctx) {
   }
   if (ui.claimedCode) {
     setClaimedCode(ui.claimedCode);
+    const cycleId = planCycleId || rewardPlanId;
+    if (cycleId) {
+      writeClaimRecord(touchId, { code: ui.claimedCode, cycleId });
+    }
   }
   if (ui.welcomeStep != null) setWelcomeStep(ui.welcomeStep);
   if (ui.introActive != null) setIntroActive(ui.introActive);

@@ -1,6 +1,5 @@
 /** Dev-only RewardPlan fixtures. Shape matches engine RewardPlan for mapPlanToViewModel(). */
 
-const PROVIDER = 'code_pool';
 const BRAND = {
   name: 'Ritual',
   logoUrl: null,
@@ -25,51 +24,60 @@ const GAMES = [
   },
 ];
 
+const LADDER = [
+  {
+    tier: 1,
+    couponId: 'camp_t1',
+    campaignId: 'camp_t1',
+    pointsThreshold: 0,
+    discountValue: '15',
+  },
+  {
+    tier: 2,
+    couponId: 'camp_t2',
+    campaignId: 'camp_t2',
+    pointsThreshold: 80,
+    discountValue: '20',
+  },
+  {
+    tier: 3,
+    couponId: 'camp_t3',
+    campaignId: 'camp_t3',
+    pointsThreshold: 120,
+    discountValue: '30',
+  },
+];
+
 function isoAfter(ms) {
   return new Date(Date.now() + ms).toISOString();
 }
 
-function basePlan(overrides = {}) {
+function observedCoupon({ couponCode, couponId, tier, discountValue, status, claimedAt }) {
   return {
-    rewardPlanId: 'dev-preview-plan',
+    couponCode,
+    couponId,
+    tier,
+    discountValue,
+    status,
+    claimedAt,
+  };
+}
+
+function basePlan(overrides = {}) {
+  const cycleId = overrides.cycleId ?? 'cycle_dev';
+  return {
+    rewardPlanId: cycleId,
     policyVersion: 'dev-1',
     magnetId: 5001,
     customerId: 1001,
-    engineCampaignId: 'camp_dev',
-    cycleId: 'cycle_dev',
+    cycleId,
     cycleDurationDays: 7,
     cycleExpiresAt: isoAfter(3 * 24 * 3600 * 1000),
     currentTier: 1,
+    currentCouponId: 'camp_t1',
+    targetCouponId: 'camp_t3',
     pointsBalance: 45,
-    ladder: [
-      {
-        tier: 1,
-        campaignId: 'camp_t1',
-        pointsThreshold: 0,
-        couponType: 'percentage',
-        discountValue: '15',
-        providerType: PROVIDER,
-        requiresIdentity: false,
-      },
-      {
-        tier: 2,
-        campaignId: 'camp_t2',
-        pointsThreshold: 80,
-        couponType: 'percentage',
-        discountValue: '20',
-        providerType: PROVIDER,
-        requiresIdentity: false,
-      },
-      {
-        tier: 3,
-        campaignId: 'camp_t3',
-        pointsThreshold: 120,
-        couponType: 'percentage',
-        discountValue: '30',
-        providerType: PROVIDER,
-        requiresIdentity: true,
-      },
-    ],
+    ladder: LADDER,
     recommendedGames: GAMES,
     customerBrand: BRAND,
     cycleStatus: 'active',
@@ -109,29 +117,23 @@ export const DEV_FIXTURES = {
     basePlan({
       pointsBalance: 125,
       currentTier: 3,
-      currentCoupon: {
-        couponCode: 'FC30RITUAL',
-        campaignId: 'camp_t3',
-        tier: 3,
-        couponType: 'percentage',
-        discountValue: '30',
-        status: 'won',
-      },
+      currentCouponId: 'camp_t3',
+      targetCouponId: 'camp_t3',
     }),
 
   claimed: () =>
     basePlan({
       pointsBalance: 125,
       currentTier: 3,
-      currentCoupon: {
+      currentCouponId: 'camp_t3',
+      observedCoupon: observedCoupon({
         couponCode: 'FC30RITUAL',
-        campaignId: 'camp_t3',
+        couponId: 'camp_t3',
         tier: 3,
-        couponType: 'percentage',
         discountValue: '30',
-        status: 'claimed',
+        status: 'assigned',
         claimedAt: new Date().toISOString(),
-      },
+      }),
     }),
 
   receipt: () =>
@@ -144,20 +146,20 @@ export const DEV_FIXTURES = {
     basePlan({
       pointsBalance: 40,
       currentTier: 2,
-      currentCoupon: {
+      currentCouponId: 'camp_t2',
+      observedCoupon: observedCoupon({
         couponCode: 'FC20RITUAL',
-        campaignId: 'camp_t2',
+        couponId: 'camp_t2',
         tier: 2,
-        couponType: 'percentage',
         discountValue: '20',
-        status: 'claimed',
+        status: 'assigned',
         claimedAt: new Date().toISOString(),
-      },
+      }),
     }),
 
   survey: () => basePlan({ pointsBalance: 30, currentTier: 1 }),
 
-  claim: () => basePlan({ pointsBalance: 125, currentTier: 3 }),
+  claim: () => basePlan({ pointsBalance: 125, currentTier: 3, currentCouponId: 'camp_t3' }),
 
   redeemed: () =>
     basePlan({
