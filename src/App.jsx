@@ -1027,6 +1027,7 @@ export default function App() {
 
   function cancelClaim() {
     setClaimConfirm(null);
+    setDrawerOpen(false); // 兜底关闭可能残留的券码抽屉，避免取消后底部冒出抽屉
 
     // 首次登录时如果用户取消领取，标记首登欢迎流程完成，进入真正的钱包首页
     if (welcomeStep < 3) {
@@ -1043,9 +1044,11 @@ export default function App() {
     if (showReceipt) {
       handleAccumulateMore();
     } else {
-      const walletEl = document.getElementById('wallet') || document.querySelector('.wallet');
-      if (walletEl) {
-        walletEl.scrollIntoView({ behavior: 'smooth' });
+      // 滚回内容顶部，保持顶部倒计时可见。
+      // （原先滚到 .wallet 会把它上方的 .urgency-banner 倒计时顶出视口，看起来像“消失”）
+      const scroller = document.querySelector('.content-area');
+      if (scroller) {
+        scroller.scrollTo({ top: 0, behavior: 'smooth' });
       }
     }
   }
@@ -2154,7 +2157,7 @@ function WelcomeRitual({ step, coupon, brand, couponFaceRef, onAdvanceToSettle, 
                   onAdvanceToSettle();
                 }}
               >
-                Earn More Rewards
+                Get More OFF
               </button>
             </div>
           </div>
@@ -2406,9 +2409,9 @@ function ClockUnit({ label, value, tick, isLast }) {
 
 function CompactChallengeTimer({ time }) {
   return (
-    <div className="compact-challenge-timer" aria-label={`Challenge ends in ${time.days} days ${time.hours} hours ${time.mins} minutes`}>
+    <div className="compact-challenge-timer" aria-label={`Challenge ends in ${time.days} days ${time.hours} hours ${time.mins} minutes ${time.secs} seconds`}>
       <span className="compact-challenge-timer-label">Challenge ends in</span>
-      <span className="compact-challenge-timer-value">{time.digits[0]}d {time.digits[1]}h {time.digits[2]}m</span>
+      <span className="compact-challenge-timer-value">{time.digits[0]}d {time.digits[1]}h {time.digits[2]}m {time.digits[3]}s</span>
     </div>
   );
 }
@@ -3373,41 +3376,35 @@ function TearCanvas({ active, isBestOffer, onComplete }) {
 
 const ReceiptPrinter = memo(function ReceiptPrinter({ unlockedCoupon, colors, brand, expiryDate, onUse, onAccumulate }) {
   return (
-    <div className="printer-overlay" style={couponColorVars(colors)}>
+    <div className="printer-overlay" data-coupon-theme="dtc" style={couponColorVars(colors)}>
       <div className="printer-machine">
         <div className="printer-slot" />
         <div className="receipt-paper-wrap">
-          <div className="receipt-paper">
-            <div className="receipt-brand">
-              {brand?.logoUrl ? (
-                <img className="receipt-brand-logo" src={brand.logoUrl} alt={`${brand.name || 'Brand'} logo`} />
-              ) : null}
-              <span className="receipt-brand-name">{brand?.name || 'Ritual'}</span>
+          {/* 小票 1:1 复用首页 coupon 结构：CLAIM 按钮直接长在券底部 */}
+          <div className="coupon coupon-current receipt-coupon" data-tier={tierForDiscount(unlockedCoupon?.num)}>
+            <div className="coupon-face">
+              <div className="receipt-brand">
+                {brand?.logoUrl ? (
+                  <img className="receipt-brand-logo" src={brand.logoUrl} alt={`${brand.name || 'Brand'} logo`} />
+                ) : null}
+                <span className="receipt-brand-name">{brand?.name || 'Ritual'}</span>
+              </div>
+              <span className="coupon-kicker">Unlocked Offer</span>
+              <span className="stub-value">{unlockedCoupon?.num}<small>%</small></span>
+              <span className="stub-off">OFF</span>
+              <span className="coupon-title">Sitewide · No minimum</span>
+              <span className="coupon-expire">Expires on <b>{expiryDate}</b></span>
             </div>
-
-            <div className="receipt-coupon-kicker">Your Coupon</div>
-
-            <div className="receipt-discount">
-              <span className="receipt-discount-number">{unlockedCoupon?.num}</span>
-              <span className="receipt-discount-percent">%</span>
-            </div>
-            <div className="receipt-off">OFF</div>
-
-            <div className="receipt-condition">Sitewide · No minimum</div>
-
-            <div className="receipt-expiry">
-              Expires on <b>{expiryDate}</b>
-            </div>
+            <button className="btn-use" aria-label="Claim coupon" onClick={onUse}>
+              <span>Claim Now</span>
+            </button>
           </div>
         </div>
       </div>
-      
+
       <div className="printer-buttons">
-        <button className="btn-printer-primary" id="btn-receipt-use" onClick={onUse}>
-          <span>Claim Now</span>
-        </button>
         <button className="btn-printer-secondary" id="btn-receipt-accumulate" onClick={onAccumulate}>
-          Keep Accumulating Points
+          Get More OFF
         </button>
       </div>
     </div>
@@ -3449,106 +3446,108 @@ function ZoomFlipCard({ coupon, colors, rect, phase, copyState, onClose, onCopy 
     canvas.width = width;
     canvas.height = height;
 
-    // Draw Gold Foil Background
+    // 灰色金属待刮材质（与 confirm 弹窗的刮刮卡遮罩同色同质感）
     const grad = ctx.createLinearGradient(0, 0, width, height);
-    grad.addColorStop(0, '#dfbe74');
-    grad.addColorStop(0.35, '#ca9d4c');
-    grad.addColorStop(0.7, '#e8cf96');
-    grad.addColorStop(1, '#ab7b2b');
+    grad.addColorStop(0, '#a3a3a3');
+    grad.addColorStop(0.35, '#e0e0e0');
+    grad.addColorStop(0.65, '#b8b8b8');
+    grad.addColorStop(1, '#858585');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, width, height);
 
-    // Draw metallic brush noise/glitter texture
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-    for (let i = 0; i < 200; i++) {
-      ctx.fillRect(Math.random() * width, Math.random() * height, Math.random() * 3 + 1, Math.random() * 2 + 1);
+    // 45° 斜纹高光，呼应 confirm 弹窗待刮表面的纹理
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+    ctx.lineWidth = 4;
+    for (let i = -height; i < width; i += 8) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i + height, height);
+      ctx.stroke();
     }
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
-    for (let i = 0; i < 200; i++) {
-      ctx.fillRect(Math.random() * width, Math.random() * height, Math.random() * 2 + 1, Math.random() * 2 + 1);
-    }
 
-    // Scratch Animation
-    let animationFrameId;
-    const duration = 1800; // 1.8 seconds scratch-off
-    const startTime = performance.now();
-    const particles = [];
+    // 手动刮开：监听指针事件，用 destination-out 擦除金箔；
+    // 刮开面积超过阈值后自动揭示完整 code。
+    let drawing = false;
+    let revealed = false;
+    let lastPos = null;
 
-    const animate = (time) => {
-      const elapsed = time - startTime;
-      const progress = Math.min(elapsed / duration, 1);
+    const getPos = (e) => {
+      const r = canvas.getBoundingClientRect();
+      return {
+        x: (e.clientX - r.left) * (canvas.width / r.width),
+        y: (e.clientY - r.top) * (canvas.height / r.height),
+      };
+    };
 
-      // Current X position of scratch brush (scratches from left to right)
-      // We start slightly off-screen left and go slightly off-screen right
-      const x = -30 + progress * (width + 60);
-      
-      // Wobble y to make it look organic (brush strokes)
-      const y = height / 2 + Math.sin(progress * Math.PI * 6) * 10;
-
-      // Draw destination-out circles to scratch off the gold layer
-      ctx.save();
+    const scratch = (x, y) => {
       ctx.globalCompositeOperation = 'destination-out';
-      
-      // Draw a main clear circle
-      ctx.beginPath();
-      ctx.arc(x, y, 28, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Draw minor offset circles for irregular brush edges
-      ctx.beginPath();
-      ctx.arc(x - 8, y + (Math.sin(progress * 15) * 6), 20, 0, Math.PI * 2);
-      ctx.arc(x + 8, y - (Math.cos(progress * 12) * 6), 18, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-
-      // Spawn falling gold foil particles at the scratch head!
-      if (progress < 0.95 && Math.random() < 0.7) {
-        for (let j = 0; j < 3; j++) {
-          particles.push({
-            x: x + (Math.random() - 0.5) * 20,
-            y: y + (Math.random() - 0.5) * 20,
-            vx: -1.5 - Math.random() * 2, // fly left/backward
-            vy: -2 + Math.random() * 4, // fly vertical
-            size: Math.random() * 3 + 2,
-            life: 1.0,
-            color: Math.random() > 0.5 ? '#ca9d4c' : '#dfbe74'
-          });
-        }
+      ctx.lineWidth = 38;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      if (lastPos) {
+        ctx.beginPath();
+        ctx.moveTo(lastPos.x, lastPos.y);
+        ctx.lineTo(x, y);
+        ctx.stroke();
       }
+      ctx.beginPath();
+      ctx.arc(x, y, 19, 0, Math.PI * 2);
+      ctx.fill();
+      lastPos = { x, y };
+    };
 
-      // Update and Draw Particles
-      if (particles.length > 0) {
-        ctx.save();
-        ctx.globalCompositeOperation = 'source-over';
-        for (let i = particles.length - 1; i >= 0; i--) {
-          const p = particles[i];
-          p.x += p.vx;
-          p.y += p.vy;
-          p.vy += 0.25; // gravity
-          p.life -= 0.03;
-
-          if (p.life <= 0) {
-            particles.splice(i, 1);
-          } else {
-            ctx.fillStyle = p.color;
-            ctx.globalAlpha = p.life;
-            ctx.fillRect(p.x, p.y, p.size, p.size);
-          }
-        }
-        ctx.restore();
+    // 采样 alpha 通道，估算已刮开比例（步长大一点以省开销）。
+    const clearedRatio = () => {
+      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      let cleared = 0;
+      let total = 0;
+      for (let i = 3; i < data.length; i += 4 * 20) {
+        total++;
+        if (data[i] === 0) cleared++;
       }
+      return total ? cleared / total : 0;
+    };
 
-      if (progress < 1 || particles.length > 0) {
-        animationFrameId = requestAnimationFrame(animate);
-      } else {
+    const maybeReveal = () => {
+      if (revealed) return;
+      if (clearedRatio() > 0.5) {
+        revealed = true;
         setScratched(true);
       }
     };
 
-    animationFrameId = requestAnimationFrame(animate);
+    const onDown = (e) => {
+      drawing = true;
+      lastPos = null;
+      const p = getPos(e);
+      scratch(p.x, p.y);
+      canvas.setPointerCapture?.(e.pointerId);
+      e.preventDefault();
+    };
+    const onMove = (e) => {
+      if (!drawing) return;
+      const p = getPos(e);
+      scratch(p.x, p.y);
+      maybeReveal();
+      e.preventDefault();
+    };
+    const onUp = () => {
+      if (!drawing) return;
+      drawing = false;
+      lastPos = null;
+      maybeReveal();
+    };
+
+    canvas.addEventListener('pointerdown', onDown);
+    canvas.addEventListener('pointermove', onMove);
+    canvas.addEventListener('pointerup', onUp);
+    canvas.addEventListener('pointerleave', onUp);
 
     return () => {
-      cancelAnimationFrame(animationFrameId);
+      canvas.removeEventListener('pointerdown', onDown);
+      canvas.removeEventListener('pointermove', onMove);
+      canvas.removeEventListener('pointerup', onUp);
+      canvas.removeEventListener('pointerleave', onUp);
     };
   }, [phase]);
 

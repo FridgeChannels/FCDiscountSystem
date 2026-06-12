@@ -1246,6 +1246,37 @@
   100% { transform: translate3d(0, 0, 0); }
 }
 
+/* 小票现在 1:1 复用首页 coupon（.coupon.coupon-current），
+   仍从打印槽吐出：套用与原 .receipt-paper 相同的滑出动画。 */
+.receipt-coupon {
+  width: 100%;
+  min-height: 360px;
+  will-change: transform;
+  transform: translate3d(0, -100%, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  animation: print-receipt 1.6s cubic-bezier(0.15, 0.85, 0.35, 1) 0.5s forwards;
+}
+
+/* 券加长后，把券面信息上下撑开、用统一行距，避免拥挤 */
+.receipt-coupon .coupon-face {
+  padding: 34px 24px 28px;
+  gap: 16px;
+  justify-content: center;
+}
+
+.receipt-coupon .coupon-face > * {
+  margin-top: 0;
+}
+
+.receipt-coupon .receipt-brand {
+  margin-bottom: 8px;
+}
+
+.receipt-coupon .coupon-expire {
+  margin-top: 4px;
+}
+
 .receipt-brand {
   min-height: 42px;
   display: grid;
@@ -1588,8 +1619,8 @@
 
 .zoom-card-back.scratch-ticket-back {
   transform: rotateY(180deg);
-  background: #fcfaf5; /* Warm eggshell background */
-  color: #1c201a;      /* Charcoal text */
+  background: var(--zc-main, #efd39a); /* coupon 主色（纯色，不写死） */
+  color: var(--zc-ink, #1c201a);       /* 跟随券面墨色 */
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -1615,7 +1646,7 @@
   font-weight: 700;
   letter-spacing: 2.5px;
   text-transform: uppercase;
-  color: #a98435; /* Gold-bronze accent */
+  color: var(--zc-accent, #a98435); /* 跟随券面辅助色 */
   margin-bottom: 2px;
   text-align: center;
 }
@@ -1625,28 +1656,28 @@
   font-size: 3.2rem;
   font-weight: 800;
   line-height: 1.1;
-  color: #1c201a;
+  color: var(--zc-ink, #1c201a);
   text-align: center;
 }
 
 .scratch-subtitle {
   font-size: 0.78rem;
   font-weight: 500;
-  color: #555c50;
+  color: color-mix(in srgb, var(--zc-ink, #555c50) 78%, transparent);
   margin-top: 4px;
   text-align: center;
 }
 
 .scratch-dotted-divider {
   width: 90%;
-  border-top: 1.5px dashed rgba(28, 32, 26, 0.18);
+  border-top: 1.5px dashed color-mix(in srgb, var(--zc-ink, #1c201a) 28%, transparent);
   margin: 12px 0;
 }
 
 .scratch-instruction {
   font-size: 0.78rem;
   font-weight: 600;
-  color: #7d8478;
+  color: color-mix(in srgb, var(--zc-ink, #7d8478) 68%, transparent);
   margin-bottom: 8px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1724,8 +1755,13 @@
   width: 100%;
   height: 100%;
   z-index: 2;
-  cursor: pointer;
+  cursor: grab;
   border-radius: 12px;
+  touch-action: none;
+}
+
+.scratch-canvas:active {
+  cursor: grabbing;
 }
 
 /* Action Buttons */
@@ -2916,10 +2952,7 @@
   width: 100% !important;
   max-width: 320px !important;
   background: linear-gradient(135deg, #dfbe74 0%, #ca9d4c 40%, #e8cf96 70%, #ab7b2b 100%) !important;
-  border-top: 4px dashed rgba(255, 255, 255, 0.4) !important;
-  box-shadow: 
-    0 -4px 7px -3px rgba(0, 0, 0, 0.45),
-    0 10px 32px rgba(28, 32, 26, 0.18) !important;
+  box-shadow: 0 10px 32px rgba(28, 32, 26, 0.18) !important;
   padding: 32px 24px 36px 24px !important;
   text-align: center !important;
   overflow: hidden !important;
@@ -3211,7 +3244,7 @@
    ========================================================================== */
 
 .best-locked-page.voucher-ready {
-  background-color: #faf8f5 !important;
+  background-color: var(--bg-color, #f4f1e8) !important; /* 与整页背景统一 */
   min-height: calc(100% + 44px) !important;
   padding: 20px 0 24px 0 !important;
   display: flex !important;
@@ -3325,6 +3358,8 @@
 
 .voucher-large-coupon-wrap {
   width: 100% !important;
+  max-width: 300px !important;
+  margin: 0 auto !important;
   padding-top: 14px !important;
 }
 
@@ -3334,9 +3369,9 @@
   --voucher-cta-height: clamp(82px, 20vw, 108px);
   --perf: var(--voucher-cta-height);
   width: 100% !important;
-  aspect-ratio: 0.72 / 1;
-  min-height: 0 !important;
-  grid-template-rows: calc(100% - var(--voucher-cta-height)) var(--voucher-cta-height) !important;
+  height: auto !important;
+  min-height: 360px !important;
+  grid-template-rows: 1fr var(--voucher-cta-height) !important;
   filter: drop-shadow(0 20px 30px color-mix(in srgb, var(--coupon-main) 46%, transparent)) !important;
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--coupon-accent) 26%, transparent),
