@@ -53,11 +53,11 @@ export default function DevToolbar({ activeScene, onSelectScene, onResetFirstLog
           <span style={{ color: '#7a8a7a' }}>live API</span>
         )}
         <button type="button" onClick={onResetFirstLogin} style={btnStyle}>
-          首登
+          First Login
         </button>
         {activeScene ? (
           <button type="button" onClick={exitPreview} style={btnStyle}>
-            退出预览
+            Exit Preview
           </button>
         ) : null}
       </div>

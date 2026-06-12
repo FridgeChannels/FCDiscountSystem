@@ -32,13 +32,13 @@ import { DEV_FIXTURES } from './fixtures.js';
 export const DEV_SCENES = [
   {
     id: 'intro',
-    label: '礼盒',
+    label: 'Gift',
     fixture: DEV_FIXTURES.intro,
     ui: { welcomeStep: 0, introActive: true, clearWelcome: true, clearClaimed: true },
   },
   {
     id: 'welcome',
-    label: '欢迎流',
+    label: 'Welcome',
     fixture: DEV_FIXTURES.welcome,
     ui: { welcomeStep: 1, introActive: false, clearWelcome: true, clearClaimed: true },
   },
@@ -55,25 +55,25 @@ export const DEV_SCENES = [
   },
   {
     id: 'home',
-    label: '首页',
+    label: 'Home',
     fixture: DEV_FIXTURES.home,
     ui: { welcomeStep: 3, introActive: false, setWelcomeCompleted: true, clearClaimed: true },
   },
   {
     id: 'urgent',
-    label: '倒计时',
+    label: 'Countdown',
     fixture: DEV_FIXTURES.urgent,
     ui: { welcomeStep: 3, introActive: false, setWelcomeCompleted: true, clearClaimed: true },
   },
   {
     id: 'best',
-    label: '最高档',
+    label: 'Best',
     fixture: DEV_FIXTURES.best,
     ui: { welcomeStep: 3, introActive: false, setWelcomeCompleted: true, clearClaimed: true },
   },
   {
     id: 'claimed',
-    label: '已领取',
+    label: 'Claimed',
     fixture: DEV_FIXTURES.claimed,
     ui: {
       welcomeStep: 3,
@@ -84,7 +84,7 @@ export const DEV_SCENES = [
   },
   {
     id: 'receipt',
-    label: '小票',
+    label: 'Receipt',
     fixture: DEV_FIXTURES.receipt,
     ui: {
       welcomeStep: 3,
@@ -96,7 +96,7 @@ export const DEV_SCENES = [
   },
   {
     id: 'zoom',
-    label: '翻转',
+    label: 'Flip',
     fixture: DEV_FIXTURES.zoom,
     ui: {
       welcomeStep: 3,
@@ -109,7 +109,7 @@ export const DEV_SCENES = [
   },
   {
     id: 'survey',
-    label: '问卷',
+    label: 'Survey',
     fixture: DEV_FIXTURES.survey,
     ui: {
       welcomeStep: 3,
@@ -122,7 +122,7 @@ export const DEV_SCENES = [
   },
   {
     id: 'claim',
-    label: '确认领',
+    label: 'Confirm',
     fixture: DEV_FIXTURES.claim,
     ui: {
       welcomeStep: 3,
@@ -134,7 +134,7 @@ export const DEV_SCENES = [
   },
   {
     id: 'redeemed',
-    label: '已核销',
+    label: 'Redeemed',
     fixture: DEV_FIXTURES.redeemed,
     ui: {
       welcomeStep: 3,
@@ -146,7 +146,7 @@ export const DEV_SCENES = [
   },
   {
     id: 'expired',
-    label: '已过期',
+    label: 'Expired',
     fixture: DEV_FIXTURES.expired,
     ui: {
       welcomeStep: 3,
@@ -158,7 +158,7 @@ export const DEV_SCENES = [
   },
   {
     id: 'notify',
-    label: '通知',
+    label: 'Notify',
     fixture: DEV_FIXTURES.notify,
     ui: {
       welcomeStep: 3,
@@ -174,7 +174,7 @@ export const DEV_SCENES = [
   },
   {
     id: 'game',
-    label: '游戏',
+    label: 'Game',
     fixture: DEV_FIXTURES.game,
     ui: {
       welcomeStep: 3,

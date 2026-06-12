@@ -139,9 +139,13 @@ function fallbackCopy(text) {
       ta.value = text;
       ta.setAttribute('readonly', '');
       ta.style.position = 'fixed';
-      ta.style.top = '-9999px';
+      ta.style.left = '-9999px';
+      ta.style.top = '0';
+      ta.style.opacity = '0';
       document.body.appendChild(ta);
+      ta.focus();
       ta.select();
+      ta.setSelectionRange(0, ta.value.length);
       const ok = document.execCommand('copy');
       document.body.removeChild(ta);
       ok ? resolve() : reject(new Error('copy failed'));
@@ -174,6 +178,17 @@ function formatCountdown(totalSeconds) {
     short: days > 0 ? `${days}d ${pad(hours)}h` : `${hours}h ${pad(mins)}m`,
     drawer: `${days}d ${pad(hours)}h ${pad(mins)}m`
   };
+}
+
+function formatExpiryDate(totalSeconds) {
+  const safe = Math.max(totalSeconds, 0);
+  const expiry = new Date(Date.now() + safe * 1000);
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(expiry);
 }
 
 function formatTickingTime(totalSeconds) {
@@ -276,6 +291,7 @@ export default function App() {
   const [crediting, setCrediting] = useState(false);
   const [currentSwap, setCurrentSwap] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [forceWalletView, setForceWalletView] = useState(false);
   const [pendingPoints, setPendingPoints] = useState(0);
   const [redeemingCoupon, setRedeemingCoupon] = useState(false);
   const [introActive, setIntroActive] = useState(() => isReturnVisitor(getTouchId()));
@@ -754,14 +770,16 @@ export default function App() {
   const delta = next ? Math.max(targetPoints - points, 0) : 0;
   const isBestOffer = !next;
   // 已领取未核销:强制锁定在最低折扣页,直到后端确认核销。
-  const claimedUnused = !!claimedCode;
-  const showBestOffer = isBestOffer || claimedUnused;
+  // 注意：如果已领取的优惠券是第一张欢迎券(15% OFF)，不能锁定/改住钱包页面，以允许用户继续挑战更高档位。
+  const claimedUnused = !!claimedCode && currentStepIndex > 0;
+  const showBestOffer = (isBestOffer || claimedUnused) && !forceWalletView;
   // 锁定时展示已领取的那张券(优先按券码匹配,兜底用当前券)。
   const lockedCoupon = claimedCode
     ? (discounts.find((d) => d.code === claimedCode) || current)
     : current;
   const isExpired = countdownSeconds <= 0;
   const time = useMemo(() => formatCountdown(countdownSeconds), [countdownSeconds]);
+  const expiryDate = useMemo(() => formatExpiryDate(countdownSeconds), [countdownSeconds]);
   const urgent = countdownSeconds < 86400 && countdownSeconds > 0;
 
   function resetRound() {
@@ -1003,6 +1021,7 @@ export default function App() {
 
   // 任意「Claim now」按钮先弹确认弹窗,确认后再执行真正的领取动作。
   function requestClaim(onConfirm, discount) {
+    setForceWalletView(false);
     setClaimConfirm({ onConfirm, discount });
   }
 
@@ -1013,6 +1032,7 @@ export default function App() {
     if (welcomeStep < 3) {
       setWelcomeStep(3);
       writeWelcomeCompleted(touchId);
+      setForceWalletView(true);
       if (pendingTapRewardRef.current > 0) {
         playPendingTapRewardRef.current();
       } else {
@@ -1243,6 +1263,7 @@ export default function App() {
   // highlighting the counter while it credits; celebrate once at the end.
   function creditPoints(pts, duration = 600) {
     if (!pts) return;
+    setForceWalletView(false);
     if (pointsTweenRef.current) {
       cancelAnimationFrame(pointsTweenRef.current);
       pointsTweenRef.current = null;
@@ -1353,11 +1374,12 @@ export default function App() {
   async function handleCopyCode() {
     const code = claimedCode || current.code;
     try {
-      await navigator.clipboard.writeText(code);
+      await copyText(code);
       setCopyState('Copied!');
       setTimeout(() => setCopyState('Copy'), 2000);
     } catch {
-      showNotification('Copy Failed', `We couldn't copy it automatically. Please copy manually: ${code}`, '⚠️');
+      setCopyState(code);
+      setTimeout(() => setCopyState('Copy'), 3000);
     }
   }
 
@@ -1806,6 +1828,7 @@ export default function App() {
           <BestCouponLockedPage
             coupon={lockedCoupon}
             time={time}
+            expiryDate={expiryDate}
             tick={tick}
             countdownSeconds={countdownSeconds}
             isExpired={isExpired}
@@ -1847,7 +1870,8 @@ export default function App() {
               isTearingCoupon={isTearingCoupon}
               targetCouponRef={targetCouponRef}
               couponFaceRef={couponFaceRef}
-              onUse={() => requestClaim(handleUseCoupon, current.num)}
+              isClaimed={!!claimedCode && claimedCode === current.code}
+              onUse={!!claimedCode && claimedCode === current.code ? handleShopNowDirect : () => requestClaim(handleUseCoupon, current.num)}
               onTearComplete={handleTearComplete}
               countdownSeconds={countdownSeconds}
               confirmOpen={!!claimConfirm}
@@ -1927,6 +1951,8 @@ export default function App() {
         <ReceiptPrinter
           unlockedCoupon={discounts[currentStepIndex + 1]}
           colors={receiptColors}
+          brand={brand}
+          expiryDate={expiryDate}
           onUse={() => requestClaim(handleUseReceiptCoupon, discounts[currentStepIndex + 1]?.num)}
           onAccumulate={handleAccumulateMore}
         />
@@ -2352,7 +2378,7 @@ function UrgencyBanner({ isExpired, time, tick, urgent, isBestOffer }) {
     <section className={`urgency-banner ${urgent ? 'urgent' : ''}`} data-screen-label="倒计时">
       <div className="ub-label">
         <span className="live-pulse" />
-        <span>{isExpired ? 'This round has ended' : urgent ? "Ends today - don't lose it" : 'Limited offer ends in'}</span>
+        <span>{isExpired ? 'This round has ended' : urgent ? "Ends today - don't lose it" : 'LIMITED CHALLENGE ENDS IN'}</span>
       </div>
       <div className="clock">
         {['Days', 'Hours', 'Min', 'Sec'].map((label, index) => (
@@ -2360,7 +2386,7 @@ function UrgencyBanner({ isExpired, time, tick, urgent, isBestOffer }) {
         ))}
       </div>
       {isBestOffer && (
-        <p className="ub-round-note">倒计时结束后，新的折扣挑战开始</p>
+        <p className="ub-round-note">A new discount challenge starts when the countdown ends.</p>
       )}
     </section>
   );
@@ -2378,142 +2404,111 @@ function ClockUnit({ label, value, tick, isLast }) {
   );
 }
 
+function CompactChallengeTimer({ time }) {
+  return (
+    <div className="compact-challenge-timer" aria-label={`Challenge ends in ${time.days} days ${time.hours} hours ${time.mins} minutes`}>
+      <span className="compact-challenge-timer-label">Challenge ends in</span>
+      <span className="compact-challenge-timer-value">{time.digits[0]}d {time.digits[1]}h {time.digits[2]}m</span>
+    </div>
+  );
+}
+
+function LargeCouponTicket({
+  coupon,
+  expiryDate,
+  isExpired,
+  claimed = false,
+  variant = 'best',
+  copyState,
+  onCopy,
+  onAction,
+}) {
+  return (
+    <div className="coupon-wrap current voucher-large-coupon-wrap" data-coupon-theme="dtc">
+      <div className={`coupon coupon-current voucher-large-coupon is-${variant} ${claimed ? 'is-claimed' : ''} ${isExpired ? 'expired' : ''}`} data-tier={tierForDiscount(coupon.num)}>
+        <div className="coupon-face">
+          <span className="coupon-kicker">{claimed ? 'Your Coupon' : 'Best offer this round'}</span>
+          <span className="stub-value">{coupon.num}<small>%</small></span>
+          <span className="stub-off">OFF</span>
+          <span className="coupon-title">Sitewide · No minimum</span>
+          {claimed ? (
+            <button className="voucher-large-code-chip" type="button" onClick={onCopy}>
+              <span className="voucher-large-code-copy-text">
+                <span className="voucher-large-code-label">Your Code</span>
+                <span className="voucher-large-code-value">{copyState === 'Copied!' ? 'Copied!' : coupon.code}</span>
+              </span>
+              <span className="voucher-large-code-copy-icon" aria-hidden="true">
+                {copyState === 'Copied!' ? (
+                  <span className="voucher-large-code-copy-check">✓</span>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                )}
+              </span>
+            </button>
+          ) : null}
+          <span className="coupon-expire">Expires on <b>{expiryDate}</b></span>
+        </div>
+        <button className="btn-use" id="use-now-btn" aria-label={claimed ? 'Redeem coupon' : 'Claim coupon'} disabled={isExpired} onClick={onAction}>
+          <span>{isExpired ? 'Expired' : (claimed ? 'Redeem' : 'Claim Now')}</span>
+          <svg className="use-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 4.5V19" />
+            <path d="M6 13l6 6 6-6" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function BestCouponLockedPage({ 
-  coupon, time, tick, isExpired, couponFaceRef, claimed, copyState, onClaim, onShop, onCopy,
+  coupon, time, expiryDate, tick, isExpired, couponFaceRef, claimed, copyState, onClaim, onShop, onCopy,
   points, targetPoints, challenges, dailyCapReached, onOpenChallenge 
 }) {
   if (claimed) {
-    const displayTarget = coupon.target ?? 0;
-    const displayPoints = displayTarget === 0 ? points : (points + displayTarget);
     return (
       <section className="best-locked-page voucher-ready" data-screen-label="券已领取">
-        {/* Top Countdown Banner */}
-        <div className="limited-offer-banner">
-          <div className="limited-offer-title">
-            <span className="limited-offer-dot">●</span> LIMITED OFFER ENDS IN
-          </div>
-          <div className="limited-offer-timer-boxes">
-            <div className="limited-offer-timer-box-wrapper">
-              <div className="limited-offer-timer-box">{time.digits[0]}</div>
-              <div className="limited-offer-timer-label">DAYS</div>
-            </div>
-            <div className="limited-offer-timer-colon">:</div>
-            <div className="limited-offer-timer-box-wrapper">
-              <div className="limited-offer-timer-box">{time.digits[1]}</div>
-              <div className="limited-offer-timer-label">HOURS</div>
-            </div>
-            <div className="limited-offer-timer-colon">:</div>
-            <div className="limited-offer-timer-box-wrapper">
-              <div className="limited-offer-timer-box">{time.digits[2]}</div>
-              <div className="limited-offer-timer-label">MIN</div>
-            </div>
-            <div className="limited-offer-timer-colon">:</div>
-            <div className="limited-offer-timer-box-wrapper">
-              <div className="limited-offer-timer-box">{time.digits[3]}</div>
-              <div className="limited-offer-timer-label">SEC</div>
-            </div>
-          </div>
-        </div>
-
-        {/* 2. Title YOUR COUPON */}
-        <h2 className="your-coupon-title">YOUR COUPON</h2>
-
-        {/* 3. Coupon Card */}
         <div className="voucher-coupon-card-container">
-          {/* Progress badge pill */}
-          <div className="voucher-coupon-progress-badge">
-            {displayPoints} / {displayTarget}
-          </div>
-
-          {/* Left/Right badges */}
-          <div className="voucher-coupon-left-badge">C</div>
-          <div className="voucher-coupon-right-badge">
-            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
-            </svg>
-          </div>
-
-          <div className="voucher-coupon-card">
-            {/* CLAIMED with checkmark */}
-            <div className="voucher-coupon-claimed-badge">
-              • CLAIMED ✓
-            </div>
-
-            {/* Large Coupon Value */}
-            <h1 className="voucher-coupon-value-large">{coupon.num}%</h1>
-            <div className="voucher-coupon-off-label">OFF</div>
-            
-            <div className="voucher-coupon-subtitle">Sitewide · No minimum</div>
-
-            {/* Code Capsule */}
-            <div className="voucher-code-capsule">
-              <div className="voucher-code-left-cutout"></div>
-              <div className="voucher-code-right-cutout"></div>
-              <div className="voucher-code-text-wrapper">
-                <span className="voucher-code-label">Your Code</span>
-                <span className="voucher-code-value">{coupon.code}</span>
-              </div>
-              <button className="voucher-code-copy-btn" onClick={onCopy} aria-label="Copy Code">
-                {copyState === 'Copied!' ? (
-                  <span style={{ fontWeight: 'bold', color: '#4f8a4a', fontSize: '14px' }}>✓</span>
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                  </svg>
-                )}
-              </button>
-            </div>
-
-            {/* Redeem CTA */}
-            <button className="btn-voucher-use-now" id="use-now-btn" onClick={onShop}>
-              Redeem
-            </button>
-
-            {/* Expiry Pill */}
-            <div className="voucher-expiry-countdown">
-              Expires in <span className="voucher-expiry-time">{time.digits.join(' : ')}</span>
-            </div>
-          </div>
+          <LargeCouponTicket
+            coupon={coupon}
+            expiryDate={expiryDate}
+            isExpired={isExpired}
+            claimed
+            copyState={copyState}
+            onCopy={onCopy}
+            onAction={onShop}
+          />
         </div>
 
+        <CompactChallengeTimer time={time} />
+
+        <p className="voucher-footnote">
+          Use this coupon to finish this round and unlock the next challenge.<br />
+          Not ready yet? You can keep playing until the countdown ends — the next round will start automatically.
+        </p>
 
       </section>
     );
   }
 
   return (
-    <section className="best-locked-page" data-screen-label="最佳优惠券">
-      <div className="best-locked-copy">
-        <span className="best-locked-eyebrow">本轮最低折扣</span>
-        <h1>{coupon.num}% OFF <small>可立即领取</small></h1>
+    <section className="best-locked-page voucher-ready" data-screen-label="最佳优惠券">
+      <div className="voucher-coupon-card-container">
+        <LargeCouponTicket
+          coupon={coupon}
+          expiryDate={expiryDate}
+          isExpired={isExpired}
+          onAction={onClaim}
+        />
       </div>
 
-      <div className="best-locked-coupon" data-coupon-theme="dtc">
-        <div className="coupon coupon-current best-locked-ticket" data-tier={tierForDiscount(coupon.num)}>
-          <div className="coupon-face" ref={couponFaceRef}>
-            <span className="coupon-kicker">Your Best Coupon</span>
-            <span className="stub-value">{coupon.num}<small>%</small></span>
-            <span className="stub-off">OFF</span>
-          </div>
-        </div>
-      </div>
+      <CompactChallengeTimer time={time} />
 
-      <div className="best-locked-countdown">
-        <span>Expires in</span>
-        <div className="best-locked-clock" aria-label={`${time.days} days ${time.hours} hours ${time.mins} minutes ${time.secs} seconds`}>
-          {['Days', 'Hours', 'Min', 'Sec'].map((label, index) => (
-            <ClockUnit key={label} label={label} value={time.digits[index]} tick={index === 3 && tick} isLast={index === 3} />
-          ))}
-        </div>
-      </div>
-
-      <button className="best-locked-cta" id="use-now-btn" type="button" disabled={isExpired} onClick={onClaim}>
-        Claim Now
-      </button>
-
-      <p className="best-locked-footnote">
-        有效期结束后将自动开启新一轮挑战。
+      <p className="voucher-footnote">
+        Use this coupon to finish this round and unlock the next challenge.<br />
+        Not ready yet? You can keep playing until the countdown ends — the next round will start automatically.
       </p>
     </section>
   );
@@ -2709,7 +2704,8 @@ function CouponWallet({
   onTearComplete,
   countdownSeconds,
   confirmOpen,
-  onTargetClick
+  onTargetClick,
+  isClaimed = false
 }) {
   return (
     <section className={`wallet ${isBestOffer ? 'best-offer' : ''}`} data-screen-label="优惠券">
@@ -2720,7 +2716,7 @@ function CouponWallet({
       {isBestOffer && (
         <div className="best-offer-note">
           <span>Exclusive reward unlocked</span>
-          <p>恭喜您，您已获得本轮最低折扣。专属礼遇已为您保留，快去购物吧！</p>
+          <p>Congratulations, you unlocked the best offer this round. Your exclusive reward is reserved, so start shopping.</p>
         </div>
       )}
 
@@ -2741,11 +2737,14 @@ function CouponWallet({
         <div className={`coupon-wrap current ${currentSwap ? 'swap' : ''} ${isTearingCoupon ? 'tearing' : ''}`}>
           <div className={`coupon coupon-current ${isExpired ? 'expired' : ''} ${confirmOpen ? 'confirm-open-zoom' : ''}`} data-tier={tierForDiscount(current.num)}>
             <div className="coupon-face" ref={couponFaceRef}>
-              <span className="coupon-kicker">{isBestOffer ? '当前可用优惠券' : 'Unlocked Offer'}</span>
+              {isClaimed && (
+                <div className="wallet-coupon-claimed-badge">• CLAIMED ✓</div>
+              )}
+              <span className="coupon-kicker">{isBestOffer ? 'Current Coupon' : 'Unlocked Offer'}</span>
               <span className="stub-value">{current.num}<small>%</small></span>
               {isBestOffer ? (
                 <>
-                  <span className="max-discount-label">本轮最低折扣</span>
+                  <span className="max-discount-label">Best offer this round</span>
                 </>
               ) : (
                 <>
@@ -2755,7 +2754,7 @@ function CouponWallet({
               )}
             </div>
             <button className="btn-use" id="use-now-btn" aria-label="Use current coupon" disabled={isExpired || isTearingCoupon} onClick={onUse}>
-              <span>{isExpired ? 'Expired' : 'Claim'}</span>
+              <span>{isExpired ? 'Expired' : (isClaimed ? 'Redeem' : 'Claim')}</span>
               <svg className="use-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 4.5V19" />
                 <path d="M6 13l6 6 6-6" />
@@ -3016,7 +3015,10 @@ function ClaimConfirmModal({ claim, onConfirm, onCancel }) {
 
         {/* Current Reward Display */}
         <div className="claim-confirm-reward-display">
-          <div className="claim-confirm-reward-value">{discount}% OFF</div>
+          <div className="claim-confirm-reward-value">
+            <span>{discount}%</span>
+            <span className="claim-confirm-reward-off">OFF</span>
+          </div>
           <div className="claim-confirm-reward-subtitle">You’ve unlocked this reward.</div>
         </div>
 
@@ -3369,79 +3371,32 @@ function TearCanvas({ active, isBestOffer, onComplete }) {
   return <canvas ref={canvasRef} className="tear-canvas" />;
 }
 
-const ReceiptPrinter = memo(function ReceiptPrinter({ unlockedCoupon, colors, onUse, onAccumulate }) {
-  const formattedDate = useMemo(() => {
-    const now = new Date();
-    const pad = (n) => String(n).padStart(2, '0');
-    const day = pad(now.getDate());
-    const month = pad(now.getMonth() + 1);
-    const year = String(now.getFullYear()).slice(-2);
-    
-    let hours = now.getHours();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    
-    return `${day}/${month}/${year} ${hours}${ampm} (EST)`;
-  }, []);
-
+const ReceiptPrinter = memo(function ReceiptPrinter({ unlockedCoupon, colors, brand, expiryDate, onUse, onAccumulate }) {
   return (
     <div className="printer-overlay" style={couponColorVars(colors)}>
       <div className="printer-machine">
         <div className="printer-slot" />
         <div className="receipt-paper-wrap">
           <div className="receipt-paper">
-            <div className="receipt-header">
-              <div className="receipt-logo">Ritual</div>
-              <div className="receipt-title">VIP Reward Voucher</div>
+            <div className="receipt-brand">
+              {brand?.logoUrl ? (
+                <img className="receipt-brand-logo" src={brand.logoUrl} alt={`${brand.name || 'Brand'} logo`} />
+              ) : null}
+              <span className="receipt-brand-name">{brand?.name || 'Ritual'}</span>
             </div>
-            
-            <div className="receipt-divider" />
-            
-            <div className="receipt-meta">
-              <div className="receipt-meta-row">
-                <span>REDEEM CODE:</span>
-                <span style={{ fontWeight: 'bold' }}>{unlockedCoupon?.code}</span>
-              </div>
-              <div className="receipt-meta-row">
-                <span>DATE/TIME:</span>
-                <span>{formattedDate}</span>
-              </div>
-              <div className="receipt-meta-row">
-                <span>VOUCHER ID:</span>
-                <span>#8849-002</span>
-              </div>
+
+            <div className="receipt-coupon-kicker">Your Coupon</div>
+
+            <div className="receipt-discount">
+              <span className="receipt-discount-number">{unlockedCoupon?.num}</span>
+              <span className="receipt-discount-percent">%</span>
             </div>
-            
-            <div className="receipt-divider" />
-            
-            <div className="receipt-big-text">
-              {unlockedCoupon?.num}% OFF
-            </div>
-            
-            <div className="receipt-divider" />
-            
-            <div className="receipt-meta">
-              <div className="receipt-item-row">
-                <span>UNLOCKED DISCOUNT</span>
-                <span>{unlockedCoupon?.value}</span>
-              </div>
-              <div className="receipt-item-row">
-                <span>VALIDITY</span>
-                <span>Sitewide · No Min</span>
-              </div>
-            </div>
-            
-            <div className="receipt-divider" />
-            
-            <div style={{ textAlign: 'center', fontSize: '0.62rem', letterSpacing: '0.5px', color: '#555' }}>
-              ########## {formattedDate.split(' ')[0]} ##########
-            </div>
-            
-            <div className="receipt-barcode">
-              {[1, 3, 2, 1, 4, 1, 2, 3, 1, 2, 4, 1, 3, 1, 2, 4, 1, 2, 3, 1, 4, 1, 2, 3, 1, 2, 4, 1, 2, 1].map((width, index) => (
-                <div key={index} className="bar" style={{ width: `${width}px` }} />
-              ))}
+            <div className="receipt-off">OFF</div>
+
+            <div className="receipt-condition">Sitewide · No minimum</div>
+
+            <div className="receipt-expiry">
+              Expires on <b>{expiryDate}</b>
             </div>
           </div>
         </div>
@@ -3449,7 +3404,7 @@ const ReceiptPrinter = memo(function ReceiptPrinter({ unlockedCoupon, colors, on
       
       <div className="printer-buttons">
         <button className="btn-printer-primary" id="btn-receipt-use" onClick={onUse}>
-          Claim Now
+          <span>Claim Now</span>
         </button>
         <button className="btn-printer-secondary" id="btn-receipt-accumulate" onClick={onAccumulate}>
           Keep Accumulating Points
