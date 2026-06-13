@@ -2,9 +2,12 @@
 
 :root {
   --brand-primary: #5c6e58;
+  --brand-primary-hover: #4a5947;
+  --brand-on-primary: #ffffff;
   --brand-secondary: #b89855;
   --brand-secondary-hover: #a38243;
   --bg-color: #f4f1e8;
+  --on-bg-color: #2d332b;
   --card-bg: #fdfdfb;
   --text-primary: #2d332b;
   --text-secondary: #60695d;
@@ -970,10 +973,10 @@ body {
 
 .btn-primary {
   background-color: var(--brand-primary);
-  color: #ffffff;
+  color: var(--brand-on-primary, #ffffff);
 }
 
-.btn-primary:hover { background-color: #4a5947; }
+.btn-primary:hover { background-color: var(--brand-primary-hover, #4a5947); }
 .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .btn-outline {

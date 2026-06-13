@@ -40,7 +40,7 @@ import {
   resolveDevScene,
 } from './dev/index.js';
 import { dbg, dbgError } from './lib/debug.js';
-import { applyBrandCssVar, brandFromMagnetParam } from './lib/brandTheme.js';
+import { applyBrandTheme, brandFromMagnetParam } from './lib/brandTheme.js';
 import { preloadRuntimeManifest } from './lib/runtimeRegistry.js';
 
 // 阶段4:对不依赖每秒倒计时的叶子组件做 memo,
@@ -416,7 +416,7 @@ export default function App() {
       ...prev,
       ...nextBrand,
     }));
-    applyBrandCssVar(nextBrand.primaryColor);
+    applyBrandTheme(nextBrand);
   }, []);
 
   const syncMagnetBrandParam = useCallback(async (forceRefresh = false) => {
@@ -597,9 +597,7 @@ export default function App() {
 
     if (devPreview) {
       setPoints(vm.points);
-      if (vm.brand.primaryColor) {
-        document.documentElement.style.setProperty('--brand-primary', vm.brand.primaryColor);
-      }
+      applyBrandTheme(vm.brand);
       return vm;
     }
 
@@ -681,9 +679,7 @@ export default function App() {
       }
     }
 
-    if (vm.brand.primaryColor) {
-      document.documentElement.style.setProperty('--brand-primary', vm.brand.primaryColor);
-    }
+    applyBrandTheme(vm.brand);
 
     // 过渡页仅在权威 plan 同步时更新,避免缓存 plan 误触发 expired NC
     if (!fromCache) {
@@ -2404,7 +2400,12 @@ export default function App() {
       className="mobile-viewport"
       data-screen-label="优惠券首页"
       ref={viewportRef}
-      style={brand.primaryColor ? { '--brand-primary': brand.primaryColor } : undefined}
+      style={{
+        ...((brand.buttonColor || brand.primaryColor)
+          ? { '--brand-primary': brand.buttonColor || brand.primaryColor }
+          : {}),
+        ...(brand.backgroundColor ? { '--bg-color': brand.backgroundColor } : {}),
+      }}
     >
       <canvas id="confetti-canvas" ref={canvasRef} />
       {isWelcomeVideoActive && (
