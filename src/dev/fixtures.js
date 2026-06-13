@@ -189,10 +189,19 @@ export const DEV_FIXTURES = {
   redeemed: () =>
     basePlan({
       pointsBalance: 0,
-      currentTier: 1,
+      currentTier: 3,
       cycleStatus: 'redeemed',
+      observedCoupon: observedCoupon({
+        couponCode: 'FC30RITUAL',
+        couponId: 'camp_t3',
+        tier: 3,
+        discountValue: '30',
+        status: 'redeemed',
+        claimedAt: new Date().toISOString(),
+      }),
       recentlyRedeemedCoupon: {
         couponCode: 'FC30RITUAL',
+        discountValue: '30',
         redeemedAt: new Date().toISOString(),
       },
     }),

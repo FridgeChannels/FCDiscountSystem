@@ -52,6 +52,64 @@ export function couponWithCode(coupon, code) {
   return code ? { ...coupon, code } : coupon;
 }
 
+/** 结算页（Reward Used / Round Complete）展示用的券信息 */
+export function resolveSettlementCoupon({
+  discounts = [],
+  claimRecord = null,
+  observedCoupon = null,
+  fallbackCoupon = null,
+}) {
+  if (claimRecord?.code) {
+    const byCode = discounts.find((d) => d.code === claimRecord.code);
+    if (byCode) return byCode;
+
+    if (claimRecord.num || claimRecord.value) {
+      return {
+        tier: claimRecord.tier,
+        couponId: claimRecord.couponId,
+        num: String(claimRecord.num ?? ''),
+        value: claimRecord.value ?? '',
+        code: claimRecord.code,
+      };
+    }
+
+    if (claimRecord.tier != null) {
+      const byTier = discounts.find((d) => d.tier === claimRecord.tier);
+      if (byTier) return { ...byTier, code: claimRecord.code };
+    }
+  }
+
+  if (observedCoupon?.couponCode) {
+    const stepId = observedCoupon.couponId;
+    const matched = discounts.find(
+      (d) =>
+        (stepId && (d.couponId === stepId || d.campaignId === stepId))
+        || d.tier === observedCoupon.tier,
+    );
+    const rawDiscount = observedCoupon.discountValue ?? '';
+    const num =
+      String(rawDiscount).replace('%', '').replace('Free Ship', '0')
+      || matched?.num
+      || '';
+    const value =
+      matched?.value
+      || (rawDiscount
+        ? (String(rawDiscount).includes('OFF') ? String(rawDiscount) : `${rawDiscount}% OFF`)
+        : '');
+    return {
+      ...(matched ?? {}),
+      tier: observedCoupon.tier ?? matched?.tier,
+      couponId: stepId ?? matched?.couponId,
+      num: num || matched?.num,
+      value: value || matched?.value,
+      code: observedCoupon.couponCode,
+    };
+  }
+
+  if (fallbackCoupon) return fallbackCoupon;
+  return null;
+}
+
 /** 下一档积分门槛（与 fc-platform engineClient.nextTierThreshold 一致） */
 export function nextTierThreshold(ladder, currentTier) {
   const next = (ladder ?? []).find((step) => step.tier === currentTier + 1);

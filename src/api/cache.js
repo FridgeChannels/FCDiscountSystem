@@ -99,6 +99,8 @@ function parseClaimRecord(raw) {
         tier: parsed.tier != null ? Number(parsed.tier) : undefined,
         cycleId: parsed.cycleId ? String(parsed.cycleId) : undefined,
         claimedAt: parsed.claimedAt ? String(parsed.claimedAt) : undefined,
+        num: parsed.num != null ? String(parsed.num) : undefined,
+        value: parsed.value ? String(parsed.value) : undefined,
       };
     }
   } catch {
@@ -124,6 +126,8 @@ export function writeClaimRecord(touchId, record) {
       tier: record.tier,
       cycleId: record.cycleId,
       claimedAt: record.claimedAt ?? new Date().toISOString(),
+      num: record.num,
+      value: record.value,
     }),
   );
 }

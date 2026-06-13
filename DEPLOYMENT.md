@@ -31,6 +31,11 @@ Production minimum:
 - built-in runtime shells (`/runtime-shell/...`)
 - FCDiscountSystem manifest iframe loading
 
+Nginx must also proxy Next.js assets from `platform-web`:
+
+- `/_next/` — JS/CSS chunks for `/runtime-shell/` and `/admin/`
+- `/brand-assets/` — logos referenced by games and brand theme
+
 ## 3. Build and run
 
 ```bash

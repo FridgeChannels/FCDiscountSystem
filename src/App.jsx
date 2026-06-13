@@ -29,6 +29,7 @@ import {
   couponWithCode,
   mapPlanToViewModel,
   nextTierThresholdFromDiscounts,
+  resolveSettlementCoupon,
 } from './api/mapPlan.js';
 import PlatformGameModal from './components/PlatformGameModal.jsx';
 import DevToolbar from './components/DevToolbar.jsx';
@@ -543,7 +544,7 @@ export default function App() {
   const [claimedCode, setClaimedCode] = useState(null);
   // 确认领取弹窗:{ onConfirm } —— 点击「确认领取」后执行的领取动作。
   const [claimConfirm, setClaimConfirm] = useState(null);
-  // 状态D · 新挑战开启过渡页:null | { reason: 'redeemed' | 'expired' }
+  // 状态D · 新挑战开启过渡页:null | { reason: 'redeemed' | 'expired', coupon?: object }
   const [newChallenge, setNewChallenge] = useState(null);
 
   const syncFromPlan = useCallback((plan, { fromCache = false, devPreview = false, fromNewChallengeRenew = false } = {}) => {
@@ -659,18 +660,33 @@ export default function App() {
       if (fromNewChallengeRenew || renewInProgress) {
         setNewChallenge(null);
       } else if (redeemedMatch && storedClaim) {
+        const settlementCoupon = resolveSettlementCoupon({
+          discounts: vm.discounts,
+          claimRecord,
+          observedCoupon: plan.observedCoupon,
+        });
         clearClaimedCode(touchId);
         setClaimedCode(null);
-        setNewChallenge({ reason: 'redeemed' });
+        setNewChallenge((prev) => (
+          prev?.coupon
+            ? prev
+            : { reason: 'redeemed', coupon: settlementCoupon }
+        ));
         setIntroActive(false);
         setReturnIntroGate(false);
         returnIntroPendingRef.current = false;
       } else if (vm.cycleExpired && !welcomeInProgress) {
+        const settlementCoupon = resolveSettlementCoupon({
+          discounts: vm.discounts,
+          claimRecord,
+          observedCoupon: plan.observedCoupon,
+          fallbackCoupon: vm.discounts[vm.currentStepIndex] ?? vm.discounts[vm.discounts.length - 1],
+        });
         if (storedClaim) {
           clearClaimedCode(touchId);
           setClaimedCode(null);
         }
-        setNewChallenge((prev) => prev ?? { reason: 'expired' });
+        setNewChallenge((prev) => prev ?? { reason: 'expired', coupon: settlementCoupon });
         setIntroActive(false);
         setReturnIntroGate(false);
         returnIntroPendingRef.current = false;
@@ -682,22 +698,36 @@ export default function App() {
         });
         if (vm.couponClaimed && vm.claimedCouponCode) {
           const cycleId = plan.cycleId ?? plan.rewardPlanId;
+          const matchedDiscount = vm.discounts.find(
+            (d) => d.code === vm.claimedCouponCode
+              || d.couponId === plan.observedCoupon?.couponId
+              || d.tier === plan.observedCoupon?.tier,
+          );
           writeClaimRecord(touchId, {
             code: vm.claimedCouponCode,
             couponId: plan.observedCoupon?.couponId,
             tier: plan.observedCoupon?.tier,
             cycleId,
+            num: matchedDiscount?.num ?? plan.observedCoupon?.discountValue?.replace('%', ''),
+            value: matchedDiscount?.value,
           });
           setClaimedCode(vm.claimedCouponCode);
         }
       }
     } else if (vm.couponClaimed && vm.claimedCouponCode) {
       const cycleId = plan.cycleId ?? plan.rewardPlanId;
+      const matchedDiscount = vm.discounts.find(
+        (d) => d.code === vm.claimedCouponCode
+          || d.couponId === plan.observedCoupon?.couponId
+          || d.tier === plan.observedCoupon?.tier,
+      );
       writeClaimRecord(touchId, {
         code: vm.claimedCouponCode,
         couponId: plan.observedCoupon?.couponId,
         tier: plan.observedCoupon?.tier,
         cycleId,
+        num: matchedDiscount?.num ?? plan.observedCoupon?.discountValue?.replace('%', ''),
+        value: matchedDiscount?.value,
       });
       setClaimedCode(vm.claimedCouponCode);
     }
@@ -707,7 +737,15 @@ export default function App() {
     }
 
     if (!fromNewChallengeRenew && !renewInProgress && vm.awaitingNewChallenge) {
-      setNewChallenge({ reason: 'redeemed' });
+      setNewChallenge((prev) => {
+        if (prev?.coupon) return prev;
+        const settlementCoupon = resolveSettlementCoupon({
+          discounts: vm.discounts,
+          claimRecord,
+          observedCoupon: plan.observedCoupon,
+        });
+        return { reason: 'redeemed', coupon: settlementCoupon };
+      });
       setIntroActive(false);
       setReturnIntroGate(false);
     }
@@ -819,7 +857,7 @@ export default function App() {
     if (devPreviewActiveRef.current) {
       const code = coupon?.code || `DEV${coupon?.num ?? '15'}`;
       const withCode = couponWithCode(coupon, code);
-      writeClaimRecord(touchId, { code, couponId: coupon?.couponId, tier: coupon?.tier });
+      writeClaimRecord(touchId, { code, couponId: coupon?.couponId, tier: coupon?.tier, num: coupon?.num, value: coupon?.value });
       setClaimedCode(code);
       setDiscounts((prev) => applyClaimToDiscounts(prev, { code, couponId: coupon?.couponId, tier: coupon?.tier }));
       return { code, cycleClosed: false, coupon: withCode };
@@ -838,6 +876,8 @@ export default function App() {
       couponId: issued.couponId ?? couponId,
       tier: coupon?.tier,
       cycleId: rewardPlanId,
+      num: coupon?.num,
+      value: coupon?.value,
     };
     writeClaimRecord(touchId, claim);
     clearCachedRewardPlan(touchId);
@@ -1185,7 +1225,7 @@ export default function App() {
         setRenewFlowActive(false);
         setRenewPlanReady(false);
         setRenewGiftIntro(false);
-        setNewChallenge({ reason });
+        setNewChallenge({ reason, coupon: newChallenge?.coupon ?? null });
         setIntroActive(false);
         setReturnIntroGate(false);
         showNotification(
@@ -1231,7 +1271,13 @@ export default function App() {
       !newChallenge &&
       readWelcomeCompleted(touchId)
     ) {
-      setNewChallenge({ reason: 'expired' });
+      setNewChallenge({
+        reason: 'expired',
+        coupon: resolveSettlementCoupon({
+          discounts,
+          claimRecord: readClaimRecord(touchId),
+        }),
+      });
     }
   }, [countdownSeconds, newChallenge, touchId]);
 
@@ -1254,10 +1300,16 @@ export default function App() {
           if (newChallengeRenewRef.current || renewFlowActiveRef.current) return;
           const reason =
             result.couponStatus === 'expired' || result.isValid === false ? 'expired' : 'redeemed';
+          const settlementCoupon = resolveSettlementCoupon({
+            discounts,
+            claimRecord: readClaimRecord(touchId),
+          });
           clearCachedRewardPlan(touchId);
+          setNewChallenge({ reason, coupon: settlementCoupon });
+          clearClaimedCode(touchId);
+          setClaimedCode(null);
           await reloadPlan();
           if (newChallengeRenewRef.current || renewFlowActiveRef.current) return;
-          setNewChallenge({ reason });
         } else if (result.couponStatus) {
           const record = readClaimRecord(touchId);
           if (record?.code) {
@@ -1272,7 +1324,7 @@ export default function App() {
     poll();
     const id = window.setInterval(poll, 45_000);
     return () => window.clearInterval(id);
-  }, [reloadPlan, showClaimedScreen, touchId]);
+  }, [reloadPlan, showClaimedScreen, touchId, discounts]);
 
   useEffect(() => () => {
     if (tearTimerRef.current) window.clearTimeout(tearTimerRef.current);
@@ -2585,9 +2637,9 @@ export default function App() {
       {newChallenge && (
         <NewChallengeUnlocked
           reason={newChallenge.reason}
+          coupon={newChallenge.coupon}
           onStart={handleStartNewChallenge}
           onDismiss={() => setNewChallenge(null)}
-          prevCoupon={lockedCoupon}
         />
       )}
 
@@ -3043,11 +3095,15 @@ function BestCouponLockedPage({
   );
 }
 
-function NewChallengeUnlocked({ reason, onStart, onDismiss, prevCoupon }) {
+function NewChallengeUnlocked({ reason, onStart, onDismiss, coupon }) {
   const redeemed = reason === 'redeemed';
   const expired = reason === 'expired';
-  const settlementCoupon = prevCoupon || { num: expired ? '15' : '20', value: `${expired ? '15' : '20'}% OFF` };
+  const settlementCoupon = coupon ?? null;
+  const discountNum = settlementCoupon?.num ? String(settlementCoupon.num).replace(/%/g, '') : '';
   const stamp = redeemed ? 'USED' : 'EARNED';
+  const couponSubtitle = settlementCoupon?.code
+    ? `Code: ${settlementCoupon.code}`
+    : (settlementCoupon?.value || 'Sitewide · No minimum');
 
   return (
     <div className={`new-challenge-overlay nc-settlement ${redeemed ? 'is-redeemed' : 'is-expired'}`} role="dialog" aria-label={redeemed ? 'Reward used' : 'Round complete'} data-screen-label={redeemed ? '奖励已使用' : '回合已结束'}>
@@ -3078,20 +3134,28 @@ function NewChallengeUnlocked({ reason, onStart, onDismiss, prevCoupon }) {
           </p>
         </section>
 
-        <div className="nc-settlement-coupon-wrap coupon-wrap current" data-coupon-theme={COUPON_THEME}>
-          <div
-            className={`coupon coupon-current nc-settlement-wallet-coupon ${redeemed ? 'is-used' : 'is-earned'}`}
-            data-tier={tierForDiscount(settlementCoupon.num)}
-          >
-            <div className="coupon-face">
-              <span className="coupon-kicker">Your Reward</span>
-              <span className="stub-value">{settlementCoupon.num}<small>%</small></span>
-              <span className="stub-off">OFF</span>
-              <span className="coupon-title">Sitewide · No minimum</span>
+        {settlementCoupon ? (
+          <div className="nc-settlement-coupon-wrap coupon-wrap current" data-coupon-theme={COUPON_THEME}>
+            <div
+              className={`coupon coupon-current nc-settlement-wallet-coupon ${redeemed ? 'is-used' : 'is-earned'}`}
+              data-tier={tierForDiscount(discountNum || settlementCoupon.num)}
+            >
+              <div className="coupon-face">
+                <span className="coupon-kicker">Your Reward</span>
+                {discountNum ? (
+                  <>
+                    <span className="stub-value">{discountNum}<small>%</small></span>
+                    <span className="stub-off">OFF</span>
+                  </>
+                ) : (
+                  <span className="stub-value stub-value--text">{settlementCoupon.value || 'Reward'}</span>
+                )}
+                <span className="coupon-title">{couponSubtitle}</span>
+              </div>
+              <div className="nc-settlement-coupon-stamp">{stamp}</div>
             </div>
-            <div className="nc-settlement-coupon-stamp">{stamp}</div>
           </div>
-        </div>
+        ) : null}
 
         <div className="nc-footer">
           <button className="nc-btn-start" type="button" onClick={onStart}>

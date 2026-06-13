@@ -154,7 +154,10 @@ export const DEV_SCENES = [
       introActive: false,
       setWelcomeCompleted: true,
       clearClaimed: true,
-      newChallenge: { reason: 'redeemed' },
+      newChallenge: {
+        reason: 'redeemed',
+        coupon: { num: '30', value: '30% OFF', code: 'FC30RITUAL', tier: 3 },
+      },
     },
   },
   {
