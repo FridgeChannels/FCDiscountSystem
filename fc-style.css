@@ -467,7 +467,7 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 14px 20px;
-  background-color: var(--card-bg);
+  background-color: transparent;
   border-bottom: 1px solid var(--border-color);
   z-index: 5;
 }
@@ -2123,8 +2123,9 @@ body {
 }
 
 .shopify-auth-cta-icon {
-  width: 24px;
-  height: 24px;
+  width: 1.75em;
+  height: 1.75em;
+  margin: -0.4em 0;
   object-fit: contain;
   display: block;
 }
