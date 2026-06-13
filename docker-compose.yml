@@ -15,6 +15,19 @@ services:
       REDIS_URL: ${REDIS_URL-}
       REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-fc:}
       RUNTIME_SHELL_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      COUPON_API_BASE_URL: ${COUPON_API_BASE_URL-}
+      COUPON_API_AUTH_TOKEN: ${COUPON_API_AUTH_TOKEN-}
+      COUPON_API_TIMEOUT_MS: ${COUPON_API_TIMEOUT_MS:-15000}
+      COUPON_API_MAX_RETRY: ${COUPON_API_MAX_RETRY:-2}
+      REWARD_PLAN_AVAILABLE_CAMPAIGN_TIMEOUT_MS: ${REWARD_PLAN_AVAILABLE_CAMPAIGN_TIMEOUT_MS:-15000}
+      SURVEY_API_BASE_URL: ${SURVEY_API_BASE_URL-}
+      SURVEY_API_KEY: ${SURVEY_API_KEY-}
+      SURVEY_POINTS_PER_QUESTION: ${SURVEY_POINTS_PER_QUESTION:-10}
+    volumes:
+      - ../fc-platform/.env:/workspace/fc-platform/.env:ro
+    networks:
+      - default
+      - redis_net
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8787/health"]
       interval: 10s
@@ -35,6 +48,7 @@ services:
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY-}
     volumes:
       - platform_uploaded_games:/workspace/fc-platform/apps/web/public/uploaded-games
+      - ../fc-platform/.env:/workspace/fc-platform/.env:ro
     depends_on:
       engine:
         condition: service_healthy
@@ -95,6 +109,11 @@ services:
       timeout: 3s
       retries: 8
     restart: unless-stopped
+
+networks:
+  redis_net:
+    external: true
+    name: ${REDIS_EXTERNAL_NETWORK:-docker_default}
 
 volumes:
   platform_uploaded_games:
