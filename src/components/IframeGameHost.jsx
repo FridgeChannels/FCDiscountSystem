@@ -20,6 +20,11 @@ export default function IframeGameHost({ start, iframeUrl, allowedOrigin, onDone
     return url.toString();
   }, [iframeUrl]);
 
+  const resolvedAllowedOrigin = useMemo(
+    () => new URL(iframeSrc, window.location.href).origin,
+    [iframeSrc],
+  );
+
   useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe) return undefined;
@@ -29,12 +34,12 @@ export default function IframeGameHost({ start, iframeUrl, allowedOrigin, onDone
     dbg('[FCDBG][IframeGameHost] attach', {
       sessionId: start.sessionId,
       iframeSrc,
-      allowedOrigin,
+      allowedOrigin: resolvedAllowedOrigin,
     });
 
     const session = attachIframeHost({
       iframe,
-      allowedOrigin,
+      allowedOrigin: resolvedAllowedOrigin,
       payload: startRef.current,
       handlers: {
         onReady: () => setStatus('playing'),
@@ -62,7 +67,7 @@ export default function IframeGameHost({ start, iframeUrl, allowedOrigin, onDone
     return () => {
       session.cancel();
     };
-  }, [allowedOrigin, iframeSrc, start.sessionId]);
+  }, [iframeSrc, resolvedAllowedOrigin, start.sessionId]);
 
   if (status === 'error') {
     return <p className="platform-game-error">{errorMessage || 'Game failed to load'}</p>;
