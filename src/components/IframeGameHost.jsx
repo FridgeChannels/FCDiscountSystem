@@ -29,43 +29,57 @@ export default function IframeGameHost({ start, iframeUrl, allowedOrigin, onDone
     const iframe = iframeRef.current;
     if (!iframe) return undefined;
 
-    setStatus('loading');
-    setErrorMessage('');
-    dbg('[FCDBG][IframeGameHost] attach', {
-      sessionId: start.sessionId,
-      iframeSrc,
-      allowedOrigin: resolvedAllowedOrigin,
-    });
+    let session = null;
+    let cancelled = false;
 
-    const session = attachIframeHost({
-      iframe,
-      allowedOrigin: resolvedAllowedOrigin,
-      payload: startRef.current,
-      handlers: {
-        onReady: () => setStatus('playing'),
-        onComplete: async (result) => {
-          try {
-            const view = await completeGameSession(result);
-            onDoneRef.current?.(view);
-          } catch (err) {
-            const message = err instanceof Error ? err.message : 'Complete failed';
-            dbgError('[FCDBG][IframeGameHost] complete failed', err);
+    const attach = () => {
+      if (cancelled) return;
+      setStatus('loading');
+      setErrorMessage('');
+      dbg('[FCDBG][IframeGameHost] attach', {
+        sessionId: start.sessionId,
+        iframeSrc,
+        allowedOrigin: resolvedAllowedOrigin,
+      });
+
+      session = attachIframeHost({
+        iframe,
+        allowedOrigin: resolvedAllowedOrigin,
+        payload: startRef.current,
+        handlers: {
+          onReady: () => setStatus('playing'),
+          onComplete: async (result) => {
+            try {
+              const view = await completeGameSession(result);
+              onDoneRef.current?.(view);
+            } catch (err) {
+              const message = err instanceof Error ? err.message : 'Complete failed';
+              dbgError('[FCDBG][IframeGameHost] complete failed', err);
+              setStatus('error');
+              setErrorMessage(message);
+              onErrorRef.current?.(message);
+            }
+          },
+          onError: (message) => {
+            dbgError('[FCDBG][IframeGameHost] runtime error', message);
             setStatus('error');
             setErrorMessage(message);
             onErrorRef.current?.(message);
-          }
+          },
         },
-        onError: (message) => {
-          dbgError('[FCDBG][IframeGameHost] runtime error', message);
-          setStatus('error');
-          setErrorMessage(message);
-          onErrorRef.current?.(message);
-        },
-      },
-    });
+      });
+    };
+
+    if (iframe.contentDocument?.readyState === 'complete') {
+      attach();
+    } else {
+      iframe.addEventListener('load', attach);
+    }
 
     return () => {
-      session.cancel();
+      cancelled = true;
+      iframe.removeEventListener('load', attach);
+      session?.cancel();
     };
   }, [iframeSrc, resolvedAllowedOrigin, start.sessionId]);
 
