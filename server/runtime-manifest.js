@@ -61,15 +61,35 @@ const RUNTIME_CATALOG = [
   },
 ];
 
+function rebasePublicUrl(storedUrl, baseUrl) {
+  try {
+    const parsed = new URL(storedUrl);
+    const base = String(baseUrl).replace(/\/$/, '');
+    return `${base}${parsed.pathname}${parsed.search}`;
+  } catch {
+    return storedUrl;
+  }
+}
+
 function resolveIframeConfig(runtime) {
-  if (runtime.loadMode !== 'iframe' || !runtime.iframePath) {
+  if (runtime.loadMode !== 'iframe') {
     return { loadMode: runtime.loadMode ?? 'inline' };
   }
-  const iframeUrl = `${RUNTIME_SHELL_BASE_URL}${runtime.iframePath}`;
+
+  const iframeUrl = runtime.iframePath
+    ? `${RUNTIME_SHELL_BASE_URL}${runtime.iframePath}`
+    : runtime.iframeUrl
+      ? rebasePublicUrl(runtime.iframeUrl, RUNTIME_SHELL_BASE_URL)
+      : undefined;
+
+  if (!iframeUrl) {
+    return { loadMode: runtime.loadMode ?? 'inline' };
+  }
+
   return {
     loadMode: 'iframe',
     iframeUrl,
-    allowedOrigin: new URL(iframeUrl).origin,
+    allowedOrigin: new URL(RUNTIME_SHELL_BASE_URL).origin,
     iframePath: runtime.iframePath,
   };
 }
