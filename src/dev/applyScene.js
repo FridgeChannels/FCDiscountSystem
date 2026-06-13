@@ -7,7 +7,10 @@ import {
 import { getSceneConfig } from './scenes.js';
 
 export function isDevPreviewEnabled() {
-  return import.meta.env.DEV;
+  return (
+    import.meta.env.DEV &&
+    (import.meta.env.VITE_DEV_TOOLBAR_ENABLED ?? 'false') === 'true'
+  );
 }
 
 export function getDevScene() {
@@ -44,6 +47,7 @@ export function applyDevSceneUi(ui, ctx) {
     setNotification,
     setClaimConfirm,
     setShowReceipt,
+    setReceiptCoupon,
     setPendingPoints,
     setReceiptColors,
     setZoomActive,
@@ -91,11 +95,15 @@ export function applyDevSceneUi(ui, ctx) {
   }
 
   setShowReceipt(false);
+  if (setReceiptCoupon) setReceiptCoupon(null);
   setZoomActive(false);
 
   const openDomOverlays = () => {
     if (ui.openReceipt) {
+      const unlocked =
+        discounts[currentStepIndex + 1] || discounts[currentStepIndex] || discounts[0];
       const targetEl = targetCouponRef?.current;
+      setReceiptCoupon(unlocked);
       setReceiptColors(targetEl ? readCouponTokens(targetEl.closest('.coupon')) : null);
       setPendingPoints(points);
       setShowReceipt(true);

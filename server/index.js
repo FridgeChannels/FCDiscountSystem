@@ -57,6 +57,59 @@ async function callEngine(path, body, timeoutMs = ENGINE_TIMEOUT_MS) {
   return json.data;
 }
 
+async function callEngineGet(path, timeoutMs = ENGINE_TIMEOUT_MS) {
+  const headers = {};
+  if (ENGINE_SERVICE_TOKEN) {
+    headers.authorization = `Bearer ${ENGINE_SERVICE_TOKEN}`;
+  }
+
+  const res = await fetch(`${ENGINE_BASE_URL}${path}`, {
+    method: 'GET',
+    headers,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const json = await res.json();
+  if (!res.ok || json.error || json.data === null) {
+    const msg = json.error ? `${json.error.code}: ${json.error.message}` : `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return json.data;
+}
+
+const SHOPIFY_STATUS_CACHE_TTL_MS = Number(process.env.SHOPIFY_STATUS_CACHE_TTL_MS ?? 3600000);
+const shopifyStatusCache = new Map(); // touchId -> { data, expiresAt }
+const shopifyStatusInflight = new Map(); // touchId -> Promise
+
+function readShopifyStatusCache(touchId) {
+  const entry = shopifyStatusCache.get(touchId);
+  if (entry && entry.expiresAt > Date.now()) return entry.data;
+  if (entry) shopifyStatusCache.delete(touchId);
+  return null;
+}
+
+function writeShopifyStatusCache(touchId, data) {
+  shopifyStatusCache.set(touchId, { data, expiresAt: Date.now() + SHOPIFY_STATUS_CACHE_TTL_MS });
+}
+
+function getShopifyStatusDeduped(touchId) {
+  const cached = readShopifyStatusCache(touchId);
+  if (cached) return Promise.resolve(cached);
+  const existing = shopifyStatusInflight.get(touchId);
+  if (existing) return existing;
+  const promise = callEngineGet(
+    `/identity/shopify-status?touchId=${encodeURIComponent(touchId)}`,
+  )
+    .then((data) => {
+      writeShopifyStatusCache(touchId, data);
+      return data;
+    })
+    .finally(() => {
+      shopifyStatusInflight.delete(touchId);
+    });
+  shopifyStatusInflight.set(touchId, promise);
+  return promise;
+}
+
 
 function readJson(req) {
   return new Promise((resolve, reject) => {
@@ -97,6 +150,17 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/api/fc/health') {
       sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/fc/shopify-status') {
+      const touchId = url.searchParams.get('touchId');
+      if (!touchId) {
+        sendJson(res, 400, { error: 'touchId required' });
+        return;
+      }
+      const data = await getShopifyStatusDeduped(touchId);
+      sendJson(res, 200, data);
       return;
     }
 

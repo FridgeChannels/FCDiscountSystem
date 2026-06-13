@@ -73,6 +73,10 @@ export function fetchRewardPlan(touchId) {
   return request(`/api/fc/reward-plan?touchId=${encodeURIComponent(touchId)}`);
 }
 
+export function fetchShopifyStatus(touchId) {
+  return request(`/api/fc/shopify-status?touchId=${encodeURIComponent(touchId)}`);
+}
+
 export function startGameSession(rewardPlanId, gameInstanceId) {
   return request('/api/fc/session/start', {
     method: 'POST',

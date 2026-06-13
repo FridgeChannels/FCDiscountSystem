@@ -147,6 +147,55 @@ export function clearWelcomeCompleted(touchId) {
   window.localStorage.removeItem(welcomeKey(touchId));
 }
 
+const SHOPIFY_STATUS_PREFIX = 'fc.shopifyStatus.';
+const SHOPIFY_STATUS_CACHE_VERSION = 1;
+const SHOPIFY_STATUS_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function shopifyStatusKey(touchId) {
+  return `${SHOPIFY_STATUS_PREFIX}${touchId}`;
+}
+
+/** 浏览器侧 Shopify 绑定状态缓存 */
+export function readCachedShopifyStatus(touchId) {
+  if (!canUseBrowserStorage() || !touchId) return null;
+  try {
+    const raw = window.localStorage.getItem(shopifyStatusKey(touchId));
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    if (cached?.version !== SHOPIFY_STATUS_CACHE_VERSION) return null;
+    if (Date.now() - cached.cachedAt > SHOPIFY_STATUS_MAX_AGE_MS) return null;
+    if (typeof cached.connected !== 'boolean') return null;
+    return {
+      connected: cached.connected,
+      shopifyCustomerId: cached.shopifyCustomerId ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function writeCachedShopifyStatus(touchId, status) {
+  if (!canUseBrowserStorage() || !touchId || !status || typeof status.connected !== 'boolean') return;
+  try {
+    window.localStorage.setItem(
+      shopifyStatusKey(touchId),
+      JSON.stringify({
+        version: SHOPIFY_STATUS_CACHE_VERSION,
+        cachedAt: Date.now(),
+        connected: status.connected,
+        shopifyCustomerId: status.shopifyCustomerId ?? null,
+      }),
+    );
+  } catch {
+    // Cache is an optimization only.
+  }
+}
+
+export function clearCachedShopifyStatus(touchId) {
+  if (!canUseBrowserStorage() || !touchId) return;
+  window.localStorage.removeItem(shopifyStatusKey(touchId));
+}
+
 /** 清除旧版全局 key(曾导致跨 magnet 串页) */
 export function clearLegacyMagnetStorage() {
   if (!canUseBrowserStorage()) return;

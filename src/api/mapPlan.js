@@ -51,6 +51,18 @@ export function couponWithCode(coupon, code) {
   return code ? { ...coupon, code } : coupon;
 }
 
+/** 下一档积分门槛（与 fc-platform engineClient.nextTierThreshold 一致） */
+export function nextTierThreshold(ladder, currentTier) {
+  const next = (ladder ?? []).find((step) => step.tier === currentTier + 1);
+  return next ? next.pointsThreshold : null;
+}
+
+/** 由 mapPlan discounts 推导下一档门槛 */
+export function nextTierThresholdFromDiscounts(discounts, currentTier) {
+  const next = (discounts ?? []).find((step) => step.tier === currentTier + 1);
+  return next?.target ?? null;
+}
+
 export function deriveHasInitialDiscount(ladder) {
   const sorted = [...(ladder ?? [])].sort((a, b) => a.tier - b.tier);
   const first = sorted[0];

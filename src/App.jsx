@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
-import { claimCoupon, completeSurvey, fetchRewardPlan, observeCoupon, redeemCoupon, renewCycle, startGameSession } from './api/client.js';
+import { claimCoupon, completeSurvey, fetchRewardPlan, fetchShopifyStatus, observeCoupon, redeemCoupon, renewCycle, startGameSession } from './api/client.js';
 import {
   readCachedRewardPlan,
+  readCachedShopifyStatus,
   readRememberedTouchId,
   rememberTouchId,
   writeCachedRewardPlan,
+  writeCachedShopifyStatus,
+  clearCachedShopifyStatus,
   clearCachedRewardPlan,
   readWelcomeCompleted,
   writeWelcomeCompleted,
@@ -14,7 +17,12 @@ import {
   clearWelcomeCompleted,
   clearLegacyMagnetStorage,
 } from './api/cache.js';
-import { applyClaimToDiscounts, couponWithCode, mapPlanToViewModel } from './api/mapPlan.js';
+import {
+  applyClaimToDiscounts,
+  couponWithCode,
+  mapPlanToViewModel,
+  nextTierThresholdFromDiscounts,
+} from './api/mapPlan.js';
 import PlatformGameModal from './components/PlatformGameModal.jsx';
 import DevToolbar from './components/DevToolbar.jsx';
 import {
@@ -79,6 +87,18 @@ function getTouchId() {
   if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]);
 
   return readRememberedTouchId() || DEFAULT_TOUCH_ID;
+}
+
+const SHOPIFY_TAP_AUTH_BASE = 'https://dtc-dashboard.fridgechannels.com/tap';
+
+function buildShopifyAuthUrl(touchId) {
+  const id = touchId || getTouchId();
+  const redirectedFrom = encodeURIComponent(window.location.href);
+  return `${SHOPIFY_TAP_AUTH_BASE}/${encodeURIComponent(id)}?redirectedFrom=${redirectedFrom}`;
+}
+
+function shopifyAuthStatusFromBinding(status) {
+  return status?.connected ? 'connected' : 'unconnected';
 }
 
 /** 非首次回访:有 welcome 标记、已领券缓存、或历史 plan 缓存 */
@@ -271,14 +291,17 @@ export default function App() {
   const pointsRef = useRef(0);
   const prevCountdownRef = useRef(null);
   const pendingTapRewardRef = useRef(0);
+  const pendingTapTargetRef = useRef(0);
   const playPendingTapRewardRef = useRef(() => {});
   const returnIntroShownRef = useRef(false);
   const returnIntroPendingRef = useRef(false);
   const newChallengeRenewRef = useRef(null);
   const renewPlanRef = useRef(null);
   const renewFlowActiveRef = useRef(false);
+  const applyRenewPlanAfterGiftRef = useRef(null);
   const zoomCenteredOpenRef = useRef(false);
   const zoomAfterCloseRef = useRef(null);
+  const shopifyPendingRef = useRef(null);
   const devPreviewActiveRef = useRef(false);
   const devSceneRef = useRef('');
 
@@ -311,6 +334,7 @@ export default function App() {
   const [crediting, setCrediting] = useState(false);
   const [currentSwap, setCurrentSwap] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [receiptCoupon, setReceiptCoupon] = useState(null);
   const [forceWalletView, setForceWalletView] = useState(false);
   const [pendingPoints, setPendingPoints] = useState(0);
   const [redeemingCoupon, setRedeemingCoupon] = useState(false);
@@ -323,13 +347,34 @@ export default function App() {
   const closeIntro = useCallback(() => setIntroActive(false), []);
   const [hasInitialDiscount, setHasInitialDiscount] = useState(false);
 
-  const [shopifyAuthStatus, setShopifyAuthStatus] = useState('unconnected');
+  const [shopifyAuthStatus, setShopifyAuthStatus] = useState(() => {
+    const cached = readCachedShopifyStatus(getTouchId());
+    return shopifyAuthStatusFromBinding(cached);
+  });
   const [shopifyAuthSkipCount, setShopifyAuthSkipCount] = useState(0);
   const [shopifyAuthLastSkippedAt, setShopifyAuthLastSkippedAt] = useState(null);
   const [getMoreOffAuthPromptSeen, setGetMoreOffAuthPromptSeen] = useState(false);
   const [shopifyLoginTaskStatus, setShopifyLoginTaskStatus] = useState('incomplete');
   const [shopifyAuthOverlay, setShopifyAuthOverlay] = useState(null);
   const [shopifyAuthSuccess, setShopifyAuthSuccess] = useState(false);
+
+  const syncShopifyBindingStatus = useCallback(async (forceRefresh = false) => {
+    if (forceRefresh) clearCachedShopifyStatus(touchId);
+    const cached = !forceRefresh ? readCachedShopifyStatus(touchId) : null;
+    if (cached) {
+      setShopifyAuthStatus(shopifyAuthStatusFromBinding(cached));
+    }
+    try {
+      const status = await fetchShopifyStatus(touchId);
+      writeCachedShopifyStatus(touchId, status);
+      setShopifyAuthStatus(shopifyAuthStatusFromBinding(status));
+      return status;
+    } catch (err) {
+      dbgError('[FCDBG][App] fetch shopify status failed', err);
+      if (!cached) setShopifyAuthStatus('unconnected');
+      return null;
+    }
+  }, [touchId]);
 
   const shopifyTask = useMemo(() => {
     if (!needsShopifyAuth()) return null;
@@ -363,7 +408,9 @@ export default function App() {
     }
     setWelcomeVideoFading(true);
 
-    if (welcomeStep >= 3) {
+    if (renewFlowActiveRef.current) {
+      void applyRenewPlanAfterGiftRef.current?.();
+    } else if (welcomeStep >= 3) {
       returnIntroShownRef.current = true;
       returnIntroPendingRef.current = false;
       setReturnIntroGate(false);
@@ -506,21 +553,18 @@ export default function App() {
       vm.cycleExpired ||
       redeemedMatch ||
       !!storedClaim;
+    const deferTapFx =
+      !blocksTapReward &&
+      (welcomeInProgress || (welcomeDone && !tapFxPlayed));
 
     if (!renewInProgress) {
-      if (!blocksTapReward) {
-        if (welcomeInProgress) {
-          pendingTapRewardRef.current = tapAwarded;
-          setPendingRewardSignal((value) => value + 1);
-          setPoints(Math.max(0, vm.points - tapAwarded));
-        } else if (welcomeDone && !tapFxPlayed) {
-          pendingTapRewardRef.current = tapAwarded;
-          setPendingRewardSignal((value) => value + 1);
-          setPoints(Math.max(0, vm.points - tapAwarded));
-        } else {
-          setPoints(vm.points);
-        }
+      pendingTapTargetRef.current = vm.points;
+      if (deferTapFx) {
+        pendingTapRewardRef.current = tapAwarded;
+        setPendingRewardSignal((value) => value + 1);
+        setPoints(Math.max(0, vm.points - tapAwarded));
       } else {
+        pendingTapRewardRef.current = 0;
         setPoints(vm.points);
       }
     }
@@ -636,6 +680,7 @@ export default function App() {
     setPlanLoading(false);
     setNewChallenge(null);
     setShowReceipt(false);
+    setReceiptCoupon(null);
     setZoomActive(false);
     setClaimConfirm(null);
     setNotification(null);
@@ -656,6 +701,7 @@ export default function App() {
         setNotification,
         setClaimConfirm,
         setShowReceipt,
+        setReceiptCoupon,
         setPendingPoints,
         setReceiptColors,
         setZoomActive,
@@ -778,14 +824,18 @@ export default function App() {
   }, []);
 
   const handleWelcomeEarnMore = useCallback(async () => {
+    const advanceWelcome = () => {
+      setWelcomeStep(2);
+      reloadPlan().catch((err) => {
+        dbgError('[FCDBG][App] welcome earn more reload failed', err);
+      });
+    };
+
     if (needsShopifyAuth() && !getMoreOffAuthPromptSeen) {
-      showShopifyAuth('get_more_off');
+      showShopifyAuth('get_more_off', advanceWelcome);
       return;
     }
-    setWelcomeStep(2);
-    reloadPlan().catch((err) => {
-      dbgError('[FCDBG][App] welcome earn more reload failed', err);
-    });
+    advanceWelcome();
   }, [reloadPlan, shopifyAuthStatus, getMoreOffAuthPromptSeen]);
 
   const preloadGameStart = useCallback((challenge) => {
@@ -908,6 +958,8 @@ export default function App() {
       dbgError('[FCDBG][App] runtime manifest preload failed', err);
     });
 
+    void syncShopifyBindingStatus();
+
     const cached = readCachedRewardPlan(touchId);
     if (cached) {
       syncFromPlan(cached, { fromCache: true });
@@ -937,14 +989,24 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [applyDevPreviewScene, clearGameSessionCache, devScene, syncFromPlan, touchId]);
+  }, [applyDevPreviewScene, clearGameSessionCache, devScene, syncFromPlan, syncShopifyBindingStatus, touchId]);
 
-  const current = discounts[currentStepIndex] || discounts[discounts.length - 1] || { num: '15', target: 0 };
-  const next = discounts[currentStepIndex + 1] || null;
-  const targetPoints = next?.target ?? current?.target ?? 0;
-  const progressPct = next ? Math.min((points / targetPoints) * 100, 100) : 100;
-  const delta = next ? Math.max(targetPoints - points, 0) : 0;
-  const isBestOffer = !next;
+  useEffect(() => {
+    const onPageShow = () => {
+      void syncShopifyBindingStatus(true);
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, [syncShopifyBindingStatus]);
+
+  const current = discounts[currentStepIndex] || discounts[discounts.length - 1] || { num: '15', target: 0, tier: 1 };
+  const currentTier = current.tier ?? currentStepIndex + 1;
+  const nextThreshold = nextTierThresholdFromDiscounts(discounts, currentTier);
+  const targetPoints = nextThreshold ?? current?.target ?? 0;
+  const next = nextThreshold != null ? discounts.find((d) => d.tier === currentTier + 1) ?? null : null;
+  const progressPct = nextThreshold != null ? Math.min((points / targetPoints) * 100, 100) : 100;
+  const delta = nextThreshold != null ? Math.max(targetPoints - points, 0) : 0;
+  const isBestOffer = nextThreshold == null;
   // 已领取未核销:强制锁定在最低折扣页,直到后端确认核销。
   // 注意：如果已领取的优惠券是第一张欢迎券(15% OFF)，不能锁定/改住钱包页面，以允许用户继续挑战更高档位。
   const claimRecord = readClaimRecord(touchId);
@@ -1120,10 +1182,14 @@ export default function App() {
     const pts = pendingTapRewardRef.current;
     if (!pts || pts <= 0) return;
     const fxKey = `fc_tap_fx_${touchId}`;
-    if (sessionStorage.getItem(fxKey)) return;
+    if (sessionStorage.getItem(fxKey)) {
+      pendingTapRewardRef.current = 0;
+      setPoints(pendingTapTargetRef.current || pointsRef.current);
+      return;
+    }
     sessionStorage.setItem(fxKey, '1');
     pendingTapRewardRef.current = 0;
-    triggerLoginBonusAnimation(pts);
+    triggerLoginBonusAnimation(pts, pendingTapTargetRef.current || pointsRef.current + pts);
   }, [touchId]);
 
   const finishRenewFlowToHome = useCallback((vm) => {
@@ -1133,13 +1199,15 @@ export default function App() {
     renewPlanRef.current = null;
     returnIntroShownRef.current = true;
     returnIntroPendingRef.current = false;
+    setReturnIntroGate(false);
+    setRenewGiftIntro(false);
+    setIntroActive(false);
 
     const tapAwarded = vm.tapReward?.awarded ?? 0;
+    pendingTapTargetRef.current = vm.points;
     if (tapAwarded > 0) {
-      if (!pendingTapRewardRef.current) {
-        pendingTapRewardRef.current = tapAwarded;
-        setPoints(Math.max(0, vm.points - tapAwarded));
-      }
+      pendingTapRewardRef.current = tapAwarded;
+      setPoints(Math.max(0, vm.points - tapAwarded));
       window.setTimeout(() => playPendingTapReward(), 280);
     } else {
       setPoints(vm.points);
@@ -1172,6 +1240,7 @@ export default function App() {
 
     if (welcomeNeeded) {
       const tapAwarded = vm.tapReward?.awarded ?? 0;
+      pendingTapTargetRef.current = vm.points;
       if (tapAwarded > 0) {
         pendingTapRewardRef.current = tapAwarded;
         setPoints(Math.max(0, vm.points - tapAwarded));
@@ -1186,6 +1255,10 @@ export default function App() {
     setWelcomeStep(3);
     finishRenewFlowToHome(vm);
   }, [finishRenewFlowToHome, syncFromPlan, touchId]);
+
+  useEffect(() => {
+    applyRenewPlanAfterGiftRef.current = applyRenewPlanAfterGift;
+  }, [applyRenewPlanAfterGift]);
 
   const finishReturnIntro = useCallback(() => {
     returnIntroShownRef.current = true;
@@ -1214,7 +1287,7 @@ export default function App() {
     welcomeVideoFading,
   ]);
 
-  function triggerLoginBonusAnimation(pts) {
+  function triggerLoginBonusAnimation(pts, targetBalance) {
     const viewport = viewportRef.current;
     if (!viewport) return;
 
@@ -1241,7 +1314,7 @@ export default function App() {
       flyCoins(
         Math.min(10, Math.max(6, Math.round(pts * 1.5))),
         () => {
-          creditPoints(pts);
+          creditPoints(pts, 600, targetBalance);
         },
         startPos
       );
@@ -1315,6 +1388,15 @@ export default function App() {
   }, [tapGame.active, tapGame.timeLeft, tapGame.taps]);
 
 
+  function resolveUnlockedCoupon(discountList, stepIndex) {
+    return discountList[stepIndex + 1] ?? discountList[stepIndex] ?? discountList[0] ?? null;
+  }
+
+  function closeReceipt() {
+    setShowReceipt(false);
+    setReceiptCoupon(null);
+  }
+
   function showNotification(title, message, icon = '✨', onConfirm = null) {
     setNotification({ title, message, icon, onConfirm });
   }
@@ -1325,47 +1407,92 @@ export default function App() {
     if (onConfirm) onConfirm();
   }
 
-  const SHOPIFY_AUTH_URL = 'https://example.myshopify.com/admin/oauth/authorize?client_id=FAKE_CLIENT_ID&scope=read_customers,read_orders&redirect_uri=https://app.example.com/auth/shopify/callback&state=FAKE_STATE';
-
   function needsShopifyAuth() {
     return shopifyAuthStatus !== 'connected';
   }
 
-  function showShopifyAuth(source) {
+  function scrollToEarnSection() {
+    const section = document.querySelector('.earn-progress-section');
+    if (section) {
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    const scroller = document.querySelector('.content-area');
+    if (scroller) {
+      scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' });
+    }
+  }
+
+  function openClaimConfirm(onConfirm, discount) {
+    setForceWalletView(false);
+    setClaimConfirm({ onConfirm, discount });
+  }
+
+  function scheduleShopifyResume(resume) {
+    if (typeof resume !== 'function') return;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        try {
+          resume();
+        } catch (err) {
+          dbgError('[FCDBG][App] shopify skip resume failed', err);
+        }
+      });
+    });
+  }
+
+  function showShopifyAuth(source, resume = null) {
+    shopifyPendingRef.current = { source, resume: typeof resume === 'function' ? resume : null };
     setShopifyAuthOverlay({ source });
   }
 
   function handleShopifyContinue() {
-    const source = shopifyAuthOverlay?.source || 'unknown';
-    window.location.href = SHOPIFY_AUTH_URL;
+    shopifyPendingRef.current = null;
+    clearCachedShopifyStatus(touchId);
+    window.location.href = buildShopifyAuthUrl(touchId);
   }
 
   function handleShopifySkip() {
+    const pending = shopifyPendingRef.current;
+    const source = shopifyAuthOverlay?.source ?? pending?.source;
     setShopifyAuthSkipCount((c) => c + 1);
     setShopifyAuthLastSkippedAt(new Date().toISOString());
-    const source = shopifyAuthOverlay?.source;
     setShopifyAuthOverlay(null);
+    shopifyPendingRef.current = null;
+
     if (source === 'get_more_off') {
       setGetMoreOffAuthPromptSeen(true);
     }
+
+    // 底部任务卡：Skip 后留在首页即可（PRD §9.4）
+    if (source === 'task_card') {
+      return;
+    }
+
+    scheduleShopifyResume(pending?.resume);
   }
 
   function handleShopifyAuthSuccess() {
-    setShopifyAuthStatus('connected');
+    const pending = shopifyPendingRef.current;
+    shopifyPendingRef.current = null;
     setShopifyLoginTaskStatus('completed');
     setShopifyAuthSuccess(true);
     setShopifyAuthOverlay(null);
     window.setTimeout(() => setShopifyAuthSuccess(false), 3500);
+    void syncShopifyBindingStatus(true).then((status) => {
+      if (status?.connected) {
+        scheduleShopifyResume(pending?.resume);
+      }
+    });
   }
 
-  // 任意「Claim now」按钮先检查 Shopify 授权状态，再弹确认弹窗。
+  // 任意「Claim now」：未登录时每次 soft gate，Skip 后接上领取确认弹窗（PRD §13.3）
   function requestClaim(onConfirm, discount) {
     if (needsShopifyAuth()) {
-      showShopifyAuth('claim');
+      showShopifyAuth('claim', () => openClaimConfirm(onConfirm, discount));
       return;
     }
-    setForceWalletView(false);
-    setClaimConfirm({ onConfirm, discount });
+    openClaimConfirm(onConfirm, discount);
   }
 
   function cancelClaim() {
@@ -1385,14 +1512,9 @@ export default function App() {
     }
 
     if (showReceipt) {
-      handleAccumulateMore();
+      handleAccumulateMore(true);
     } else {
-      // 滚回内容顶部，保持顶部倒计时可见。
-      // （原先滚到 .wallet 会把它上方的 .urgency-banner 倒计时顶出视口，看起来像“消失”）
-      const scroller = document.querySelector('.content-area');
-      if (scroller) {
-        scroller.scrollTo({ top: 0, behavior: 'smooth' });
-      }
+      scrollToEarnSection();
     }
   }
 
@@ -1615,8 +1737,8 @@ export default function App() {
 
   // 🅓 Roll the points counter up to the new total (instead of a hard jump),
   // highlighting the counter while it credits; celebrate once at the end.
-  function creditPoints(pts, duration = 600) {
-    if (!pts) return;
+  function creditPoints(pts, duration = 600, absoluteTarget) {
+    if (!pts && absoluteTarget == null) return;
     setForceWalletView(false);
     if (pointsTweenRef.current) {
       cancelAnimationFrame(pointsTweenRef.current);
@@ -1624,7 +1746,7 @@ export default function App() {
     }
 
     const from = points;
-    const to = from + pts;
+    const to = absoluteTarget ?? from + pts;
 
     if (prefersReducedMotion()) {
       setPoints(to);
@@ -1654,7 +1776,8 @@ export default function App() {
     setTargetPulse('ready unlocking');
     startConfetti();
 
-    // Show receipt immediately — confetti falls on top of the printer overlay
+    const unlocked = resolveUnlockedCoupon(discounts, currentStepIndex);
+    setReceiptCoupon(unlocked);
     setReceiptColors(readCouponTokens(targetCouponRef.current));
     setPendingPoints(updatedPoints);
     setShowReceipt(true);
@@ -1662,13 +1785,15 @@ export default function App() {
   }
 
   const handleTargetClick = () => {
+    const unlocked = resolveUnlockedCoupon(discounts, currentStepIndex);
+    setReceiptCoupon(unlocked);
     setReceiptColors(readCouponTokens(targetCouponRef.current));
     setPendingPoints(points);
     setShowReceipt(true);
   };
 
   async function handleUseReceiptCoupon() {
-    const nextCoupon = discounts[currentStepIndex + 1];
+    const nextCoupon = receiptCoupon ?? resolveUnlockedCoupon(discounts, currentStepIndex);
     if (!nextCoupon) {
       showNotification('Coupon unavailable', 'No coupon tier available to claim.', '⚠️');
       throw new Error('No coupon tier available');
@@ -1683,10 +1808,11 @@ export default function App() {
     } finally {
       setRedeemingCoupon(false);
     }
-    const targetPointsVal = nextCoupon?.target ?? 90;
-    setCurrentStepIndex((index) => Math.min(index + 1, discounts.length - 1));
-    setPoints(Math.max(pendingPoints - targetPointsVal, 0));
     setShowReceipt(false);
+    setReceiptCoupon(null);
+    reloadPlan().catch((err) => {
+      dbgError('[FCDBG][App] reload after receipt claim failed', err);
+    });
     
     // Stop confetti when opening zoom card from receipt
     if (confettiRef.current.frame) {
@@ -1702,19 +1828,21 @@ export default function App() {
     openCenteredZoomFlip(result.coupon);
   }
 
-  function handleAccumulateMore() {
-    if (needsShopifyAuth() && !getMoreOffAuthPromptSeen) {
-      showShopifyAuth('get_more_off');
+  function handleAccumulateMore(force = false) {
+    const run = () => {
+      closeReceipt();
+      reloadPlan().catch((err) => {
+        dbgError('[FCDBG][App] reload after accumulate failed', err);
+      });
+      setCurrentSwap(true);
+      window.setTimeout(() => setCurrentSwap(false), 800);
+    };
+
+    if (!force && needsShopifyAuth() && !getMoreOffAuthPromptSeen) {
+      showShopifyAuth('get_more_off', run);
       return;
     }
-    const targetPointsVal = discounts[currentStepIndex + 1]?.target ?? 90;
-    setCurrentStepIndex((index) => Math.min(index + 1, discounts.length - 1));
-    setPoints(Math.max(pendingPoints - targetPointsVal, 0));
-    setShowReceipt(false);
-    
-    // Trigger swap animation on both coupons to signify cards have changed
-    setCurrentSwap(true);
-    setTimeout(() => setCurrentSwap(false), 800);
+    run();
   }
 
   async function handleCopyCode() {
@@ -1776,8 +1904,10 @@ export default function App() {
     };
 
     if (settlement.couponWon) {
+      const unlocked = resolveUnlockedCoupon(discounts, currentStepIndex);
+      setReceiptCoupon(unlocked);
       setReceiptColors(readCouponTokens(targetCouponRef.current));
-      setPendingPoints(points + pts);
+      setPendingPoints(settlement.pointsBalance ?? points + pts);
       setShowReceipt(true);
       startConfetti();
       refreshPlan();
@@ -1785,6 +1915,7 @@ export default function App() {
     }
 
     if (pts > 0) {
+      const balanceAfter = settlement.pointsBalance ?? points + pts;
       const timing = getPointsEffectTiming(pts);
       const startPos = {
         x: (viewportRef.current?.clientWidth ?? 360) / 2,
@@ -1794,7 +1925,7 @@ export default function App() {
       flyCoins(
         timing.count,
         () => {
-          creditPoints(pts, timing.creditDuration);
+          creditPoints(pts, timing.creditDuration, balanceAfter);
           refreshPlan();
         },
         startPos,
@@ -2083,24 +2214,25 @@ export default function App() {
       return;
     }
 
-    // 第一原则:动效不等接口。问卷全部答完后立即关闭弹窗,并像游戏一样
-    // 弹出「获得金币」动效;completeSurvey 仅在后台静默同步,失败只记录日志,
-    // 不打断动效、不弹错误提示。
+    // 动效不等接口：答完立即关弹窗，播放与 Tap +5 相同的金币动效。
     setActiveModal(null);
     setSurveyStep(0);
     setSurveyAnswers([]);
 
     const surveyReward = 10;
-    showNotification(
-      'Survey Completed!',
-      `Thanks for sharing — you earned +${surveyReward} pts.`,
-      '📝',
-      () => addPoints(surveyReward)
-    );
+    const balanceBefore = pointsRef.current;
+    triggerLoginBonusAnimation(surveyReward, balanceBefore + surveyReward);
 
-    completeSurvey(touchId, rewardPlanId, nextAnswers).catch((err) => {
-      dbgError('[FCDBG][App] background completeSurvey failed', err);
-    });
+    completeSurvey(touchId, rewardPlanId, nextAnswers)
+      .then((settlement) => {
+        if (settlement?.pointsAwarded === 0 && settlement?.pointsBalance != null) {
+          setPoints(settlement.pointsBalance);
+        }
+        return reloadPlan();
+      })
+      .catch((err) => {
+        dbgError('[FCDBG][App] background completeSurvey failed', err);
+      });
   }
 
   playPendingTapRewardRef.current = playPendingTapReward;
@@ -2302,7 +2434,7 @@ export default function App() {
         </div>
       )}
 
-      {import.meta.env.DEV && (
+      {isDevPreviewEnabled() && (
         <DevToolbar
           activeScene={devScene}
           onSelectScene={(sceneId) => {
@@ -2322,11 +2454,11 @@ export default function App() {
 
       {showReceipt && (
         <ReceiptPrinter
-          unlockedCoupon={discounts[currentStepIndex + 1]}
+          unlockedCoupon={receiptCoupon ?? resolveUnlockedCoupon(discounts, currentStepIndex)}
           colors={receiptColors}
           brand={brand}
           expiryDate={expiryDate}
-          onUse={() => requestClaim(handleUseReceiptCoupon, discounts[currentStepIndex + 1]?.num)}
+          onUse={() => requestClaim(handleUseReceiptCoupon, (receiptCoupon ?? resolveUnlockedCoupon(discounts, currentStepIndex))?.num)}
           onAccumulate={handleAccumulateMore}
         />
       )}
@@ -3457,13 +3589,17 @@ function TearCanvas({ active, isBestOffer, onComplete }) {
 }
 
 const ReceiptPrinter = memo(function ReceiptPrinter({ unlockedCoupon, colors, brand, expiryDate, onUse, onAccumulate }) {
+  const discountNum =
+    unlockedCoupon?.num ??
+    ((unlockedCoupon?.value ? String(unlockedCoupon.value).replace(/\D/g, '') : '') || '—');
+
   return (
     <div className="printer-overlay" data-coupon-theme={COUPON_THEME} style={couponColorVars(colors)}>
       <div className="printer-machine">
         <div className="printer-slot" />
         <div className="receipt-paper-wrap">
           {/* 小票 1:1 复用首页 coupon 结构：CLAIM 按钮直接长在券底部 */}
-          <div className="coupon coupon-current receipt-coupon" data-tier={tierForDiscount(unlockedCoupon?.num)}>
+          <div className="coupon coupon-current receipt-coupon" data-tier={tierForDiscount(discountNum)}>
             <div className="coupon-face">
               <div className="receipt-brand">
                 {brand?.logoUrl ? (
@@ -3472,7 +3608,7 @@ const ReceiptPrinter = memo(function ReceiptPrinter({ unlockedCoupon, colors, br
                 <span className="receipt-brand-name">{brand?.name || 'Ritual'}</span>
               </div>
               <span className="coupon-kicker">Unlocked Offer</span>
-              <span className="stub-value">{unlockedCoupon?.num}<small>%</small></span>
+              <span className="stub-value">{discountNum}<small>%</small></span>
               <span className="stub-off">OFF</span>
               <span className="coupon-title">Sitewide · No minimum</span>
               <span className="coupon-expire">Expires on <b>{expiryDate}</b></span>
