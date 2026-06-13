@@ -233,7 +233,6 @@ function formatCountdown(totalSeconds) {
     secs,
     digits: [pad(days), pad(hours), pad(mins), pad(secs)],
     short: days > 0 ? `${days}d ${pad(hours)}h` : `${hours}h ${pad(mins)}m`,
-    drawer: `${days}d ${pad(hours)}h ${pad(mins)}m`
   };
 }
 
@@ -347,10 +346,7 @@ export default function App() {
   const [countdownSeconds, setCountdownSeconds] = useState(INITIAL_SECONDS);
   const [tick, setTick] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [isTearingCoupon, setIsTearingCoupon] = useState(false);
   const [copyState, setCopyState] = useState('Copy');
-  const [shopLoading, setShopLoading] = useState(false);
   const [activeModal, setActiveModal] = useState(null);
   const [notification, setNotification] = useState(null);
   const [dailyCapReached, setDailyCapReached] = useState(false);
@@ -1670,6 +1666,8 @@ export default function App() {
   function handleShopifySkip() {
     const pending = shopifyPendingRef.current;
     const source = shopifyAuthOverlay?.source ?? pending?.source;
+    const resume = pending?.resume ?? null;
+
     setShopifyAuthSkipCount((c) => c + 1);
     setShopifyAuthLastSkippedAt(new Date().toISOString());
     setShopifyAuthOverlay(null);
@@ -1679,7 +1677,10 @@ export default function App() {
       setGetMoreOffAuthPromptSeen(true);
     }
 
-    // Skip should return to the page/state that opened Shopify auth, without continuing the gated action.
+    // 首页 Shopify 任务卡：Skip 后留在首页；其余场景继续被拦截的原操作。
+    if (source === 'task_card') return;
+
+    scheduleShopifyResume(resume);
   }
 
   function handleShopifyAuthSuccess() {
@@ -1707,7 +1708,6 @@ export default function App() {
 
   function cancelClaim() {
     setClaimConfirm(null);
-    setDrawerOpen(false); // 兜底关闭可能残留的券码抽屉，避免取消后底部冒出抽屉
 
     // 首次登录时如果用户取消领取，标记首登欢迎流程完成，进入真正的钱包首页
     if (welcomeStep < 3) {
@@ -2070,7 +2070,7 @@ export default function App() {
   }
 
   async function handleUseCoupon() {
-    if (isExpired || isTearingCoupon || redeemingCoupon) return;
+    if (isExpired || redeemingCoupon) return;
 
     setRedeemingCoupon(true);
     let result;
@@ -2084,16 +2084,6 @@ export default function App() {
     }
 
     openCenteredZoomFlip(result.coupon);
-  }
-
-  function handleShopNow() {
-    setShopLoading(true);
-    const shopUrl = brand.shopUrl || '#';
-    showNotification('Ready to use', 'Your coupon is ready. Opening the shop with your code!', '🛍️', () => {
-      setShopLoading(false);
-      setDrawerOpen(false);
-      if (shopUrl && shopUrl !== '#') window.open(shopUrl, '_blank', 'noopener,noreferrer');
-    });
   }
 
   function handleShopNowDirect() {
@@ -2198,49 +2188,6 @@ export default function App() {
     return true;
   }
 
-  function handleTearComplete() {
-    // Get bounding rect of the coupon face (the card body above the torn button)
-    const faceEl = couponFaceRef.current;
-    const viewport = viewportRef.current;
-    if (faceEl && viewport) {
-      const faceRect = faceEl.getBoundingClientRect();
-      setZoomRect({
-        left: faceRect.left,
-        top: faceRect.top,
-        width: faceRect.width,
-        height: faceRect.height
-      });
-      setZoomCoupon(current);
-      setZoomColors(readCouponTokens(faceEl.closest('.coupon')));
-      setZoomCopyState('Copy');
-      setZoomPhase('init');
-      setZoomActive(true);
-
-      // Animate: init -> zoomed -> flipped
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const vpRect = viewport.getBoundingClientRect();
-          const cardW = Math.min(vpRect.width * 0.82, 320);
-          const cardH = cardW * 1.58;
-          setZoomRect({
-            left: vpRect.left + (vpRect.width - cardW) / 2,
-            top: vpRect.top + (vpRect.height - cardH) / 2,
-            width: cardW,
-            height: cardH
-          });
-          setZoomPhase('zoomed');
-
-          setTimeout(() => {
-            setZoomPhase('flipped');
-          }, 580);
-        });
-      });
-    } else {
-      // Fallback: just open drawer
-      setDrawerOpen(true);
-    }
-  }
-
   function handleZoomClose() {
     const afterClose = zoomAfterCloseRef.current;
 
@@ -2274,7 +2221,6 @@ export default function App() {
 
       setTimeout(() => {
         setZoomActive(false);
-        setIsTearingCoupon(false);
         zoomAfterCloseRef.current = null;
         afterClose?.();
       }, 550);
@@ -2289,11 +2235,6 @@ export default function App() {
     }).catch(() => {
       showNotification('Copy Failed', `We couldn't copy it automatically. Please copy manually: ${code}`, '⚠️');
     });
-  }
-
-  function closeCouponDrawer() {
-    setDrawerOpen(false);
-    setTimeout(() => setIsTearingCoupon(false), 260);
   }
 
   async function openChallenge(challenge) {
@@ -2557,12 +2498,10 @@ export default function App() {
               isExpired={isExpired}
               targetPulse={targetPulse}
               currentSwap={currentSwap}
-              isTearingCoupon={isTearingCoupon}
               targetCouponRef={targetCouponRef}
               couponFaceRef={couponFaceRef}
               isClaimed={isCurrentCouponClaimed}
               onUse={isCurrentCouponClaimed ? handleShopNowDirect : () => requestClaim(handleUseCoupon, current.num)}
-              onTearComplete={handleTearComplete}
               countdownSeconds={countdownSeconds}
               confirmOpen={!!claimConfirm}
               onTargetClick={handleTargetClick}
@@ -2574,19 +2513,6 @@ export default function App() {
         )}
       </main>
       </>
-      )}
-
-      {showHome && (
-      <CouponDrawer
-        open={drawerOpen}
-        current={current}
-        time={time}
-        copyState={copyState}
-        shopLoading={shopLoading}
-        onClose={closeCouponDrawer}
-        onCopy={handleCopyCode}
-        onShop={handleShopNow}
-      />
       )}
 
       <PlatformGameModal
@@ -3150,11 +3076,9 @@ function CouponWallet({
   isExpired,
   targetPulse,
   currentSwap,
-  isTearingCoupon,
   targetCouponRef,
   couponFaceRef,
   onUse,
-  onTearComplete,
   countdownSeconds,
   confirmOpen,
   onTargetClick,
@@ -3187,7 +3111,7 @@ function CouponWallet({
       )}
 
       <div className="coupon-pair" data-coupon-theme={COUPON_THEME}>
-        <div className={`coupon-wrap current ${currentSwap ? 'swap' : ''} ${isTearingCoupon ? 'tearing' : ''}`}>
+        <div className={`coupon-wrap current ${currentSwap ? 'swap' : ''}`}>
           <div className={`coupon coupon-current ${isExpired ? 'expired' : ''} ${confirmOpen ? 'confirm-open-zoom' : ''}`} data-tier={tierForDiscount(current.num)}>
             <div className="coupon-face" ref={couponFaceRef}>
               {isClaimed && (
@@ -3206,7 +3130,7 @@ function CouponWallet({
                 </>
               )}
             </div>
-            <button className="btn-use" id="use-now-btn" aria-label="Use current coupon" disabled={isExpired || isTearingCoupon} onClick={onUse}>
+            <button className="btn-use" id="use-now-btn" aria-label="Use current coupon" disabled={isExpired} onClick={onUse}>
               <span>{isExpired ? 'Expired' : (isClaimed ? 'Redeem' : 'Claim')}</span>
               <svg className="use-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 4.5V19" />
@@ -3214,7 +3138,6 @@ function CouponWallet({
               </svg>
             </button>
           </div>
-          <TearCanvas active={isTearingCoupon} isBestOffer={isBestOffer} onComplete={onTearComplete} />
         </div>
 
         {next && (
@@ -3316,33 +3239,6 @@ function RulesFooterBase({ rulesOpen, onToggle }) {
   );
 }
 
-
-function CouponDrawer({ open, current, time, copyState, shopLoading, onClose, onCopy, onShop }) {
-  return (
-    <>
-      <div className={`drawer-overlay ${open ? 'open' : ''}`} onClick={onClose} />
-      <div className={`bottom-drawer ${open ? 'open' : ''}`}>
-        <div className="drawer-drag-handle" />
-        <div className="drawer-header">
-          <h3 className="drawer-title">Claim Your Coupon</h3>
-          <button className="close-drawer-btn" onClick={onClose}>&times;</button>
-        </div>
-        <div className="drawer-body">
-          <div className="coupon-value">{current.value}</div>
-          <p className="coupon-desc">Coupon claimed. Use this code at checkout on the brand site.</p>
-          <div className="coupon-code-container">
-            <span className="coupon-code">{current.code}</span>
-            <button className={`copy-btn ${copyState === 'Copied!' ? 'copied' : ''}`} onClick={onCopy}>{copyState}</button>
-          </div>
-          <button className="btn btn-primary btn-block" disabled={shopLoading} onClick={onShop}>
-            {shopLoading ? 'Opening store...' : 'Use at Store'}
-          </button>
-          <p className="drawer-footer-timer">Expires in <span className="drawer-timer-text">{time.drawer}</span></p>
-        </div>
-      </div>
-    </>
-  );
-}
 
 function TapGameModal({ open, game, onClose, onStart, onTap }) {
   return (
@@ -3541,297 +3437,6 @@ function Modal({ id, open, title, onClose, textCenter = false, children }) {
   );
 }
 
-function TearCanvas({ active, isBestOffer, onComplete }) {
-  const canvasRef = useRef(null);
-  const onCompleteRef = useRef(onComplete);
-  onCompleteRef.current = onComplete;
-
-  useEffect(() => {
-    if (!active) {
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-      }
-      return;
-    }
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    const W = rect.width;
-    const H = 250;
-    const H_btn = 58;
-
-    canvas.width = W * dpr;
-    canvas.height = H * dpr;
-    ctx.scale(dpr, dpr);
-
-    // Resolve the operated coupon's tier tokens from its sibling DOM node,
-    // so the torn stub mirrors the static coupon's color exactly.
-    const couponEl = canvas.parentElement?.querySelector('.coupon');
-    const cs = couponEl ? getComputedStyle(couponEl) : null;
-    const tokenMain = cs?.getPropertyValue('--coupon-main').trim() || '#ec82bd';
-    const tokenAccent = cs?.getPropertyValue('--coupon-accent').trim() || '#cf609f';
-    const tokenInk = cs?.getPropertyValue('--coupon-ink').trim() || '#ffffff';
-
-    // Zigzag teeth matching the static coupon mask (--tooth:12px, depth 6px).
-    const TOOTH = 12;
-    const DEPTH = 6;
-    function zigzagEdge(ctx, x0, x1, y, dir) {
-      const span = x1 - x0;
-      const n = Math.max(1, Math.round(Math.abs(span) / TOOTH));
-      const step = span / n;
-      for (let i = 1; i <= n; i++) {
-        const xMid = x0 + step * (i - 0.5);
-        const xEnd = x0 + step * i;
-        ctx.lineTo(xMid, y + DEPTH * dir);
-        ctx.lineTo(xEnd, y);
-      }
-    }
-
-    let animationFrameId;
-    let startTime = null;
-    const tearDuration = 650;
-    const maxTearAngle = 0.38;
-
-    const numPoints = 15;
-    const jaggedOffsets = Array.from({ length: numPoints }, (v, i) => {
-      if (i === 0 || i === numPoints - 1) return 0;
-      return (Math.random() - 0.5) * 3.5;
-    });
-
-    let particles = [];
-    function spawnParticle(x, y) {
-      const r = Math.random();
-      let color;
-      if (r > 0.6) color = '#ffffff';
-      else if (isBestOffer) color = r > 0.3 ? '#cda756' : '#977229';
-      else color = r > 0.3 ? tokenMain : tokenAccent;
-      particles.push({
-        x,
-        y,
-        color,
-        vx: (Math.random() - 0.7) * 2.5,
-        vy: (Math.random() - 0.6) * 3,
-        g: 0.14,
-        size: Math.random() * 2 + 1,
-        alpha: 1.0,
-        decay: Math.random() * 0.02 + 0.025
-      });
-    }
-
-    let fallX = 0;
-    let fallY = 0;
-    let fallVX = 0.6;
-    let fallVY = 1.0;
-    let fallAngle = 0;
-    let fallVAngle = 0.045;
-    let fallAlpha = 1.0;
-    const gravity = 0.35;
-
-    function drawButtonBase(ctx, text) {
-      const grad = ctx.createLinearGradient(0, 0, W, H_btn);
-      if (isBestOffer) {
-        grad.addColorStop(0, '#cda756');
-        grad.addColorStop(1, '#977229');
-      } else {
-        grad.addColorStop(0, tokenMain);
-        grad.addColorStop(1, tokenAccent);
-      }
-
-      // Toothed body: square corners with zigzag notches on top & bottom,
-      // matching the static coupon silhouette.
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      zigzagEdge(ctx, 0, W, 0, 1);
-      ctx.lineTo(W, H_btn);
-      zigzagEdge(ctx, W, 0, H_btn, -1);
-      ctx.closePath();
-      ctx.fillStyle = grad;
-      ctx.fill();
-      if (!isBestOffer) {
-        // Translucent dark overlay to mirror the static .btn-use footer.
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.16)';
-        ctx.fill();
-      }
-
-      const textColor = isBestOffer ? '#ffffff' : tokenInk;
-      ctx.fillStyle = textColor;
-      ctx.font = '900 12px "DM Sans", -apple-system, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const textCenterX = 18 + (W - 66) / 2;
-      ctx.fillText(text, textCenterX, H_btn / 2);
-
-      const ax = W - 33;
-      const ay = H_btn / 2;
-      ctx.strokeStyle = textColor;
-      ctx.lineWidth = 2.4;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-
-      // Clean downward arrow: vertical shaft + chevron head.
-      ctx.beginPath();
-      ctx.moveTo(ax, ay - 8);
-      ctx.lineTo(ax, ay + 8);
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.moveTo(ax - 6, ay + 2);
-      ctx.lineTo(ax, ay + 8);
-      ctx.lineTo(ax + 6, ay + 2);
-      ctx.stroke();
-    }
-
-    function drawJaggedLine(ctx, startX, startY, endX, endY) {
-      const steps = numPoints - 1;
-      for (let i = 1; i <= steps; i++) {
-        const pct = i / steps;
-        const cy = startY + (endY - startY) * pct;
-        const cx = startX + (endX - startX) * pct + jaggedOffsets[i];
-        ctx.lineTo(cx, cy);
-      }
-    }
-
-    let completedTriggered = false;
-
-    const render = (timestamp) => {
-      if (!startTime) startTime = timestamp;
-      const elapsed = timestamp - startTime;
-
-      ctx.clearRect(0, 0, W, H);
-
-      particles.forEach((p, idx) => {
-        p.x += p.vx;
-        p.y += p.vy;
-        p.vy += p.g;
-        p.alpha -= p.decay;
-        if (p.alpha <= 0) {
-          particles.splice(idx, 1);
-        }
-      });
-
-      if (elapsed < tearDuration) {
-        const p = elapsed / tearDuration;
-        const x_tear = p * W;
-
-        // Dynamic clip path: set CSS --tear-x on parent to crop card background
-        if (canvas.parentElement) {
-          canvas.parentElement.style.setProperty('--tear-x', `${x_tear}px`);
-        }
-
-        const vibrate = Math.sin(p * 55) * 0.012 * (1 - p);
-        const theta = -maxTearAngle * Math.pow(p, 1.6) + vibrate;
-
-        if (Math.random() > 0.1) {
-          spawnParticle(x_tear, 0);
-          spawnParticle(x_tear, H_btn / 2);
-          spawnParticle(x_tear, H_btn);
-        }
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(x_tear, 0);
-        drawJaggedLine(ctx, x_tear, 0, x_tear, H_btn);
-        ctx.lineTo(W, H_btn);
-        ctx.lineTo(W, 0);
-        ctx.closePath();
-        ctx.clip();
-        
-        drawButtonBase(ctx, 'CLAIM NOW');
-        ctx.restore();
-
-        ctx.save();
-        ctx.translate(x_tear, 0);
-        ctx.rotate(theta);
-        
-        ctx.beginPath();
-        ctx.moveTo(-x_tear, 0);
-        ctx.lineTo(0, 0);
-        drawJaggedLine(ctx, 0, 0, 0, H_btn);
-        ctx.lineTo(-x_tear, H_btn);
-        ctx.closePath();
-        ctx.clip();
-
-        ctx.translate(-x_tear, 0);
-        drawButtonBase(ctx, 'CLAIM NOW');
-        ctx.restore();
-
-        fallX = x_tear;
-        fallY = 0;
-        fallAngle = theta;
-
-      } else {
-        const fallElapsed = elapsed - tearDuration;
-        
-        // Lock clip path to full width when tear is complete
-        if (canvas.parentElement) {
-          canvas.parentElement.style.setProperty('--tear-x', `${W}px`);
-        }
-
-        if (!completedTriggered && fallElapsed > 250) {
-          completedTriggered = true;
-          onCompleteRef.current();
-        }
-
-        fallY += fallVY;
-        fallVY += gravity;
-        fallX += fallVX;
-        fallAngle += fallVAngle;
-        fallAlpha -= 0.032;
-
-        if (fallAlpha > 0) {
-          ctx.save();
-          ctx.translate(fallX, fallY);
-          ctx.rotate(fallAngle);
-          ctx.globalAlpha = fallAlpha;
-
-          ctx.beginPath();
-          ctx.moveTo(-W, 0);
-          ctx.lineTo(0, 0);
-          drawJaggedLine(ctx, 0, 0, 0, H_btn);
-          ctx.lineTo(-W + 18, H_btn);
-          ctx.quadraticCurveTo(-W, H_btn, -W, H_btn - 18);
-          ctx.closePath();
-          ctx.clip();
-
-          ctx.translate(-W, 0);
-          drawButtonBase(ctx, 'CLAIM NOW');
-          ctx.restore();
-        }
-      }
-
-      particles.forEach((p) => {
-        ctx.save();
-        ctx.globalAlpha = p.alpha;
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      });
-
-      if (elapsed < tearDuration || fallAlpha > 0 || particles.length > 0) {
-        animationFrameId = requestAnimationFrame(render);
-      }
-    };
-
-    animationFrameId = requestAnimationFrame(render);
-
-    return () => {
-      cancelAnimationFrame(animationFrameId);
-      if (canvas && canvas.parentElement) {
-        canvas.parentElement.style.removeProperty('--tear-x');
-      }
-    };
-  }, [active, isBestOffer]);
-
-  return <canvas ref={canvasRef} className="tear-canvas" />;
-}
 
 const ReceiptPrinter = memo(function ReceiptPrinter({ unlockedCoupon, colors, brand, expiryDate, onUse, onAccumulate }) {
   const discountNum =
