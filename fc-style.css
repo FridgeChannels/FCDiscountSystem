@@ -2055,12 +2055,12 @@ body {
 .shopify-auth-brand-icon {
   width: 64px;
   height: 64px;
-  border-radius: 18px;
+  border-radius: 50%;
   box-shadow: 0 12px 28px rgba(45, 51, 43, 0.12);
 }
 
 .shopify-auth-brand-logo {
-  object-fit: contain;
+  object-fit: cover;
 }
 
 .shopify-auth-brand-icon {
@@ -2123,9 +2123,9 @@ body {
 }
 
 .shopify-auth-cta-icon {
-  width: 1.75em;
-  height: 1.75em;
-  margin: -0.4em 0;
+  width: 2.4em;
+  height: 2.4em;
+  margin: -0.7em -0.2em;
   object-fit: contain;
   display: block;
 }
