@@ -63,8 +63,32 @@ function observedCoupon({ couponCode, couponId, tier, discountValue, status, cla
   };
 }
 
+function buildTasks({ includeShopify = false, includeSurvey = false, gameCount = 2 } = {}) {
+  const tasks = [];
+  if (includeShopify) {
+    tasks.push({ type: 'shopify_connect', pointsOffered: 500 });
+  }
+  if (includeSurvey) {
+    tasks.push({
+      type: 'survey',
+      campaignId: 'dev-campaign',
+      questionCount: 2,
+      pointsOffered: 20,
+      pointsPerQuestion: 10,
+      allowSkip: true,
+    });
+  }
+  for (const game of GAMES.slice(0, gameCount)) {
+    tasks.push({ type: 'game', ...game });
+  }
+  return tasks;
+}
+
 function basePlan(overrides = {}) {
   const cycleId = overrides.cycleId ?? 'cycle_dev';
+  const taskOptions = overrides.taskOptions;
+  const tasks = overrides.tasks ?? (taskOptions ? buildTasks(taskOptions) : buildTasks({ gameCount: 2 }));
+  const { taskOptions: _drop, ...rest } = overrides;
   return {
     rewardPlanId: cycleId,
     policyVersion: 'dev-1',
@@ -79,11 +103,12 @@ function basePlan(overrides = {}) {
     pointsBalance: 45,
     ladder: LADDER,
     recommendedGames: GAMES,
+    tasks,
     customerBrand: BRAND,
     cycleStatus: 'active',
     reasonCodes: [],
     generatedAt: new Date().toISOString(),
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -157,7 +182,7 @@ export const DEV_FIXTURES = {
       }),
     }),
 
-  survey: () => basePlan({ pointsBalance: 30, currentTier: 1 }),
+  survey: () => basePlan({ pointsBalance: 30, currentTier: 1, taskOptions: { includeSurvey: true, gameCount: 2 } }),
 
   claim: () => basePlan({ pointsBalance: 125, currentTier: 3, currentCouponId: 'camp_t3' }),
 
@@ -182,5 +207,5 @@ export const DEV_FIXTURES = {
 
   notify: () => basePlan({ pointsBalance: 50, currentTier: 1 }),
 
-  game: () => basePlan({ pointsBalance: 35, currentTier: 1 }),
+  game: () => basePlan({ pointsBalance: 35, currentTier: 1, taskOptions: { includeShopify: true, gameCount: 1 } }),
 };

@@ -1,7 +1,7 @@
 const REWARD_PLAN_CACHE_PREFIX = 'fc.rewardPlan.';
 const TOUCH_ID_COOKIE = 'fc_touch_id';
 const REWARD_PLAN_MAX_STALE_MS = 24 * 60 * 60 * 1000;
-const REWARD_PLAN_CACHE_VERSION = 2;
+const REWARD_PLAN_CACHE_VERSION = 3;
 const CLAIM_RECORD_VERSION = 1;
 
 function canUseBrowserStorage() {
@@ -40,6 +40,7 @@ export function readCachedRewardPlan(touchId) {
     const cached = JSON.parse(raw);
     if (cached?.version !== REWARD_PLAN_CACHE_VERSION) return null;
     if (!cached?.plan || Date.now() - cached.cachedAt > REWARD_PLAN_MAX_STALE_MS) return null;
+    if (!Array.isArray(cached.plan.tasks)) return null;
     return cached.plan;
   } catch {
     return null;

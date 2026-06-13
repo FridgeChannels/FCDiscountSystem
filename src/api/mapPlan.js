@@ -73,6 +73,75 @@ export function deriveHasInitialDiscount(ladder) {
   return first.pointsThreshold === 0 && hasValue;
 }
 
+function mapTaskToChallenge(task, gameIndex) {
+  if (task.type === 'shopify_connect') {
+    return {
+      id: 'shopify_connect',
+      type: 'shopify_connect',
+      badge: 'Shopify',
+      icon: '🛍️',
+      title: 'Connect Shopify Account',
+      desc: 'Log in once and earn a big points boost.',
+      reward: `+${task.pointsOffered} PTS`,
+      cta: 'Connect',
+      pointsOffered: task.pointsOffered,
+    };
+  }
+
+  if (task.type === 'survey') {
+    return {
+      id: `survey-${task.campaignId}`,
+      type: 'survey',
+      badge: 'Survey',
+      icon: '📝',
+      title: 'Preferences',
+      desc: 'Share habits for rewards',
+      reward: `+${task.pointsOffered} PTS`,
+      cta: 'Start',
+      campaignId: task.campaignId,
+      questionCount: task.questionCount,
+      pointsOffered: task.pointsOffered,
+      pointsPerQuestion: task.pointsPerQuestion,
+      allowSkip: task.allowSkip,
+    };
+  }
+
+  const index = gameIndex + 1;
+  return {
+    id: task.gameInstanceId,
+    type: 'game',
+    badge: `Game ${index}`,
+    icon: iconForTemplate(task.templateKey),
+    title: task.displayName || labelForTemplate(task.templateKey),
+    desc: 'Play to earn points toward your next coupon',
+    reward: '+pts',
+    cta: 'Play Now',
+    gameInstanceId: task.gameInstanceId,
+    templateKey: task.templateKey,
+  };
+}
+
+function challengesFromPlan(plan) {
+  const tasks = plan.tasks ?? [];
+  if (tasks.length > 0) {
+    let gameIndex = 0;
+    return tasks.map((task) => {
+      if (task.type === 'game') {
+        const challenge = mapTaskToChallenge(task, gameIndex);
+        gameIndex += 1;
+        return challenge;
+      }
+      return mapTaskToChallenge(task, gameIndex);
+    });
+  }
+
+  // 兼容旧 plan(无 tasks):游戏 + 问卷
+  const gameChallenges = (plan.recommendedGames ?? []).map((game, index) =>
+    mapTaskToChallenge({ type: 'game', ...game }, index),
+  );
+  return gameChallenges;
+}
+
 export function mapPlanToViewModel(plan, claimRecord = null, magnetBrandParam = null) {
   const ladder = [...(plan.ladder ?? [])].sort((a, b) => a.tier - b.tier);
   const observed = plan.observedCoupon ?? plan.currentCoupon;
@@ -99,32 +168,7 @@ export function mapPlanToViewModel(plan, claimRecord = null, magnetBrandParam = 
   const currentStepIndex =
     plan.currentTier === 0 || tierIndex < 0 ? 0 : tierIndex;
 
-  const gameChallenges = (plan.recommendedGames ?? []).map((game, index) => ({
-    id: game.gameInstanceId,
-    type: 'game',
-    badge: `Game ${index + 1}`,
-    icon: iconForTemplate(game.templateKey),
-    title: game.displayName || labelForTemplate(game.templateKey),
-    desc: 'Play to earn points toward your next coupon',
-    reward: '+pts',
-    cta: 'Play Now',
-    gameInstanceId: game.gameInstanceId,
-    templateKey: game.templateKey,
-  }));
-
-  const challenges = [
-    ...gameChallenges,
-    {
-      id: 'survey',
-      type: 'survey',
-      badge: 'Survey',
-      icon: '📝',
-      title: 'Preferences',
-      desc: 'Share habits for rewards',
-      reward: '+10 PTS',
-      cta: 'Start',
-    },
-  ];
+  const challenges = challengesFromPlan(plan);
 
   const countdownSeconds = secondsUntil(plan.cycleExpiresAt);
   const cycleExpired =

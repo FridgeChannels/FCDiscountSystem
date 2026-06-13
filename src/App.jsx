@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
-import { claimCoupon, completeSurvey, fetchMagnetBrandParam, fetchRewardPlan, fetchShopifyStatus, observeCoupon, redeemCoupon, renewCycle, startGameSession } from './api/client.js';
+import { claimCoupon, completeSurvey, fetchMagnetBrandParam, fetchRewardPlan, fetchShopifyStatus, fetchSurveyQuestions, observeCoupon, redeemCoupon, renewCycle, startGameSession, submitSurveyAnswers } from './api/client.js';
 import {
   readCachedRewardPlan,
   readCachedMagnetBrandParam,
@@ -163,24 +163,7 @@ const INITIAL_DISCOUNTS = [
 
 const COUPON_THEME = 'pop'; // Switch to 'dtc' to apply the premium coupon palette globally.
 
-const FALLBACK_CHALLENGES = [
-  { id: 'survey', type: 'survey', badge: 'Survey', icon: '📝', title: 'Preferences', desc: 'Share habits for rewards', reward: '+10 PTS', cta: 'Start' }
-];
-
-const SURVEY_STEPS = [
-  {
-    title: '1. How often do you take health supplements?',
-    options: ['Daily', 'Few times a week', 'Rarely']
-  },
-  {
-    title: '2. What is most important to you when choosing supplements?',
-    options: ['Ingredient quality', 'Price & value', 'Brand reputation']
-  },
-  {
-    title: '3. Would you recommend Ritual to a friend?',
-    options: ['Yes, definitely', 'Maybe', 'No']
-  }
-];
+const FALLBACK_CHALLENGES = [];
 
 function copyText(text) {
   if (navigator.clipboard?.writeText) {
@@ -339,6 +322,9 @@ export default function App() {
   const [gameModalTitle, setGameModalTitle] = useState('Play & Earn');
   const [gameLoadingMessage, setGameLoadingMessage] = useState('Preparing game…');
   const [surveyAnswers, setSurveyAnswers] = useState([]);
+  const [surveyQuestions, setSurveyQuestions] = useState([]);
+  const [activeSurveyTask, setActiveSurveyTask] = useState(null);
+  const [surveyLoading, setSurveyLoading] = useState(false);
   const [welcomeStep, setWelcomeStep] = useState(() => (isReturnVisitor(getTouchId()) ? 3 : 0));
   const [welcomeTargetPoints, setWelcomeTargetPoints] = useState(67);
   const [points, setPoints] = useState(0);
@@ -442,25 +428,6 @@ export default function App() {
       return magnetBrandParamRef.current;
     }
   }, [applyMagnetBrandParam, touchId]);
-
-  const shopifyTask = useMemo(() => {
-    if (!needsShopifyAuth()) return null;
-    return {
-      id: 'shopify_connect',
-      type: 'shopify_connect',
-      badge: shopifyAuthStatus === 'expired' ? 'Reconnect' : 'Shopify',
-      icon: '🛍️',
-      title: shopifyAuthStatus === 'expired' ? 'Reconnect Shopify Account' : 'Connect Shopify Account',
-      desc: shopifyAuthStatus === 'expired' ? 'Your connection expired. Reconnect to keep earning.' : 'Log in once and earn a big points boost.',
-      reward: '+500 PTS',
-      cta: 'Connect',
-    };
-  }, [shopifyAuthStatus]);
-
-  const displayChallenges = useMemo(() => {
-    if (!shopifyTask) return challenges;
-    return [shopifyTask, ...challenges];
-  }, [shopifyTask, challenges]);
 
   const [isWelcomeVideoActive, setIsWelcomeVideoActive] = useState(false);
   const [welcomeVideoFading, setWelcomeVideoFading] = useState(false);
@@ -1602,7 +1569,12 @@ export default function App() {
 
   function openClaimConfirm(onConfirm, discount) {
     setForceWalletView(false);
-    setClaimConfirm({ onConfirm, discount });
+    setClaimConfirm({
+      onConfirm,
+      discount,
+      hasNextTier: nextThreshold != null,
+      nextDiscount: next?.num ?? null,
+    });
   }
 
   function scheduleShopifyResume(resume) {
@@ -1703,6 +1675,7 @@ export default function App() {
   }
 
   function cancelClaim() {
+    const hasNextTier = claimConfirm?.hasNextTier ?? false;
     setClaimConfirm(null);
 
     // 首次登录时如果用户取消领取，标记首登欢迎流程完成，进入真正的钱包首页
@@ -1717,10 +1690,14 @@ export default function App() {
       }
     }
 
-    if (showReceipt) {
-      handleAccumulateMore(true);
-    } else {
-      scrollToEarnSection();
+    if (hasNextTier) {
+      if (showReceipt) {
+        handleAccumulateMore(true);
+      } else {
+        scrollToEarnSection();
+      }
+    } else if (showReceipt) {
+      closeReceipt();
     }
   }
 
@@ -2240,10 +2217,27 @@ export default function App() {
       return;
     }
 
-    if (challenge.type === 'survey' || challenge.id === 'survey') {
-      setActiveModal('survey');
+    if (challenge.type === 'survey' || challenge.id?.startsWith('survey')) {
+      setActiveSurveyTask(challenge);
       setSurveyStep(0);
       setSurveyAnswers([]);
+      setSurveyQuestions([]);
+      setSurveyLoading(true);
+      setActiveModal('survey');
+      fetchSurveyQuestions(touchId)
+        .then((payload) => {
+          const questions = payload?.questions ?? [];
+          setSurveyQuestions(questions);
+          if (!questions.length) {
+            setActiveModal(null);
+            showNotification('Survey unavailable', 'No questions are available right now.', '⚠️');
+          }
+        })
+        .catch((err) => {
+          setActiveModal(null);
+          showNotification('Survey unavailable', err instanceof Error ? err.message : 'Could not load survey', '⚠️');
+        })
+        .finally(() => setSurveyLoading(false));
       return;
     }
 
@@ -2354,23 +2348,61 @@ export default function App() {
     }, 3200);
   }
 
-  async function handleSurveyOption(option) {
-    const nextAnswers = [...surveyAnswers, { questionId: String(surveyStep + 1), value: option }];
+  async function handleSurveyOption(option, meta = {}) {
+    const question = surveyQuestions[surveyStep];
+    if (!question) return;
+
+    const startedAt = meta.startedAt ?? Date.now();
+    const responseTimeMs = Math.max(0, Date.now() - startedAt);
+    const isSkip = meta.action === 'skipped';
+    const answerRecord = {
+      questionId: question.id,
+      value: isSkip ? '' : (option?.value ?? option?.label ?? String(option)),
+      action: isSkip ? 'skipped' : 'answered',
+      optionId: isSkip ? undefined : option?.id,
+      otherText: meta.otherText,
+    };
+    const nextAnswers = [...surveyAnswers, answerRecord];
     setSurveyAnswers(nextAnswers);
 
-    if (surveyStep < SURVEY_STEPS.length - 1) {
+    const externalAnswer = {
+      survey_campaign_id: activeSurveyTask?.campaignId,
+      survey_question_id: question.id,
+      action: isSkip ? 'skipped' : 'answered',
+      ...(isSkip ? {} : { survey_option_id: option?.id }),
+      ...(meta.otherText ? { other_text: meta.otherText } : {}),
+      response_time_ms: responseTimeMs,
+    };
+
+    if (surveyStep < surveyQuestions.length - 1) {
+      try {
+        await submitSurveyAnswers(touchId, { answer: externalAnswer });
+      } catch (err) {
+        dbgError('[FCDBG][App] survey answer submit failed', err);
+      }
       setSurveyStep((step) => step + 1);
       return;
     }
 
-    // 动效不等接口：答完立即关弹窗，播放与 Tap +5 相同的金币动效。
     setActiveModal(null);
     setSurveyStep(0);
     setSurveyAnswers([]);
+    setSurveyQuestions([]);
+    setActiveSurveyTask(null);
 
-    const surveyReward = 10;
+    const surveyReward = activeSurveyTask?.pointsOffered ?? 0;
     const balanceBefore = pointsRef.current;
-    triggerLoginBonusAnimation(surveyReward, balanceBefore + surveyReward);
+    const answeredCount = nextAnswers.filter((a) => a.action !== 'skipped').length;
+    const estimatedReward = activeSurveyTask?.pointsPerQuestion
+      ? answeredCount * activeSurveyTask.pointsPerQuestion
+      : surveyReward;
+    triggerLoginBonusAnimation(estimatedReward, balanceBefore + estimatedReward);
+
+    try {
+      await submitSurveyAnswers(touchId, { answer: externalAnswer });
+    } catch (err) {
+      dbgError('[FCDBG][App] final survey answer submit failed', err);
+    }
 
     completeSurvey(touchId, rewardPlanId, nextAnswers)
       .then((settlement) => {
@@ -2508,7 +2540,7 @@ export default function App() {
               onTargetClick={handleTargetClick}
             />
 
-            <Challenges challenges={displayChallenges} dailyCapReached={dailyCapReached} onOpen={openChallenge} />
+            <Challenges challenges={challenges} dailyCapReached={dailyCapReached} onOpen={openChallenge} />
             <RulesFooter rulesOpen={rulesOpen} onToggle={() => setRulesOpen((value) => !value)} />
           </>
         )}
@@ -2535,7 +2567,14 @@ export default function App() {
       <SurveyModal
         open={activeModal === 'survey'}
         step={surveyStep}
-        onClose={() => setActiveModal(null)}
+        questions={surveyQuestions}
+        loading={surveyLoading}
+        allowSkip={activeSurveyTask?.allowSkip ?? true}
+        onClose={() => {
+          setActiveModal(null);
+          setSurveyQuestions([]);
+          setActiveSurveyTask(null);
+        }}
         onOption={handleSurveyOption}
       />
 
@@ -2608,6 +2647,7 @@ export default function App() {
           colors={receiptColors}
           brand={brand}
           expiryDate={expiryDate}
+          hasNextTier={!isBestOffer}
           onUse={() => requestClaim(handleUseReceiptCoupon, (receiptCoupon ?? resolveUnlockedCoupon(discounts, currentStepIndex))?.num)}
           onAccumulate={handleAccumulateMore}
         />
@@ -2632,6 +2672,7 @@ export default function App() {
           coupon={current}
           brand={brand}
           couponFaceRef={couponFaceRef}
+          hasNextTier={!isBestOffer}
           onAdvanceToSettle={handleWelcomeEarnMore}
           onUse={() => requestClaim(handleUseWelcomeCoupon, current.num)}
           onComplete={() => {
@@ -2681,7 +2722,7 @@ function BrandMark({ className = 'brand-logo' }) {
   );
 }
 
-function WelcomeRitual({ step, coupon, brand, couponFaceRef, onAdvanceToSettle, onUse, onComplete }) {
+function WelcomeRitual({ step, coupon, brand, couponFaceRef, hasNextTier, onAdvanceToSettle, onUse, onComplete }) {
   const [rect, setRect] = useState(() => {
     if (typeof window !== 'undefined') {
       const wWidth = window.innerWidth;
@@ -2810,15 +2851,17 @@ function WelcomeRitual({ step, coupon, brand, couponFaceRef, onAdvanceToSettle, 
               >
                 Claim Now
               </button>
-              <button 
-                className="btn-printer-secondary" 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAdvanceToSettle();
-                }}
-              >
-                Get More OFF
-              </button>
+              {hasNextTier && (
+                <button 
+                  className="btn-printer-secondary" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAdvanceToSettle();
+                  }}
+                >
+                  Get More OFF
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -3305,26 +3348,56 @@ function SpinModal({ open, active, rotation, onClose, onStart }) {
   );
 }
 
-function SurveyModal({ open, step, onClose, onOption }) {
-  const currentStep = SURVEY_STEPS[step];
+function SurveyModal({ open, step, questions, loading, allowSkip, onClose, onOption }) {
+  const currentQuestion = questions?.[step];
+  const total = questions?.length ?? 0;
+  const startedAtRef = useRef(Date.now());
+
+  useEffect(() => {
+    if (open) startedAtRef.current = Date.now();
+  }, [open, step]);
+
   return (
     <Modal id="survey-modal" open={open} title="Quick Preferences Survey" onClose={onClose}>
-      <div className="survey-progress-header">
-        <span className="survey-step-indicator">{step + 1}/{SURVEY_STEPS.length}</span>
-        <div className="survey-progress-bar">
-          <div className="survey-progress-fill" style={{ width: `${((step + 1) / SURVEY_STEPS.length) * 100}%` }} />
-        </div>
-      </div>
-      <div className="survey-questions">
-        <div className="survey-question-step active">
-          <h4>{currentStep.title}</h4>
-          <div className="survey-options">
-            {currentStep.options.map((option) => (
-              <button className="survey-option-btn" key={option} onClick={() => onOption(option)}>{option}</button>
-            ))}
+      {loading ? (
+        <p className="survey-loading">Loading questions…</p>
+      ) : currentQuestion ? (
+        <>
+          <div className="survey-progress-header">
+            <span className="survey-step-indicator">{step + 1}/{total}</span>
+            <div className="survey-progress-bar">
+              <div className="survey-progress-fill" style={{ width: `${((step + 1) / Math.max(total, 1)) * 100}%` }} />
+            </div>
           </div>
-        </div>
-      </div>
+          <div className="survey-questions">
+            <div className="survey-question-step active">
+              <h4>{currentQuestion.text}</h4>
+              <div className="survey-options">
+                {currentQuestion.options?.map((option) => (
+                  <button
+                    className="survey-option-btn"
+                    key={option.id}
+                    onClick={() => onOption(option, { startedAt: startedAtRef.current })}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              {(currentQuestion.allow_skip ?? allowSkip) && (
+                <button
+                  className="survey-skip-btn"
+                  type="button"
+                  onClick={() => onOption(null, { action: 'skipped', startedAt: startedAtRef.current })}
+                >
+                  Skip
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      ) : (
+        <p className="survey-loading">No questions available.</p>
+      )}
     </Modal>
   );
 }
@@ -3361,8 +3434,8 @@ function ClaimConfirmModal({ claim, onConfirm, onCancel }) {
     }
   };
 
-  const nextDiscount = discount === 10 ? 15 : 20;
-  const isMaxTier = discount >= 20;
+  const hasNextTier = claim?.hasNextTier ?? false;
+  const nextDiscount = claim?.nextDiscount;
 
   return (
     <div className="modal-overlay open" id="claim-confirm-modal">
@@ -3383,7 +3456,7 @@ function ClaimConfirmModal({ claim, onConfirm, onCancel }) {
 
         {/* Decision Description Text */}
         <div className="claim-confirm-body">
-          {!isMaxTier && (
+          {hasNextTier && nextDiscount && (
             <p>Or keep earning points<br />for a chance at <strong>{nextDiscount}% OFF</strong>.</p>
           )}
           <p className="claim-confirm-round-complete">Once claimed,<br />this round is complete.</p>
@@ -3414,7 +3487,7 @@ function ClaimConfirmModal({ claim, onConfirm, onCancel }) {
             }}
             disabled={isClaiming}
           >
-            {isMaxTier ? 'Go Back' : 'Go for More OFF'}
+            {hasNextTier ? 'Go for More OFF' : 'Go Back'}
           </button>
         </div>
       </div>
@@ -3439,7 +3512,7 @@ function Modal({ id, open, title, onClose, textCenter = false, children }) {
 }
 
 
-const ReceiptPrinter = memo(function ReceiptPrinter({ unlockedCoupon, colors, brand, expiryDate, onUse, onAccumulate }) {
+const ReceiptPrinter = memo(function ReceiptPrinter({ unlockedCoupon, colors, brand, expiryDate, hasNextTier, onUse, onAccumulate }) {
   const discountNum =
     unlockedCoupon?.num ??
     ((unlockedCoupon?.value ? String(unlockedCoupon.value).replace(/\D/g, '') : '') || '—');
@@ -3471,11 +3544,13 @@ const ReceiptPrinter = memo(function ReceiptPrinter({ unlockedCoupon, colors, br
         </div>
       </div>
 
-      <div className="printer-buttons">
-        <button className="btn-printer-secondary" id="btn-receipt-accumulate" onClick={onAccumulate}>
-          Get More OFF
-        </button>
-      </div>
+      {hasNextTier && (
+        <div className="printer-buttons">
+          <button className="btn-printer-secondary" id="btn-receipt-accumulate" onClick={onAccumulate}>
+            Get More OFF
+          </button>
+        </div>
+      )}
     </div>
   );
 });

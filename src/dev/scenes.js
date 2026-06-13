@@ -17,7 +17,7 @@ import { DEV_FIXTURES } from './fixtures.js';
  * @property {number} [surveyStep]
  * @property {{ reason: 'redeemed' | 'expired' }} [newChallenge]
  * @property {{ title: string, message: string, icon: string }} [notification]
- * @property {{ onConfirm: () => void, discount: string | number }} [claimConfirm]
+ * @property {{ onConfirm: () => void, discount: string | number, hasNextTier?: boolean, nextDiscount?: string | number | null }} [claimConfirm]
  * @property {{ connected: boolean, shopifyCustomerId?: string, shopDomain?: string, shop?: string, email?: string }} [shopifyStatus]
  */
 
@@ -142,7 +142,7 @@ export const DEV_SCENES = [
       introActive: false,
       setWelcomeCompleted: true,
       clearClaimed: true,
-      claimConfirm: { onConfirm: () => {}, discount: '30' },
+      claimConfirm: { onConfirm: () => {}, discount: '30', hasNextTier: false, nextDiscount: null },
     },
   },
   {

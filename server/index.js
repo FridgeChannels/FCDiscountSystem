@@ -308,9 +308,30 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === 'GET' && url.pathname === '/api/fc/survey/questions') {
+      const touchId = url.searchParams.get('touchId');
+      if (!touchId) {
+        sendJson(res, 400, { error: 'touchId required' });
+        return;
+      }
+      const data = await callEngineGet(
+        `/survey/questions?touchId=${encodeURIComponent(touchId)}`,
+      );
+      sendJson(res, 200, data);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/fc/survey/answers') {
+      const body = await readJson(req);
+      const data = await callEngine('/survey/answers', body);
+      sendJson(res, 201, data);
+      return;
+    }
+
     if (req.method === 'POST' && url.pathname === '/api/fc/survey/complete') {
       const body = await readJson(req);
       const data = await callEngine('/survey/complete', body);
+      if (body.touchId) planCache.delete(body.touchId);
       sendJson(res, 200, data);
       return;
     }

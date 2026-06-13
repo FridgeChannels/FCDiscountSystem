@@ -132,6 +132,17 @@ export function completeSurvey(touchId, rewardPlanId, answers) {
   });
 }
 
+export function fetchSurveyQuestions(touchId) {
+  return request(`/api/fc/survey/questions?touchId=${encodeURIComponent(touchId)}`);
+}
+
+export function submitSurveyAnswers(touchId, payload) {
+  return request('/api/fc/survey/answers', {
+    method: 'POST',
+    body: JSON.stringify({ touchId, ...payload }),
+  });
+}
+
 export function redeemCoupon(payload) {
   return request('/api/fc/coupons/redeem', {
     method: 'POST',
