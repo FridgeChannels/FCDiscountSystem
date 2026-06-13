@@ -93,6 +93,15 @@ export function applyDevSceneUi(ui, ctx) {
   if (setters.setShopifyAuthOverlay) {
     setters.setShopifyAuthOverlay(ui.shopifyAuthOverlay ?? null);
   }
+  if (ui.shopifyStatus) {
+    setters.setShopifyBinding?.(ui.shopifyStatus);
+    setters.setShopifyAuthStatus?.(ui.shopifyStatus.connected ? 'connected' : 'unconnected');
+    setters.writeCachedShopifyStatus?.(touchId, ui.shopifyStatus);
+  } else {
+    setters.setShopifyBinding?.(null);
+    setters.setShopifyAuthStatus?.('unconnected');
+    setters.clearCachedShopifyStatus?.(touchId);
+  }
 
   setShowReceipt(false);
   if (setReceiptCoupon) setReceiptCoupon(null);

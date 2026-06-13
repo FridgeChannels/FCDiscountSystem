@@ -101,6 +101,16 @@ function shopifyAuthStatusFromBinding(status) {
   return status?.connected ? 'connected' : 'unconnected';
 }
 
+function shopifyAccountLabel(binding) {
+  if (!binding?.connected) return 'Not connected';
+  return (
+    binding.shopDomain ||
+    binding.shop ||
+    binding.email ||
+    (binding.shopifyCustomerId ? `Customer ${binding.shopifyCustomerId}` : 'Connected Shopify account')
+  );
+}
+
 /** 非首次回访:有 welcome 标记、已领券缓存、或历史 plan 缓存 */
 function isReturnVisitor(touchId) {
   if (!touchId) return false;
@@ -351,27 +361,40 @@ export default function App() {
     const cached = readCachedShopifyStatus(getTouchId());
     return shopifyAuthStatusFromBinding(cached);
   });
+  const [shopifyBinding, setShopifyBinding] = useState(() => readCachedShopifyStatus(getTouchId()));
   const [shopifyAuthSkipCount, setShopifyAuthSkipCount] = useState(0);
   const [shopifyAuthLastSkippedAt, setShopifyAuthLastSkippedAt] = useState(null);
   const [getMoreOffAuthPromptSeen, setGetMoreOffAuthPromptSeen] = useState(false);
   const [shopifyLoginTaskStatus, setShopifyLoginTaskStatus] = useState('incomplete');
   const [shopifyAuthOverlay, setShopifyAuthOverlay] = useState(null);
+  const [shopifyAccountOpen, setShopifyAccountOpen] = useState(false);
   const [shopifyAuthSuccess, setShopifyAuthSuccess] = useState(false);
 
   const syncShopifyBindingStatus = useCallback(async (forceRefresh = false) => {
+    if (devPreviewActiveRef.current) {
+      const cached = readCachedShopifyStatus(touchId);
+      setShopifyBinding(cached);
+      setShopifyAuthStatus(shopifyAuthStatusFromBinding(cached));
+      return cached;
+    }
     if (forceRefresh) clearCachedShopifyStatus(touchId);
     const cached = !forceRefresh ? readCachedShopifyStatus(touchId) : null;
     if (cached) {
+      setShopifyBinding(cached);
       setShopifyAuthStatus(shopifyAuthStatusFromBinding(cached));
     }
     try {
       const status = await fetchShopifyStatus(touchId);
       writeCachedShopifyStatus(touchId, status);
+      setShopifyBinding(status);
       setShopifyAuthStatus(shopifyAuthStatusFromBinding(status));
       return status;
     } catch (err) {
       dbgError('[FCDBG][App] fetch shopify status failed', err);
-      if (!cached) setShopifyAuthStatus('unconnected');
+      if (!cached) {
+        setShopifyBinding(null);
+        setShopifyAuthStatus('unconnected');
+      }
       return null;
     }
   }, [touchId]);
@@ -712,6 +735,10 @@ export default function App() {
         setZoomCopyState,
         setGameStart,
         setGameModalTitle,
+        setShopifyBinding,
+        setShopifyAuthStatus,
+        writeCachedShopifyStatus,
+        clearCachedShopifyStatus,
         points: vm.points,
         discounts: vm.discounts.length ? vm.discounts : INITIAL_DISCOUNTS,
         currentStepIndex: vm.currentStepIndex,
@@ -1443,7 +1470,32 @@ export default function App() {
 
   function showShopifyAuth(source, resume = null) {
     shopifyPendingRef.current = { source, resume: typeof resume === 'function' ? resume : null };
+    setShopifyAccountOpen(false);
     setShopifyAuthOverlay({ source });
+  }
+
+  function openShopifyAccountEntry() {
+    const cached = readCachedShopifyStatus(touchId);
+    const binding = shopifyBinding?.connected ? shopifyBinding : cached;
+    if (binding?.connected || shopifyAuthStatus === 'connected') {
+      setShopifyBinding(binding?.connected ? binding : { connected: true });
+      setShopifyAccountOpen(true);
+      return;
+    }
+    showShopifyAuth('account_entry');
+  }
+
+  function disconnectShopifyAccount() {
+    clearCachedShopifyStatus(touchId);
+    setShopifyBinding(null);
+    setShopifyAuthStatus('unconnected');
+    setShopifyLoginTaskStatus('incomplete');
+    setShopifyAccountOpen(false);
+    showNotification(
+      'Shopify disconnected',
+      'This device is no longer using a connected Shopify account.',
+      '✓',
+    );
   }
 
   function handleShopifyContinue() {
@@ -1464,12 +1516,7 @@ export default function App() {
       setGetMoreOffAuthPromptSeen(true);
     }
 
-    // 底部任务卡：Skip 后留在首页即可（PRD §9.4）
-    if (source === 'task_card') {
-      return;
-    }
-
-    scheduleShopifyResume(pending?.resume);
+    // Skip should return to the page/state that opened Shopify auth, without continuing the gated action.
   }
 
   function handleShopifyAuthSuccess() {
@@ -2299,7 +2346,7 @@ export default function App() {
 
       {showHome && (
       <>
-      <Header brand={brand} />
+      <Header brand={brand} shopifyStatus={shopifyAuthStatus} onOpenShopifyAccount={openShopifyAccountEntry} />
 
       <main className="content-area">
         {showBestOffer ? (
@@ -2414,9 +2461,19 @@ export default function App() {
 
       {shopifyAuthOverlay && (
         <ShopifyAuthorizationPage
+          brand={brand}
           source={shopifyAuthOverlay.source}
           onContinue={handleShopifyContinue}
           onSkip={handleShopifySkip}
+        />
+      )}
+
+      {shopifyAccountOpen && (
+        <ShopifyAccountPage
+          brand={brand}
+          binding={shopifyBinding}
+          onClose={() => setShopifyAccountOpen(false)}
+          onDisconnect={disconnectShopifyAccount}
         />
       )}
 
@@ -2681,7 +2738,8 @@ function BrandIntro() {
   return null;
 }
 
-function HeaderBase({ brand }) {
+function HeaderBase({ brand, shopifyStatus, onOpenShopifyAccount }) {
+  const connected = shopifyStatus === 'connected';
   return (
     <header className="brand-header">
       <div className="brand-info">
@@ -2689,6 +2747,21 @@ function HeaderBase({ brand }) {
           <img className="brand-logo-img" src={brand.logoUrl} alt={`${brand.name} logo`} />
         ) : null}
         {brand?.name && <span className="brand-name">{brand.name}</span>}
+      </div>
+      <div className="header-actions">
+        <button
+          className={`account-entry-btn ${connected ? 'is-connected' : ''}`}
+          type="button"
+          aria-label={connected ? 'View connected Shopify account' : 'Connect Shopify account'}
+          title={connected ? 'Shopify account' : 'Connect Shopify'}
+          onClick={onOpenShopifyAccount}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M20 21a8 8 0 0 0-16 0" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+          {connected && <span className="account-entry-dot" aria-hidden="true" />}
+        </button>
       </div>
     </header>
   );
@@ -3024,7 +3097,13 @@ function ChallengesBase({ challenges, dailyCapReached, onOpen }) {
           return (
             <div className="challenge-card" key={challenge.id} style={isShopifyConnect ? { background: 'linear-gradient(135deg, #f6f9f4 0%, #eaf0e6 100%)', borderColor: 'rgba(94, 128, 62, 0.18)' } : undefined}>
               <span className="challenge-badge">{challenge.badge}</span>
-              <div className="challenge-icon-wrapper">{challenge.icon}</div>
+              <div className="challenge-icon-wrapper">
+                {isShopifyConnect ? (
+                  <img className="challenge-shopify-icon" src="/打开礼包开场动画/shopify-icon.png" alt="" aria-hidden="true" />
+                ) : (
+                  challenge.icon
+                )}
+              </div>
               <h4 className="challenge-title">{challenge.title}</h4>
               <p className="challenge-desc">{challenge.desc}</p>
               <button
@@ -3863,36 +3942,80 @@ function ZoomFlipCard({ coupon, colors, rect, phase, copyState, onClose, onCopy 
   );
 }
 
-function ShopifyAuthorizationPage({ source, onContinue, onSkip }) {
+function ShopifyAccountPage({ brand, binding, onClose, onDisconnect }) {
+  const accountLabel = shopifyAccountLabel(binding);
+  const brandName = brand?.name || 'Your brand';
+
   return (
-    <div className="shopify-auth-overlay" role="dialog" aria-label="Shopify authorization" data-auth-source={source}>
-      <div className="shopify-auth-card">
-        <div className="shopify-auth-icon" aria-hidden="true">
-          <svg viewBox="0 0 40 40" fill="none">
-            <path d="M20 4C11.16 4 4 11.16 4 20s7.16 16 16 16 16-7.16 16-16S28.84 4 20 4Z" fill="#95BF47"/>
-            <path d="M27.28 17.06c-.18-1.44-.96-2.58-2.34-3.18-.66-.28-1.36-.38-2.08-.3-.48.06-.92.2-1.32.44-.34.2-.64.44-.92.72-.08-.04-.06-.12-.08-.18-.22-1.08-.56-2.12-1.1-3.08-.32-.56-.7-1.08-1.16-1.52-.2-.18-.4-.26-.56-.14-.08.06-.14.14-.2.22-.3.38-.5.82-.66 1.28-.3.88-.4 1.78-.34 2.72.02.34.08.68.16 1.02-.46-.12-.88-.2-1.32-.22-.62-.04-1.22.02-1.78.26-.72.3-1.24.82-1.56 1.52-.2.42-.3.88-.32 1.36-.02.42.02.84.14 1.24.3 1.04.88 1.88 1.74 2.5.72.52 1.54.82 2.42.92.22.02.44.04.66.04.1 0 .18-.02.22.02.04.04-.02.12-.04.16-.08.12-.18.22-.3.3-.56.44-1.2.72-1.9.86-.36.08-.72.1-1.08.06-.02 0-.04.02-.04.04 0 .02.02.04.04.04.1.04.2.06.3.08.7.1 1.38.06 2.06-.1.74-.18 1.42-.5 2.04-.96.62-.46 1.1-1.06 1.32-1.8.12-.38.18-.78.18-1.18 0-.06 0-.12-.02-.18-.02-.06-.06-.1-.12-.08l-.04.02c-.72.28-1.48.38-2.26.3-1.02-.1-1.9-.48-2.62-1.2-.44-.44-.76-.96-.94-1.56-.14-.46-.18-.94-.14-1.42.06-.72.3-1.36.74-1.92.06-.08.14-.16.22-.22.02-.02.04-.04.04-.06-.02-.04-.06-.02-.1 0-.56.28-1.04.64-1.46 1.08-.54.56-.86 1.24-.94 2.02-.02.24-.02.48 0 .72.02.24.06.48.12.72-.42-.1-.8-.28-1.12-.54-.32-.26-.56-.56-.78-.9-.32-.5-.54-1.04-.64-1.62-.04-.22-.06-.44-.08-.66-.02-.36.02-.72.12-1.06.2-.76.6-1.42 1.14-1.98.5-.52 1.08-.94 1.76-1.18.44-.16.88-.24 1.34-.22.4.02.78.1 1.14.26.52.22.96.54 1.34.96.04.04.08.06.12.04.04-.02.04-.06.04-.1-.06-.36-.06-.74-.02-1.1.1-.78.38-1.5.8-2.14.38-.56.84-1.04 1.4-1.42.04-.02.08-.06.08-.12 0-.04-.04-.06-.08-.06-.14.02-.28.06-.42.1-.98.32-1.76.96-2.24 1.86-.32.6-.48 1.24-.46 1.92 0 .2.02.4.06.6.02.1.04.2.08.3.02.04 0 .06-.02.08Z" fill="#FFF"/>
+    <section className="shopify-account-page" aria-label="Connected Shopify account">
+      <header className="shopify-account-header">
+        <div className="shopify-account-brand">
+          {brand?.logoUrl ? (
+            <img className="shopify-account-brand-logo" src={brand.logoUrl} alt={`${brandName} logo`} />
+          ) : (
+            <span className="shopify-account-brand-initial" aria-hidden="true">{brandName.trim().charAt(0).toUpperCase() || 'Y'}</span>
+          )}
+          <span className="shopify-account-brand-name">{brandName}</span>
+        </div>
+        <button className="shopify-account-close" type="button" onClick={onClose} aria-label="Close Shopify account">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
           </svg>
+        </button>
+      </header>
+
+      <main className="shopify-account-body">
+        <div className="shopify-account-icon" aria-hidden="true">
+          <img src="/打开礼包开场动画/shopify-icon.png" alt="" />
+        </div>
+        <span className="shopify-account-kicker">Shopify Connected</span>
+        <h1>Shopify account</h1>
+
+        <div className="shopify-account-card">
+          <span>Connected account</span>
+          <strong>{accountLabel}</strong>
+          {binding?.email && <p>{binding.email}</p>}
+          {binding?.shop && binding.shop !== accountLabel && <p>{binding.shop}</p>}
         </div>
 
-        <h2 className="shopify-auth-title">Connect your Shopify account</h2>
+        <button className="shopify-account-disconnect" type="button" onClick={onDisconnect}>
+          Disconnect Shopify
+        </button>
+      </main>
+    </section>
+  );
+}
+
+function ShopifyAuthorizationPage({ brand, source, onContinue, onSkip }) {
+  const brandName = brand?.name || 'Your brand';
+  const brandInitial = brandName.trim().charAt(0).toUpperCase() || 'Y';
+
+  return (
+    <section className="shopify-auth-overlay" aria-label="Shopify authorization" data-auth-source={source}>
+      <div className="shopify-auth-card">
+        <div className="shopify-auth-brand-lockup" aria-label={brandName}>
+          {brand?.logoUrl ? (
+            <img className="shopify-auth-brand-logo" src={brand.logoUrl} alt={`${brandName} logo`} />
+          ) : (
+            <span className="shopify-auth-brand-icon" aria-hidden="true">{brandInitial}</span>
+          )}
+          <span className="shopify-auth-brand-name">{brandName}</span>
+        </div>
+
         <p className="shopify-auth-desc">
-          Log in with Shopify to sync your coupon status, track your rewards, and earn more points.
+          Log in with Shopify to sync rewards and earn more points.
         </p>
 
         <button className="shopify-auth-cta" type="button" onClick={onContinue}>
-          <svg className="shopify-auth-cta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M16 8h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h2" />
-            <rect x="8" y="2" width="8" height="4" rx="1" />
-          </svg>
-          Continue with Shopify
+          <img className="shopify-auth-cta-icon" src="/打开礼包开场动画/shopify-icon.png" alt="" aria-hidden="true" />
+          Connect your Shopify
         </button>
 
         <button className="shopify-auth-skip" type="button" onClick={onSkip}>
           Skip
         </button>
       </div>
-    </div>
+    </section>
   );
 }
-
-

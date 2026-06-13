@@ -472,6 +472,42 @@ body {
   z-index: 5;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.account-entry-btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #fffdf8;
+  color: var(--text-primary);
+  box-shadow: 0 6px 16px rgba(45, 51, 43, 0.08);
+  cursor: pointer;
+}
+
+.account-entry-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.account-entry-dot {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #5E8E3E;
+  border: 2px solid #fffdf8;
+}
+
 .brand-info {
   display: flex;
   align-items: center;
@@ -509,7 +545,7 @@ body {
   padding: 6px 12px;
   background-color: var(--bg-color);
   border: 1px solid var(--border-color);
-  border-radius: 20px;
+  border-radius: 999px;
   font-size: 0.76rem;
   font-weight: 600;
   color: var(--brand-primary);
@@ -1037,6 +1073,13 @@ body {
   align-items: center;
   justify-content: center;
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.challenge-shopify-icon {
+  width: 46px;
+  height: 46px;
+  object-fit: contain;
+  display: block;
 }
 
 .challenge-title {
@@ -1961,18 +2004,17 @@ body {
 }
 
 /* ==========================================================================
-   Shopify Authorization Overlay
+   Shopify Authorization Page
    ========================================================================== */
 .shopify-auth-overlay {
   position: absolute;
   inset: 0;
   z-index: 200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: rgba(15, 18, 14, 0.55);
-  backdrop-filter: blur(4px) saturate(1.1);
-  -webkit-backdrop-filter: blur(4px) saturate(1.1);
+  display: block;
+  overflow-y: auto;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.45) 36%, transparent 64%),
+    linear-gradient(180deg, #fffdf8 0%, #f3eddf 100%);
   animation: shopify-auth-fade-in 0.25s ease;
 }
 
@@ -1982,47 +2024,70 @@ body {
 }
 
 .shopify-auth-card {
-  width: min(88%, 380px);
-  padding: 36px 28px 28px;
-  background: var(--card-bg);
-  border-radius: 16px;
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.18), 0 8px 16px rgba(0, 0, 0, 0.08);
+  width: 100%;
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 104px 32px 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  background: transparent;
   text-align: center;
   animation: shopify-auth-slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes shopify-auth-slide-up {
-  from { opacity: 0; transform: translateY(24px) scale(0.96); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.shopify-auth-icon {
-  width: 56px;
-  height: 56px;
-  margin: 0 auto 20px;
+.shopify-auth-brand-lockup {
+  width: min(100%, 324px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: 0 auto 220px;
+}
+
+.shopify-auth-brand-logo,
+.shopify-auth-brand-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  box-shadow: 0 12px 28px rgba(45, 51, 43, 0.12);
+}
+
+.shopify-auth-brand-logo {
+  object-fit: contain;
+}
+
+.shopify-auth-brand-icon {
   display: grid;
   place-items: center;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #95BF47 0%, #5E8E3E 100%);
-  box-shadow: 0 8px 18px rgba(94, 128, 62, 0.22);
-}
-
-.shopify-auth-icon svg {
-  width: 34px;
-  height: 34px;
-}
-
-.shopify-auth-title {
-  margin: 0 0 10px;
+  background: var(--brand-primary);
+  color: #fff;
   font-family: var(--font-serif);
-  font-size: clamp(1.35rem, 5.8vw, 1.65rem);
+  font-size: 1.4rem;
   font-weight: 800;
+}
+
+.shopify-auth-brand-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-primary);
-  line-height: 1.2;
+  font-family: var(--font-serif);
+  font-size: 1.6rem;
+  font-weight: 800;
+  line-height: 1.1;
 }
 
 .shopify-auth-desc {
-  margin: 0 0 24px;
+  width: min(100%, 324px);
+  margin: 0 0 22px;
   font-size: 0.92rem;
   color: var(--text-secondary);
   line-height: 1.5;
@@ -2034,9 +2099,10 @@ body {
   justify-content: center;
   gap: 10px;
   width: 100%;
+  max-width: 324px;
   height: 52px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 999px;
   background: #5E8E3E;
   color: #fff;
   font-family: var(--font-sans);
@@ -2057,13 +2123,16 @@ body {
 }
 
 .shopify-auth-cta-icon {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  display: block;
 }
 
 .shopify-auth-skip {
   display: block;
   width: 100%;
+  max-width: 324px;
   margin-top: 16px;
   padding: 10px;
   border: 0;
@@ -2079,6 +2148,187 @@ body {
 
 .shopify-auth-skip:hover {
   color: var(--text-primary);
+}
+
+/* Shopify Account Page */
+.shopify-account-page {
+  position: absolute;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.46) 36%, transparent 64%),
+    linear-gradient(180deg, #fffdf8 0%, #f3eddf 100%);
+  animation: shopify-auth-fade-in 0.25s ease;
+}
+
+.shopify-account-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: 72px;
+  padding: 16px 22px;
+  box-sizing: border-box;
+  background: rgba(255, 253, 248, 0.9);
+  border-bottom: 1px solid rgba(214, 207, 193, 0.72);
+}
+
+.shopify-account-brand {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.shopify-account-brand-logo,
+.shopify-account-brand-initial {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.shopify-account-brand-logo {
+  object-fit: contain;
+}
+
+.shopify-account-brand-initial {
+  display: grid;
+  place-items: center;
+  background: var(--brand-primary);
+  color: #fff;
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.shopify-account-brand-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-family: var(--font-serif);
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.shopify-account-close {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(214, 207, 193, 0.82);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #fffdf8;
+  color: var(--text-primary);
+  box-shadow: 0 6px 16px rgba(45, 51, 43, 0.08);
+  cursor: pointer;
+}
+
+.shopify-account-close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.shopify-account-body {
+  width: 100%;
+  min-height: calc(100% - 72px);
+  box-sizing: border-box;
+  padding: 86px 32px 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.shopify-account-icon {
+  width: 70px;
+  height: 70px;
+  display: grid;
+  place-items: center;
+  border-radius: 22px;
+  background: #e9f4e1;
+  box-shadow: 0 12px 28px rgba(94, 128, 62, 0.16);
+}
+
+.shopify-account-icon img {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+}
+
+.shopify-account-kicker {
+  margin-top: 22px;
+  color: var(--brand-primary);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.shopify-account-body h1 {
+  margin: 8px 0 24px;
+  color: var(--text-primary);
+  font-family: var(--font-serif);
+  font-size: 2rem;
+  line-height: 1.05;
+}
+
+.shopify-account-card {
+  width: min(100%, 340px);
+  box-sizing: border-box;
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(214, 207, 193, 0.8);
+  background: rgba(255, 253, 248, 0.84);
+  box-shadow: 0 10px 22px rgba(45, 51, 43, 0.08);
+  text-align: left;
+}
+
+.shopify-account-card span {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+
+.shopify-account-card strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: 1rem;
+  line-height: 1.3;
+}
+
+.shopify-account-card p {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.shopify-account-disconnect {
+  width: min(100%, 340px);
+  height: 52px;
+  margin-top: 18px;
+  border: 1px solid rgba(176, 70, 54, 0.24);
+  border-radius: 999px;
+  background: rgba(176, 70, 54, 0.08);
+  color: #a23f31;
+  font-family: var(--font-sans);
+  font-size: 0.98rem;
+  font-weight: 800;
+  cursor: pointer;
 }
 
 /* Shopify Auth Success Toast */
@@ -2159,4 +2409,3 @@ body {
   line-height: 1;
   color: #6b4a16;
 }
-

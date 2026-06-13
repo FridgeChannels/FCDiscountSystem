@@ -168,6 +168,9 @@ export function readCachedShopifyStatus(touchId) {
     return {
       connected: cached.connected,
       shopifyCustomerId: cached.shopifyCustomerId ?? null,
+      shopDomain: cached.shopDomain ?? null,
+      shop: cached.shop ?? null,
+      email: cached.email ?? null,
     };
   } catch {
     return null;
@@ -184,6 +187,9 @@ export function writeCachedShopifyStatus(touchId, status) {
         cachedAt: Date.now(),
         connected: status.connected,
         shopifyCustomerId: status.shopifyCustomerId ?? null,
+        shopDomain: status.shopDomain ?? null,
+        shop: status.shop ?? null,
+        email: status.email ?? null,
       }),
     );
   } catch {

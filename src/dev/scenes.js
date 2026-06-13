@@ -18,6 +18,7 @@ import { DEV_FIXTURES } from './fixtures.js';
  * @property {{ reason: 'redeemed' | 'expired' }} [newChallenge]
  * @property {{ title: string, message: string, icon: string }} [notification]
  * @property {{ onConfirm: () => void, discount: string | number }} [claimConfirm]
+ * @property {{ connected: boolean, shopifyCustomerId?: string, shopDomain?: string, shop?: string, email?: string }} [shopifyStatus]
  */
 
 /**
@@ -57,7 +58,19 @@ export const DEV_SCENES = [
     id: 'home',
     label: 'Home',
     fixture: DEV_FIXTURES.home,
-    ui: { welcomeStep: 3, introActive: false, setWelcomeCompleted: true, clearClaimed: true },
+    ui: {
+      welcomeStep: 3,
+      introActive: false,
+      setWelcomeCompleted: true,
+      clearClaimed: true,
+      shopifyStatus: {
+        connected: true,
+        shopifyCustomerId: 'mock-customer-001',
+        shopDomain: 'ritual-demo.myshopify.com',
+        shop: 'Ritual Demo',
+        email: 'shopper@example.com',
+      },
+    },
   },
   {
     id: 'urgent',
