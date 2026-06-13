@@ -69,12 +69,19 @@ async function request(path, options = {}) {
   return doFetch();
 }
 
-export function fetchRewardPlan(touchId) {
-  return request(`/api/fc/reward-plan?touchId=${encodeURIComponent(touchId)}`);
+export function fetchRewardPlan(touchId, { refresh = false } = {}) {
+  const refreshQs = refresh ? '&refresh=1' : '';
+  return request(`/api/fc/reward-plan?touchId=${encodeURIComponent(touchId)}${refreshQs}`);
 }
 
-export function fetchShopifyStatus(touchId) {
-  return request(`/api/fc/shopify-status?touchId=${encodeURIComponent(touchId)}`);
+export function fetchShopifyStatus(touchId, { refresh = false } = {}) {
+  const refreshQs = refresh ? '&refresh=1' : '';
+  return request(`/api/fc/shopify-status?touchId=${encodeURIComponent(touchId)}${refreshQs}`);
+}
+
+export function fetchMagnetBrandParam(touchId, { refresh = false } = {}) {
+  const refreshQs = refresh ? '&refresh=1' : '';
+  return request(`/api/fc/magnet-brand-param?touchId=${encodeURIComponent(touchId)}${refreshQs}`);
 }
 
 export function startGameSession(rewardPlanId, gameInstanceId) {

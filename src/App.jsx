@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
-import { claimCoupon, completeSurvey, fetchRewardPlan, fetchShopifyStatus, observeCoupon, redeemCoupon, renewCycle, startGameSession } from './api/client.js';
+import { claimCoupon, completeSurvey, fetchMagnetBrandParam, fetchRewardPlan, fetchShopifyStatus, observeCoupon, redeemCoupon, renewCycle, startGameSession } from './api/client.js';
 import {
   readCachedRewardPlan,
+  readCachedMagnetBrandParam,
   readCachedShopifyStatus,
   readRememberedTouchId,
   rememberTouchId,
   writeCachedRewardPlan,
+  writeCachedMagnetBrandParam,
   writeCachedShopifyStatus,
   clearCachedShopifyStatus,
+  markShopifyOAuthPending,
+  consumeShopifyOAuthPending,
+  readShopifyOAuthPendingSource,
+  clearShopifyOAuthPending,
+  isShopifyOAuthPending,
   clearCachedRewardPlan,
   readWelcomeCompleted,
   writeWelcomeCompleted,
@@ -33,6 +40,7 @@ import {
   resolveDevScene,
 } from './dev/index.js';
 import { dbg, dbgError } from './lib/debug.js';
+import { applyBrandCssVar, brandFromMagnetParam } from './lib/brandTheme.js';
 import { preloadRuntimeManifest } from './lib/runtimeRegistry.js';
 
 // 阶段4:对不依赖每秒倒计时的叶子组件做 memo,
@@ -109,6 +117,10 @@ function shopifyAccountLabel(binding) {
     binding.email ||
     (binding.shopifyCustomerId ? `Customer ${binding.shopifyCustomerId}` : 'Connected Shopify account')
   );
+}
+
+function tierReceiptSessionKey(touchId, cycleId, tier) {
+  return `fc_receipt_tier_${touchId}_${cycleId ?? 'none'}_${tier ?? 'unknown'}`;
 }
 
 /** 非首次回访:有 welcome 标记、已领券缓存、或历史 plan 缓存 */
@@ -302,6 +314,7 @@ export default function App() {
   const prevCountdownRef = useRef(null);
   const pendingTapRewardRef = useRef(0);
   const pendingTapTargetRef = useRef(0);
+  const pendingRewardKindRef = useRef('tap');
   const playPendingTapRewardRef = useRef(() => {});
   const returnIntroShownRef = useRef(false);
   const returnIntroPendingRef = useRef(false);
@@ -314,6 +327,7 @@ export default function App() {
   const shopifyPendingRef = useRef(null);
   const devPreviewActiveRef = useRef(false);
   const devSceneRef = useRef('');
+  const magnetBrandParamRef = useRef(null);
 
   const touchId = useTouchId();
   const [devScene, setDevScene] = useState(() => getDevScene());
@@ -384,7 +398,7 @@ export default function App() {
       setShopifyAuthStatus(shopifyAuthStatusFromBinding(cached));
     }
     try {
-      const status = await fetchShopifyStatus(touchId);
+      const status = await fetchShopifyStatus(touchId, { refresh: true });
       writeCachedShopifyStatus(touchId, status);
       setShopifyBinding(status);
       setShopifyAuthStatus(shopifyAuthStatusFromBinding(status));
@@ -398,6 +412,40 @@ export default function App() {
       return null;
     }
   }, [touchId]);
+
+  const applyMagnetBrandParam = useCallback((param) => {
+    if (!param) return;
+    const nextBrand = brandFromMagnetParam(param);
+    setBrand((prev) => ({
+      ...prev,
+      ...nextBrand,
+    }));
+    applyBrandCssVar(nextBrand.primaryColor);
+  }, []);
+
+  const syncMagnetBrandParam = useCallback(async (forceRefresh = false) => {
+    if (!forceRefresh) {
+      const cached = readCachedMagnetBrandParam(touchId);
+      if (cached) {
+        magnetBrandParamRef.current = cached;
+        applyMagnetBrandParam(cached);
+      }
+    }
+    try {
+      const param = await fetchMagnetBrandParam(touchId, { refresh: forceRefresh });
+      if (param) {
+        writeCachedMagnetBrandParam(touchId, param);
+        magnetBrandParamRef.current = param;
+        applyMagnetBrandParam(param);
+      } else {
+        magnetBrandParamRef.current = null;
+      }
+      return param;
+    } catch (err) {
+      dbgError('[FCDBG][App] fetch magnet brand param failed', err);
+      return magnetBrandParamRef.current;
+    }
+  }, [applyMagnetBrandParam, touchId]);
 
   const shopifyTask = useMemo(() => {
     if (!needsShopifyAuth()) return null;
@@ -540,7 +588,7 @@ export default function App() {
       clearClaimedCode(touchId);
       claimRecord = null;
     }
-    const vm = mapPlanToViewModel(plan, claimRecord);
+    const vm = mapPlanToViewModel(plan, claimRecord, magnetBrandParamRef.current);
     setRewardPlanId(vm.rewardPlanId);
     setDiscounts(vm.discounts.length ? vm.discounts : INITIAL_DISCOUNTS);
     setCurrentStepIndex(vm.currentStepIndex);
@@ -568,26 +616,38 @@ export default function App() {
         vm.recentlyRedeemedCoupon.couponCode === storedClaim) ||
       vm.couponRedeemed;
     const tapAwarded = vm.tapReward?.awarded ?? 0;
+    const shopifyAwarded = vm.shopifyReward?.awarded ?? 0;
+    const entryAwarded = shopifyAwarded > 0 ? shopifyAwarded : tapAwarded;
+    const entryKind = shopifyAwarded > 0 ? 'shopify' : 'tap';
     const tapFxKey = `fc_tap_fx_${touchId}`;
-    const tapFxPlayed = sessionStorage.getItem(tapFxKey);
-    const blocksTapReward =
+    const shopifyFxKey = `fc_shopify_fx_${touchId}`;
+    const entryFxPlayed =
+      entryKind === 'shopify'
+        ? sessionStorage.getItem(shopifyFxKey)
+        : sessionStorage.getItem(tapFxKey);
+    const blocksEntryReward =
       fromCache ||
-      tapAwarded <= 0 ||
+      entryAwarded <= 0 ||
       vm.cycleExpired ||
       redeemedMatch ||
       !!storedClaim;
-    const deferTapFx =
-      !blocksTapReward &&
-      (welcomeInProgress || (welcomeDone && !tapFxPlayed));
+    const deferEntryFx =
+      !blocksEntryReward &&
+      (welcomeInProgress || (welcomeDone && !entryFxPlayed));
 
     if (!renewInProgress) {
       pendingTapTargetRef.current = vm.points;
-      if (deferTapFx) {
-        pendingTapRewardRef.current = tapAwarded;
+      if (shopifyAwarded > 0) {
+        setShopifyLoginTaskStatus('completed');
+      }
+      if (deferEntryFx) {
+        pendingRewardKindRef.current = entryKind;
+        pendingTapRewardRef.current = entryAwarded;
         setPendingRewardSignal((value) => value + 1);
-        setPoints(Math.max(0, vm.points - tapAwarded));
+        setPoints(Math.max(0, vm.points - entryAwarded));
       } else {
         pendingTapRewardRef.current = 0;
+        pendingRewardKindRef.current = 'tap';
         setPoints(vm.points);
       }
     }
@@ -769,7 +829,7 @@ export default function App() {
     touchId,
   ]);
 
-  const reloadPlan = useCallback(async () => {
+  const reloadPlan = useCallback(async ({ refresh = false } = {}) => {
     if (devPreviewActiveRef.current) {
       const resolved = resolveDevScene(devSceneRef.current || 'home');
       if (resolved) {
@@ -778,7 +838,7 @@ export default function App() {
       }
     }
 
-    const plan = await fetchRewardPlan(touchId);
+    const plan = await fetchRewardPlan(touchId, { refresh });
     clearGameSessionCache();
     writeCachedRewardPlan(touchId, plan);
     if (newChallengeRenewRef.current || renewFlowActiveRef.current) {
@@ -968,14 +1028,22 @@ export default function App() {
     returnIntroShownRef.current = false;
     returnIntroPendingRef.current = false;
 
-    // 非首次 tap:立即播回访礼盒,与 plan 请求并行
-    if (returnVisitorOnEntry) {
+    const shopifyOAuthReturn = isShopifyOAuthPending(touchId);
+
+    // 非首次 tap:立即播回访礼盒,与 plan 请求并行(Shopify 授权回流时不播礼盒,直接进登录积分动效)
+    if (returnVisitorOnEntry && !shopifyOAuthReturn) {
       if (!readWelcomeCompleted(touchId)) writeWelcomeCompleted(touchId);
       sessionStorage.removeItem(`fc_tap_fx_${touchId}`);
       returnIntroPendingRef.current = true;
       setReturnIntroGate(true);
       setWelcomeStep(3);
       setIntroActive(true);
+    } else if (shopifyOAuthReturn) {
+      returnIntroShownRef.current = true;
+      returnIntroPendingRef.current = false;
+      setReturnIntroGate(false);
+      setIntroActive(false);
+      setWelcomeStep(3);
     } else {
       setReturnIntroGate(false);
       setIntroActive(false);
@@ -985,19 +1053,42 @@ export default function App() {
       dbgError('[FCDBG][App] runtime manifest preload failed', err);
     });
 
-    void syncShopifyBindingStatus();
+    magnetBrandParamRef.current = readCachedMagnetBrandParam(touchId);
+    if (magnetBrandParamRef.current) {
+      applyMagnetBrandParam(magnetBrandParamRef.current);
+    }
 
     const cached = readCachedRewardPlan(touchId);
-    if (cached) {
+    if (cached && !shopifyOAuthReturn) {
       syncFromPlan(cached, { fromCache: true });
       setPlanLoading(false);
     }
 
     (async () => {
       try {
-        if (!cached) setPlanLoading(true);
+        await syncMagnetBrandParam();
+        if (cancelled) return;
+
+        const status = await syncShopifyBindingStatus(true);
+        if (cancelled) return;
+
+        if (status?.connected && shopifyOAuthReturn && consumeShopifyOAuthPending(touchId)) {
+          setShopifyLoginTaskStatus('completed');
+          setShopifyAuthOverlay(null);
+          clearCachedRewardPlan(touchId);
+          setPlanLoading(true);
+          setPlanError(null);
+          const plan = await fetchRewardPlan(touchId, { refresh: true });
+          if (cancelled) return;
+          clearGameSessionCache();
+          writeCachedRewardPlan(touchId, plan);
+          syncFromPlan(plan);
+          return;
+        }
+
+        if (!cached || shopifyOAuthReturn) setPlanLoading(true);
         setPlanError(null);
-        const plan = await fetchRewardPlan(touchId);
+        const plan = await fetchRewardPlan(touchId, { refresh: shopifyOAuthReturn });
         if (!cancelled) {
           clearGameSessionCache();
           writeCachedRewardPlan(touchId, plan);
@@ -1016,15 +1107,32 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [applyDevPreviewScene, clearGameSessionCache, devScene, syncFromPlan, syncShopifyBindingStatus, touchId]);
+  }, [applyDevPreviewScene, applyMagnetBrandParam, clearGameSessionCache, devScene, syncFromPlan, syncMagnetBrandParam, syncShopifyBindingStatus, touchId]);
 
   useEffect(() => {
-    const onPageShow = () => {
-      void syncShopifyBindingStatus(true);
+    const onPageShow = async () => {
+      const status = await syncShopifyBindingStatus(true);
+      if (!status?.connected || !isShopifyOAuthPending(touchId)) return;
+      if (!consumeShopifyOAuthPending(touchId)) return;
+
+      returnIntroShownRef.current = true;
+      returnIntroPendingRef.current = false;
+      setReturnIntroGate(false);
+      setIntroActive(false);
+      setWelcomeStep(3);
+      setShopifyLoginTaskStatus('completed');
+      setShopifyAuthOverlay(null);
+
+      try {
+        clearCachedRewardPlan(touchId);
+        await reloadPlan({ refresh: true });
+      } catch (err) {
+        dbgError('[FCDBG][App] shopify oauth return reload failed', err);
+      }
     };
     window.addEventListener('pageshow', onPageShow);
     return () => window.removeEventListener('pageshow', onPageShow);
-  }, [syncShopifyBindingStatus]);
+  }, [reloadPlan, syncShopifyBindingStatus, touchId]);
 
   const current = discounts[currentStepIndex] || discounts[discounts.length - 1] || { num: '15', target: 0, tier: 1 };
   const currentTier = current.tier ?? currentStepIndex + 1;
@@ -1208,14 +1316,17 @@ export default function App() {
   const playPendingTapReward = useCallback(() => {
     const pts = pendingTapRewardRef.current;
     if (!pts || pts <= 0) return;
-    const fxKey = `fc_tap_fx_${touchId}`;
+    const kind = pendingRewardKindRef.current === 'shopify' ? 'shopify' : 'tap';
+    const fxKey = kind === 'shopify' ? `fc_shopify_fx_${touchId}` : `fc_tap_fx_${touchId}`;
     if (sessionStorage.getItem(fxKey)) {
       pendingTapRewardRef.current = 0;
+      pendingRewardKindRef.current = 'tap';
       setPoints(pendingTapTargetRef.current || pointsRef.current);
       return;
     }
     sessionStorage.setItem(fxKey, '1');
     pendingTapRewardRef.current = 0;
+    pendingRewardKindRef.current = 'tap';
     triggerLoginBonusAnimation(pts, pendingTapTargetRef.current || pointsRef.current + pts);
   }, [touchId]);
 
@@ -1294,13 +1405,20 @@ export default function App() {
     setIntroActive(false);
   }, []);
 
-  // 回访礼盒结束且首页就绪后再播 +5(不在 intro 期间触发)
+  // 回访礼盒结束且首页就绪后再播 +5/Shopify(不在 intro 期间触发)
   useEffect(() => {
     if (introActive || planLoading || isWelcomeVideoActive || welcomeVideoFading) return undefined;
     if (!returnIntroShownRef.current) return undefined;
     if (!pendingTapRewardRef.current) return undefined;
-    const fxKey = `fc_tap_fx_${touchId}`;
-    if (sessionStorage.getItem(fxKey)) return undefined;
+
+    const kind = pendingRewardKindRef.current === 'shopify' ? 'shopify' : 'tap';
+    const fxKey = kind === 'shopify' ? `fc_shopify_fx_${touchId}` : `fc_tap_fx_${touchId}`;
+    if (sessionStorage.getItem(fxKey)) {
+      pendingTapRewardRef.current = 0;
+      pendingRewardKindRef.current = 'tap';
+      setPoints(pendingTapTargetRef.current || pointsRef.current);
+      return undefined;
+    }
 
     const timer = window.setTimeout(() => playPendingTapReward(), 220);
     return () => window.clearTimeout(timer);
@@ -1311,6 +1429,46 @@ export default function App() {
     planLoading,
     playPendingTapReward,
     touchId,
+    welcomeVideoFading,
+  ]);
+
+  // 进页时积分已够下一档门槛 → 补触发 receipt(不仅依赖 creditPoints 动画)
+  useEffect(() => {
+    if (introActive || planLoading || isWelcomeVideoActive || welcomeVideoFading) return undefined;
+    if (returnIntroPendingRef.current && !returnIntroShownRef.current) return undefined;
+    if (welcomeStep < 3 && hasInitialDiscount && !readWelcomeCompleted(touchId)) return undefined;
+    if (showReceipt || newChallenge || showClaimedScreen) return undefined;
+    if (pendingTapRewardRef.current > 0) return undefined;
+    if (!next || nextThreshold == null || points < targetPoints) return undefined;
+
+    const unlocked = resolveUnlockedCoupon(discounts, currentStepIndex);
+    if (!unlocked?.tier) return undefined;
+    const receiptKey = tierReceiptSessionKey(touchId, rewardPlanId, unlocked.tier);
+    if (sessionStorage.getItem(receiptKey)) return undefined;
+
+    const timer = window.setTimeout(() => {
+      if (sessionStorage.getItem(receiptKey)) return;
+      triggerCelebration(points);
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [
+    currentStepIndex,
+    discounts,
+    hasInitialDiscount,
+    introActive,
+    isWelcomeVideoActive,
+    newChallenge,
+    next,
+    nextThreshold,
+    planLoading,
+    points,
+    pendingRewardSignal,
+    rewardPlanId,
+    showClaimedScreen,
+    showReceipt,
+    targetPoints,
+    touchId,
+    welcomeStep,
     welcomeVideoFading,
   ]);
 
@@ -1499,8 +1657,13 @@ export default function App() {
   }
 
   function handleShopifyContinue() {
+    const pending = shopifyPendingRef.current;
+    const source = shopifyAuthOverlay?.source ?? pending?.source ?? '';
+    markShopifyOAuthPending(touchId, source);
     shopifyPendingRef.current = null;
     clearCachedShopifyStatus(touchId);
+    clearCachedRewardPlan(touchId);
+    setShopifyAuthOverlay(null);
     window.location.href = buildShopifyAuthUrl(touchId);
   }
 
@@ -1820,10 +1983,12 @@ export default function App() {
   }
 
   function triggerCelebration(updatedPoints) {
+    const unlocked = resolveUnlockedCoupon(discounts, currentStepIndex);
+    if (rewardPlanId && unlocked?.tier != null) {
+      sessionStorage.setItem(tierReceiptSessionKey(touchId, rewardPlanId, unlocked.tier), '1');
+    }
     setTargetPulse('ready unlocking');
     startConfetti();
-
-    const unlocked = resolveUnlockedCoupon(discounts, currentStepIndex);
     setReceiptCoupon(unlocked);
     setReceiptColors(readCouponTokens(targetCouponRef.current));
     setPendingPoints(updatedPoints);
@@ -2428,6 +2593,7 @@ export default function App() {
         open={activeModal === 'platform-game'}
         title={gameModalTitle}
         gameStart={gameStart}
+        brand={brand}
         loadingMessage={gameLoadingMessage}
         onClose={() => {
           activeGameRequestRef.current += 1;

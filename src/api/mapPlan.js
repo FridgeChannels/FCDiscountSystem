@@ -1,4 +1,5 @@
 import { iconForTemplate, labelForTemplate } from './gameLabels.js';
+import { mergeBrand } from '../lib/brandTheme.js';
 
 function formatDiscountValue(step) {
   if (step.discountValue) return `${step.discountValue}%`;
@@ -72,7 +73,7 @@ export function deriveHasInitialDiscount(ladder) {
   return first.pointsThreshold === 0 && hasValue;
 }
 
-export function mapPlanToViewModel(plan, claimRecord = null) {
+export function mapPlanToViewModel(plan, claimRecord = null, magnetBrandParam = null) {
   const ladder = [...(plan.ladder ?? [])].sort((a, b) => a.tier - b.tier);
   const observed = plan.observedCoupon ?? plan.currentCoupon;
 
@@ -139,18 +140,14 @@ export function mapPlanToViewModel(plan, claimRecord = null) {
     discounts,
     currentStepIndex,
     countdownSeconds,
-    brand: {
-      name: plan.customerBrand?.name || null,
-      logoUrl: plan.customerBrand?.logoUrl,
-      primaryColor: plan.customerBrand?.primaryColor,
-      shopUrl: plan.customerBrand?.shopUrl ?? '#',
-    },
+    brand: mergeBrand(plan.customerBrand, magnetBrandParam),
     challenges,
     rewardPlanId: plan.rewardPlanId,
     dailyCapReached: plan.reasonCodes?.includes('DAILY_CAP_REACHED') ?? false,
     hasInitialDiscount: deriveHasInitialDiscount(ladder),
     cycleExpired,
     tapReward: plan.tapReward ?? null,
+    shopifyReward: plan.shopifyReward ?? null,
     recentlyRedeemedCoupon: plan.recentlyRedeemedCoupon ?? null,
   // assigned/claimed = 已发券；won 仅表示档位达成，不算已领取页
     couponClaimed:
