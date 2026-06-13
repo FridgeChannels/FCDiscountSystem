@@ -1,5 +1,7 @@
 FROM node:20-alpine
 
+RUN apk add --no-cache wget
+
 WORKDIR /workspace/fc-platform
 COPY fc-platform/package-lock.json ./package-lock.json
 COPY fc-platform/package.json ./package.json

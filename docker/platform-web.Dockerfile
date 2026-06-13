@@ -14,6 +14,8 @@ RUN npm run build -w @fc/web
 
 FROM node:20-alpine
 
+RUN apk add --no-cache wget
+
 WORKDIR /workspace/fc-platform
 COPY --from=build /workspace/fc-platform /workspace/fc-platform
 
