@@ -23,8 +23,6 @@ services:
       SURVEY_API_BASE_URL: ${SURVEY_API_BASE_URL-}
       SURVEY_API_KEY: ${SURVEY_API_KEY-}
       SURVEY_POINTS_PER_QUESTION: ${SURVEY_POINTS_PER_QUESTION:-10}
-    volumes:
-      - ../fc-platform/.env:/workspace/fc-platform/.env:ro
     networks:
       - default
       - redis_net

@@ -2451,7 +2451,7 @@ export default function App() {
         >
           <video
             ref={welcomeVideoRef}
-            src="/打开礼包开场动画/首次开场动画2.mp4"
+            src="/gift-opening/opening-intro-2.mp4"
             playsInline
             webkit-playsinline="true"
             muted
@@ -3232,7 +3232,7 @@ function ChallengesBase({ challenges, dailyCapReached, onOpen }) {
               <span className="challenge-badge">{challenge.badge}</span>
               <div className="challenge-icon-wrapper">
                 {isShopifyConnect ? (
-                  <img className="challenge-shopify-icon" src="/打开礼包开场动画/shopify-icon.png" alt="" aria-hidden="true" />
+                  <img className="challenge-shopify-icon" src="/gift-opening/shopify-icon.png" alt="" aria-hidden="true" />
                 ) : (
                   challenge.icon
                 )}
@@ -3814,7 +3814,7 @@ function ShopifyAccountPage({ brand, binding, onClose, onDisconnect }) {
 
       <main className="shopify-account-body">
         <div className="shopify-account-icon" aria-hidden="true">
-          <img src="/打开礼包开场动画/shopify-icon.png" alt="" />
+          <img src="/gift-opening/shopify-icon.png" alt="" />
         </div>
         <span className="shopify-account-kicker">Shopify Connected</span>
         <h1>Shopify account</h1>
@@ -3855,7 +3855,7 @@ function ShopifyAuthorizationPage({ brand, source, onContinue, onSkip }) {
         </p>
 
         <button className="shopify-auth-cta" type="button" onClick={onContinue}>
-          <img className="shopify-auth-cta-icon" src="/打开礼包开场动画/shopify-icon.png" alt="" aria-hidden="true" />
+          <img className="shopify-auth-cta-icon" src="/gift-opening/shopify-icon.png" alt="" aria-hidden="true" />
           Connect your Shopify
         </button>
 
