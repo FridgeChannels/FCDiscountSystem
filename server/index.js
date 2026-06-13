@@ -76,9 +76,32 @@ async function callEngineGet(path, timeoutMs = ENGINE_TIMEOUT_MS) {
   return json.data;
 }
 
+async function callEngineGetAllowNull(path, timeoutMs = ENGINE_TIMEOUT_MS) {
+  const headers = {};
+  if (ENGINE_SERVICE_TOKEN) {
+    headers.authorization = `Bearer ${ENGINE_SERVICE_TOKEN}`;
+  }
+
+  const res = await fetch(`${ENGINE_BASE_URL}${path}`, {
+    method: 'GET',
+    headers,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const json = await res.json();
+  if (!res.ok || json.error) {
+    const msg = json.error ? `${json.error.code}: ${json.error.message}` : `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return json.data ?? null;
+}
+
 const SHOPIFY_STATUS_CACHE_TTL_MS = Number(process.env.SHOPIFY_STATUS_CACHE_TTL_MS ?? 3600000);
 const shopifyStatusCache = new Map(); // touchId -> { data, expiresAt }
 const shopifyStatusInflight = new Map(); // touchId -> Promise
+
+const MAGNET_BRAND_PARAM_CACHE_TTL_MS = Number(process.env.MAGNET_BRAND_PARAM_CACHE_TTL_MS ?? 86400000);
+const magnetBrandParamCache = new Map(); // touchId -> { data, expiresAt }
+const magnetBrandParamInflight = new Map(); // touchId -> Promise
 
 function readShopifyStatusCache(touchId) {
   const entry = shopifyStatusCache.get(touchId);
@@ -91,13 +114,18 @@ function writeShopifyStatusCache(touchId, data) {
   shopifyStatusCache.set(touchId, { data, expiresAt: Date.now() + SHOPIFY_STATUS_CACHE_TTL_MS });
 }
 
-function getShopifyStatusDeduped(touchId) {
-  const cached = readShopifyStatusCache(touchId);
-  if (cached) return Promise.resolve(cached);
+function getShopifyStatusDeduped(touchId, refresh = false) {
+  if (!refresh) {
+    const cached = readShopifyStatusCache(touchId);
+    if (cached) return Promise.resolve(cached);
+  } else {
+    shopifyStatusCache.delete(touchId);
+  }
   const existing = shopifyStatusInflight.get(touchId);
   if (existing) return existing;
+  const refreshQs = refresh ? '&refresh=1' : '';
   const promise = callEngineGet(
-    `/identity/shopify-status?touchId=${encodeURIComponent(touchId)}`,
+    `/identity/shopify-status?touchId=${encodeURIComponent(touchId)}${refreshQs}`,
   )
     .then((data) => {
       writeShopifyStatusCache(touchId, data);
@@ -107,6 +135,40 @@ function getShopifyStatusDeduped(touchId) {
       shopifyStatusInflight.delete(touchId);
     });
   shopifyStatusInflight.set(touchId, promise);
+  return promise;
+}
+
+function readMagnetBrandParamCache(touchId) {
+  const entry = magnetBrandParamCache.get(touchId);
+  if (entry && entry.expiresAt > Date.now()) return entry.data;
+  if (entry) magnetBrandParamCache.delete(touchId);
+  return undefined;
+}
+
+function writeMagnetBrandParamCache(touchId, data) {
+  magnetBrandParamCache.set(touchId, { data, expiresAt: Date.now() + MAGNET_BRAND_PARAM_CACHE_TTL_MS });
+}
+
+function getMagnetBrandParamDeduped(touchId, refresh = false) {
+  if (!refresh) {
+    const cached = readMagnetBrandParamCache(touchId);
+    if (cached !== undefined) return Promise.resolve(cached);
+  } else {
+    magnetBrandParamCache.delete(touchId);
+  }
+  const existing = magnetBrandParamInflight.get(touchId);
+  if (existing) return existing;
+  const promise = callEngineGetAllowNull(
+    `/identity/magnet-brand-param?touchId=${encodeURIComponent(touchId)}`,
+  )
+    .then((data) => {
+      writeMagnetBrandParamCache(touchId, data ?? null);
+      return data ?? null;
+    })
+    .finally(() => {
+      magnetBrandParamInflight.delete(touchId);
+    });
+  magnetBrandParamInflight.set(touchId, promise);
   return promise;
 }
 
@@ -159,7 +221,20 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { error: 'touchId required' });
         return;
       }
-      const data = await getShopifyStatusDeduped(touchId);
+      const refresh = url.searchParams.get('refresh') === '1';
+      const data = await getShopifyStatusDeduped(touchId, refresh);
+      sendJson(res, 200, data);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/fc/magnet-brand-param') {
+      const touchId = url.searchParams.get('touchId');
+      if (!touchId) {
+        sendJson(res, 400, { error: 'touchId required' });
+        return;
+      }
+      const refresh = url.searchParams.get('refresh') === '1';
+      const data = await getMagnetBrandParamDeduped(touchId, refresh);
       sendJson(res, 200, data);
       return;
     }
@@ -170,10 +245,13 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { error: 'touchId required' });
         return;
       }
-      const cachedPlan = readPlanCache(touchId);
-      if (cachedPlan) {
-        sendJson(res, 200, cachedPlan);
-        return;
+      const skipPlanCache = url.searchParams.get('refresh') === '1';
+      if (!skipPlanCache) {
+        const cachedPlan = readPlanCache(touchId);
+        if (cachedPlan) {
+          sendJson(res, 200, cachedPlan);
+          return;
+        }
       }
       const data = await getPlanDeduped(touchId, ENGINE_REWARD_PLAN_TIMEOUT_MS);
       writePlanCache(touchId, data);

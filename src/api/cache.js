@@ -202,9 +202,91 @@ export function clearCachedShopifyStatus(touchId) {
   window.localStorage.removeItem(shopifyStatusKey(touchId));
 }
 
+function shopifyOAuthPendingKey(touchId) {
+  return `fc.shopify_oauth_pending.${touchId}`;
+}
+
+function shopifyPendingSourceKey(touchId) {
+  return `fc.shopify_pending_source.${touchId}`;
+}
+
+/** 跳转 Shopify 授权前标记,回流后触发刷新 plan + 登录积分动效 */
+export function markShopifyOAuthPending(touchId, source = '') {
+  if (!canUseBrowserStorage() || !touchId) return;
+  sessionStorage.setItem(shopifyOAuthPendingKey(touchId), '1');
+  if (source) sessionStorage.setItem(shopifyPendingSourceKey(touchId), source);
+}
+
+export function readShopifyOAuthPendingSource(touchId) {
+  if (!canUseBrowserStorage() || !touchId) return '';
+  return sessionStorage.getItem(shopifyPendingSourceKey(touchId)) ?? '';
+}
+
+export function consumeShopifyOAuthPending(touchId) {
+  if (!canUseBrowserStorage() || !touchId) return false;
+  const pending = sessionStorage.getItem(shopifyOAuthPendingKey(touchId)) === '1';
+  sessionStorage.removeItem(shopifyOAuthPendingKey(touchId));
+  return pending;
+}
+
+export function isShopifyOAuthPending(touchId) {
+  if (!canUseBrowserStorage() || !touchId) return false;
+  return sessionStorage.getItem(shopifyOAuthPendingKey(touchId)) === '1';
+}
+
+export function clearShopifyOAuthPending(touchId) {
+  if (!canUseBrowserStorage() || !touchId) return;
+  sessionStorage.removeItem(shopifyOAuthPendingKey(touchId));
+  sessionStorage.removeItem(shopifyPendingSourceKey(touchId));
+}
+
 /** 清除旧版全局 key(曾导致跨 magnet 串页) */
 export function clearLegacyMagnetStorage() {
   if (!canUseBrowserStorage()) return;
   window.localStorage.removeItem('fc_welcome_completed');
   window.localStorage.removeItem('fc_claimed_code');
+}
+
+const MAGNET_BRAND_PARAM_PREFIX = 'fc.magnetBrandParam.';
+const MAGNET_BRAND_PARAM_CACHE_VERSION = 1;
+const MAGNET_BRAND_PARAM_MAX_STALE_MS = 24 * 60 * 60 * 1000;
+
+function magnetBrandParamKey(touchId) {
+  return `${MAGNET_BRAND_PARAM_PREFIX}${touchId}`;
+}
+
+/** 按 magnet SN 缓存的品牌参数(magnet_brand_param),优先于 customer 表 */
+export function readCachedMagnetBrandParam(touchId) {
+  if (!canUseBrowserStorage() || !touchId) return null;
+  try {
+    const raw = window.localStorage.getItem(magnetBrandParamKey(touchId));
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    if (cached?.version !== MAGNET_BRAND_PARAM_CACHE_VERSION) return null;
+    if (Date.now() - cached.cachedAt > MAGNET_BRAND_PARAM_MAX_STALE_MS) return null;
+    return cached.param ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeCachedMagnetBrandParam(touchId, param) {
+  if (!canUseBrowserStorage() || !touchId || !param) return;
+  try {
+    window.localStorage.setItem(
+      magnetBrandParamKey(touchId),
+      JSON.stringify({
+        version: MAGNET_BRAND_PARAM_CACHE_VERSION,
+        cachedAt: Date.now(),
+        param,
+      }),
+    );
+  } catch {
+    // Cache is an optimization only.
+  }
+}
+
+export function clearCachedMagnetBrandParam(touchId) {
+  if (!canUseBrowserStorage() || !touchId) return;
+  window.localStorage.removeItem(magnetBrandParamKey(touchId));
 }

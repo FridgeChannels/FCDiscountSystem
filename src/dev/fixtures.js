@@ -2,7 +2,7 @@
 
 const BRAND = {
   name: 'Ritual',
-  logoUrl: null,
+  logoUrl: 'http://localhost:8789/brand-assets/ritual-logo.svg',
   primaryColor: '#4f8a4a',
   shopUrl: 'https://ritual.com',
 };

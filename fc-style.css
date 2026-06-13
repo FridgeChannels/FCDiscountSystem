@@ -1785,6 +1785,57 @@ body {
   pointer-events: auto;
 }
 
+.platform-game-brand-bar {
+  position: relative;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: max(10px, env(safe-area-inset-top, 0px)) 52px 10px 14px;
+  border-bottom: 2px solid var(--platform-game-accent, rgba(20, 24, 20, 0.12));
+  background: rgba(255, 255, 255, 0.96);
+  flex-shrink: 0;
+}
+
+.platform-game-brand-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.platform-game-brand-logo {
+  display: block;
+  height: 28px;
+  width: auto;
+  max-width: 120px;
+  object-fit: contain;
+}
+
+.platform-game-brand-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--platform-game-accent, #1a1a1a);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.platform-game-brand-name--placeholder {
+  opacity: 0.55;
+  font-weight: 500;
+}
+
+.platform-game-difficulty {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  color: rgba(20, 24, 20, 0.55);
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
 .platform-game-stage {
   flex: 1;
   min-height: 0;
