@@ -105,6 +105,12 @@ function buildShopifyAuthUrl(touchId) {
   return `${SHOPIFY_TAP_AUTH_BASE}/${encodeURIComponent(id)}?redirectedFrom=${redirectedFrom}`;
 }
 
+function buildShopifyUnlinkUrl(touchId) {
+  const id = touchId || getTouchId();
+  const redirectedFrom = encodeURIComponent(window.location.href);
+  return `${SHOPIFY_TAP_AUTH_BASE}/${encodeURIComponent(id)}?action=unlink&redirectedFrom=${redirectedFrom}`;
+}
+
 function shopifyAuthStatusFromBinding(status) {
   return status?.connected ? 'connected' : 'unconnected';
 }
@@ -1609,15 +1615,9 @@ export default function App() {
 
   function disconnectShopifyAccount() {
     clearCachedShopifyStatus(touchId);
-    setShopifyBinding(null);
-    setShopifyAuthStatus('unconnected');
-    setShopifyLoginTaskStatus('incomplete');
+    clearCachedRewardPlan(touchId);
     setShopifyAccountOpen(false);
-    showNotification(
-      'Shopify disconnected',
-      'This device is no longer using a connected Shopify account.',
-      '✓',
-    );
+    window.location.href = buildShopifyUnlinkUrl(touchId);
   }
 
   function handleShopifyContinue() {
