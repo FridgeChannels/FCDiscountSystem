@@ -2451,7 +2451,7 @@ export default function App() {
         >
           <video
             ref={welcomeVideoRef}
-            src="/打开礼包开场动画/首次开场动画.mov"
+            src="/打开礼包开场动画/首次开场动画2.mp4"
             playsInline
             webkit-playsinline="true"
             muted
