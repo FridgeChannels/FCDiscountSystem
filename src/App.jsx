@@ -2319,7 +2319,6 @@ export default function App() {
         return;
       }
 
-      setGameLoadingMessage('Finishing game setup…');
       const start = await (preloadingGameStartsRef.current.get(key) ?? preloadGameStart(challenge));
       if (activeGameRequestRef.current === requestToken) {
         dbg('[FCDBG][App] game start ready for modal', {

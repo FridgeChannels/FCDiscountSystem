@@ -89,14 +89,20 @@ export default function IframeGameHost({ start, iframeUrl, allowedOrigin, onDone
 
   return (
     <div className="iframe-game-host">
-      {status === 'loading' ? <p className="platform-game-loading">Loading game shell…</p> : null}
       <iframe
         ref={iframeRef}
         title={`Game ${start.templateKey}`}
         src={iframeSrc}
         sandbox="allow-scripts allow-same-origin"
         className="platform-game-iframe"
+        aria-hidden={status === 'loading'}
       />
+      {status === 'loading' ? (
+        <div className="platform-game-loading platform-game-loading--overlay" role="status">
+          <span className="platform-game-spinner" aria-hidden="true" />
+          <p>Loading game…</p>
+        </div>
+      ) : null}
     </div>
   );
 }

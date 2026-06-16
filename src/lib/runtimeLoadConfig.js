@@ -1,17 +1,31 @@
 function resolvePublicIframeUrl(iframeUrl) {
   if (!iframeUrl || typeof iframeUrl !== 'string') return iframeUrl;
 
-  const runtimeBase = (
-    (typeof window !== 'undefined' && window.location?.origin)
-    || import.meta.env.VITE_RUNTIME_SHELL_BASE_URL
-    || ''
+  const shellBase = (import.meta.env.VITE_RUNTIME_SHELL_BASE_URL || '').replace(/\/$/, '');
+  const pageOrigin = (
+    typeof window !== 'undefined' && window.location?.origin ? window.location.origin : ''
   ).replace(/\/$/, '');
 
-  if (!runtimeBase) return iframeUrl;
-
   try {
-    const { pathname, search } = new URL(iframeUrl, runtimeBase);
-    return `${runtimeBase}${pathname}${search}`;
+    const parsed = new URL(iframeUrl, shellBase || pageOrigin || undefined);
+    const pathWithSearch = `${parsed.pathname}${parsed.search}`;
+
+    // Production: runtime shell is reverse-proxied on the same public host as the coupon app.
+    if (shellBase && pageOrigin && shellBase === pageOrigin) {
+      return `${pageOrigin}${pathWithSearch}`;
+    }
+
+    // Dev / explicit shell host (e.g. platform-web on :8789).
+    if (shellBase) {
+      return `${shellBase}${pathWithSearch}`;
+    }
+
+    // Fallback: same-origin path (requires dev proxy for /runtime-shell/).
+    if (pageOrigin) {
+      return `${pageOrigin}${pathWithSearch}`;
+    }
+
+    return iframeUrl;
   } catch {
     return iframeUrl;
   }

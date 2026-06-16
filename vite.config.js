@@ -2,9 +2,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
+
+function resolveProxyTarget(env, kind) {
+  const fallback = kind === 'api' ? 'http://localhost:3001' : 'http://localhost:8789';
+  const specific = kind === 'api' ? env.FC_API_PROXY_TARGET : env.FC_WEB_PROXY_TARGET;
+  const target = (env.FC_PLATFORM_HOST || specific || fallback).replace(/\/$/, '');
+  return {
+    target,
+    changeOrigin: true,
+    secure: target.startsWith('https://'),
+  };
+}
 function resolveFcRoot() {
   if (process.env.FC_PLATFORM_ROOT) {
     return path.resolve(process.env.FC_PLATFORM_ROOT);
@@ -31,7 +42,10 @@ function resolveFcRoot() {
 const fcRoot = resolveFcRoot();
 const fcPackages = path.join(fcRoot, 'packages');
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, root, '');
+
+  return {
   plugins: [
     react({
       // fc-platform 源码通过 alias 引入,需纳入 React Fast Refresh 处理范围
@@ -64,10 +78,12 @@ export default defineConfig({
       allow: [root, fcRoot],
     },
     proxy: {
-      '/api/fc': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-      },
+      '/api/fc': resolveProxyTarget(env, 'api'),
+      '/runtime-shell': resolveProxyTarget(env, 'web'),
+      '/_next': resolveProxyTarget(env, 'web'),
+      '/brand-assets': resolveProxyTarget(env, 'web'),
+      '/uploaded-games': resolveProxyTarget(env, 'web'),
     },
   },
+};
 });
