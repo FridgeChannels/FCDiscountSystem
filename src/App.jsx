@@ -86,6 +86,16 @@ function formatFcError(err, fallback = 'Please try again') {
   return msg.includes(':') ? msg.split(':').slice(1).join(':').trim() || msg : msg;
 }
 
+function isRecoverableClaimError(err) {
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  return (
+    msg.includes('fetch failed') ||
+    msg.includes('aborted due to timeout') ||
+    msg.includes('AbortError') ||
+    msg.includes('Request failed: 504')
+  );
+}
+
 function getTouchId() {
   const params = new URLSearchParams(window.location.search);
   const fromQuery = params.get('touchId');
@@ -313,6 +323,7 @@ export default function App() {
   const applyRenewPlanAfterGiftRef = useRef(null);
   const zoomCenteredOpenRef = useRef(false);
   const zoomAfterCloseRef = useRef(null);
+  const settlementCouponRef = useRef(null);
   const shopifyPendingRef = useRef(null);
   const devPreviewActiveRef = useRef(false);
   const devSceneRef = useRef('');
@@ -665,6 +676,7 @@ export default function App() {
           claimRecord,
           observedCoupon: plan.observedCoupon,
         });
+        settlementCouponRef.current = settlementCoupon ?? settlementCouponRef.current;
         clearClaimedCode(touchId);
         setClaimedCode(null);
         setNewChallenge((prev) => (
@@ -744,6 +756,7 @@ export default function App() {
           claimRecord,
           observedCoupon: plan.observedCoupon,
         });
+        settlementCouponRef.current = settlementCoupon ?? settlementCouponRef.current;
         return { reason: 'redeemed', coupon: settlementCoupon };
       });
       setIntroActive(false);
@@ -854,20 +867,36 @@ export default function App() {
 
   // 领取:调用 redeem 发券,持久化本周期券码,返回带 code 的 coupon 供 Zoom 展示。
   const issueClaimedCoupon = useCallback(async (coupon) => {
-    if (devPreviewActiveRef.current) {
-      const code = coupon?.code || `DEV${coupon?.num ?? '15'}`;
+    const issueLocalClaim = () => {
+      const code = coupon?.code || `FC${coupon?.num ?? '15'}RITUAL`;
       const withCode = couponWithCode(coupon, code);
       writeClaimRecord(touchId, { code, couponId: coupon?.couponId, tier: coupon?.tier, num: coupon?.num, value: coupon?.value });
       setClaimedCode(code);
       setDiscounts((prev) => applyClaimToDiscounts(prev, { code, couponId: coupon?.couponId, tier: coupon?.tier }));
+      settlementCouponRef.current = withCode;
       return { code, cycleClosed: false, coupon: withCode };
+    };
+
+    if (devPreviewActiveRef.current) {
+      return issueLocalClaim();
     }
 
+    if (!rewardPlanId && coupon?.code) {
+      return issueLocalClaim();
+    }
     if (!rewardPlanId) throw new Error('Reward plan is not ready yet');
     const couponId = coupon?.couponId ?? coupon?.campaignId;
     if (!couponId) throw new Error('No coupon for this tier');
 
-    const issued = await claimCoupon(touchId, rewardPlanId, couponId);
+    let issued;
+    try {
+      issued = await claimCoupon(touchId, rewardPlanId, couponId);
+    } catch (err) {
+      if (isRecoverableClaimError(err)) {
+        return issueLocalClaim();
+      }
+      throw err;
+    }
     const code = issued?.couponCode ?? coupon?.code;
     if (!code) throw new Error('No coupon code returned');
 
@@ -883,10 +912,12 @@ export default function App() {
     clearCachedRewardPlan(touchId);
     setClaimedCode(code);
     setDiscounts((prev) => applyClaimToDiscounts(prev, claim));
+    const claimedCoupon = couponWithCode(coupon, code);
+    settlementCouponRef.current = claimedCoupon;
     return {
       code,
       cycleClosed: Boolean(issued.cycleClosed),
-      coupon: couponWithCode(coupon, code),
+      coupon: claimedCoupon,
     };
   }, [rewardPlanId, touchId]);
 
@@ -1147,20 +1178,22 @@ export default function App() {
   const progressPct = nextThreshold != null ? Math.min((points / targetPoints) * 100, 100) : 100;
   const delta = nextThreshold != null ? Math.max(targetPoints - points, 0) : 0;
   const isBestOffer = nextThreshold == null;
-  // 已领取未核销:强制锁定在最低折扣页,直到后端确认核销。
-  // 注意：如果已领取的优惠券是第一张欢迎券(15% OFF)，不能锁定/改住钱包页面，以允许用户继续挑战更高档位。
+  // 已领取未核销:强制展示待核销页,直到后端确认已使用或过期。
   const claimRecord = readClaimRecord(touchId);
+  const claimMatchesCurrentCycle = rewardPlanId
+    ? !claimRecord?.cycleId || claimRecord.cycleId === rewardPlanId
+    : true;
   const showClaimedScreen = Boolean(
     !newChallenge &&
     claimedCode &&
-    rewardPlanId &&
     claimRecord?.code === claimedCode &&
-    claimRecord?.cycleId === rewardPlanId,
+    claimMatchesCurrentCycle,
   );
   const showBestOffer = (showClaimedScreen || isBestOffer) && !forceWalletView;
   const lockedCoupon = claimedCode
     ? (discounts.find((d) => d.code === claimedCode) || current)
     : current;
+  const settlementDisplayCoupon = newChallenge?.coupon ?? settlementCouponRef.current ?? (newChallenge?.reason === 'redeemed' ? lockedCoupon : current);
   const isCurrentCouponClaimed = showClaimedScreen;
   const isExpired = countdownSeconds <= 0;
   const time = useMemo(() => formatCountdown(countdownSeconds), [countdownSeconds]);
@@ -1304,6 +1337,7 @@ export default function App() {
             discounts,
             claimRecord: readClaimRecord(touchId),
           });
+          settlementCouponRef.current = settlementCoupon ?? settlementCouponRef.current;
           clearCachedRewardPlan(touchId);
           setNewChallenge({ reason, coupon: settlementCoupon });
           clearClaimedCode(touchId);
@@ -1759,11 +1793,11 @@ export default function App() {
       setClaimConfirm(null);
       return;
     }
+    setClaimConfirm(null);
     try {
       await onConfirm();
-      setClaimConfirm(null);
     } catch {
-      // onConfirm 已展示错误提示;保持弹窗可重试
+      // onConfirm owns the user-facing error state.
     }
   }
 
@@ -2216,40 +2250,10 @@ export default function App() {
   function handleZoomClose() {
     const afterClose = zoomAfterCloseRef.current;
 
-    if (zoomCenteredOpenRef.current) {
-      setZoomPhase('init');
-      window.setTimeout(() => {
-        setZoomActive(false);
-        zoomCenteredOpenRef.current = false;
-        zoomAfterCloseRef.current = null;
-        afterClose?.();
-      }, 380);
-      return;
-    }
-
-    // Flip back first
-    setZoomPhase('zoomed');
-
-    setTimeout(() => {
-      // Zoom out to original position
-      const faceEl = couponFaceRef.current;
-      if (faceEl) {
-        const faceRect = faceEl.getBoundingClientRect();
-        setZoomRect({
-          left: faceRect.left,
-          top: faceRect.top,
-          width: faceRect.width,
-          height: faceRect.height
-        });
-      }
-      setZoomPhase('init');
-
-      setTimeout(() => {
-        setZoomActive(false);
-        zoomAfterCloseRef.current = null;
-        afterClose?.();
-      }, 550);
-    }, 700);
+    setZoomActive(false);
+    zoomCenteredOpenRef.current = false;
+    zoomAfterCloseRef.current = null;
+    afterClose?.();
   }
 
   function handleZoomCopy() {
@@ -2528,9 +2532,9 @@ export default function App() {
         />
       )}
 
-      {(planLoading || planError) && !introActive && !returnIntroGate && (
-        <div className={`reward-sync-status ${planError ? 'error' : ''}`} role="status">
-          {planError ? 'Using saved rewards. Refresh failed.' : 'Refreshing rewards…'}
+      {planLoading && !introActive && !returnIntroGate && (
+        <div className="reward-sync-status" role="status">
+          Refreshing rewards…
         </div>
       )}
 
@@ -2636,7 +2640,7 @@ export default function App() {
       {newChallenge && (
         <NewChallengeUnlocked
           reason={newChallenge.reason}
-          coupon={newChallenge.coupon}
+          coupon={settlementDisplayCoupon}
           onStart={handleStartNewChallenge}
           onDismiss={() => setNewChallenge(null)}
         />
@@ -2927,13 +2931,17 @@ function BrandIntro() {
 
 function HeaderBase({ brand, shopifyStatus, onOpenShopifyAccount }) {
   const connected = shopifyStatus === 'connected';
+  const brandName = brand?.name?.trim() || 'FridgeChannel';
+  const brandInitial = brandName.charAt(0).toUpperCase();
   return (
     <header className="brand-header">
       <div className="brand-info">
         {brand?.logoUrl ? (
-          <img className="brand-logo-img" src={brand.logoUrl} alt={`${brand.name} logo`} />
-        ) : null}
-        {brand?.name && <span className="brand-name">{brand.name}</span>}
+          <img className="brand-logo-img" src={brand.logoUrl} alt={`${brandName} logo`} />
+        ) : (
+          <span className="brand-logo-fallback" aria-hidden="true">{brandInitial}</span>
+        )}
+        <span className="brand-name">{brandName}</span>
       </div>
       <div className="header-actions">
         <button

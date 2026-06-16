@@ -515,6 +515,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .brand-logo {
@@ -538,7 +539,37 @@ body {
   font-family: var(--font-serif);
   font-size: 1.25rem;
   font-weight: 700;
-  letter-spacing: -0.5px;
+  letter-spacing: 0;
+  min-width: 0;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand-logo-img,
+.brand-logo-fallback {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 50%;
+}
+
+.brand-logo-img {
+  display: block;
+  object-fit: cover;
+  box-shadow: 0 6px 14px rgba(45, 51, 43, 0.12);
+}
+
+.brand-logo-fallback {
+  display: grid;
+  place-items: center;
+  background: var(--brand-primary);
+  color: var(--brand-on-primary);
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  font-weight: 900;
+  box-shadow: 0 6px 14px rgba(45, 51, 43, 0.12);
 }
 
 .countdown-capsule {
@@ -1612,13 +1643,6 @@ body {
   opacity: 0.7;
 }
 
-.brand-logo-img {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
 .reward-sync-status {
   position: sticky;
   top: 0;
@@ -1942,7 +1966,7 @@ body {
 .shopify-auth-overlay {
   position: absolute;
   inset: 0;
-  z-index: 200;
+  z-index: 250;
   display: block;
   overflow-y: auto;
   background:
@@ -2088,7 +2112,7 @@ body {
 .shopify-account-page {
   position: absolute;
   inset: 0;
-  z-index: 200;
+  z-index: 250;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
