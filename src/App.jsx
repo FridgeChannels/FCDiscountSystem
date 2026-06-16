@@ -43,6 +43,7 @@ import {
 import { dbg, dbgError } from './lib/debug.js';
 import { applyBrandTheme, brandFromMagnetParam } from './lib/brandTheme.js';
 import { preloadRuntimeManifest } from './lib/runtimeRegistry.js';
+import { getLeaderboard, getTopPlayers, getAroundYou, computeRankChange } from './lib/leaderboard.js';
 
 // 阶段4:对不依赖每秒倒计时的叶子组件做 memo,
 // 避免倒计时每秒触发它们跟着整棵树一起重渲染。
@@ -423,6 +424,14 @@ export default function App() {
   const [shopifyAuthOverlay, setShopifyAuthOverlay] = useState(null);
   const [shopifyAccountOpen, setShopifyAccountOpen] = useState(false);
   const [shopifyAuthSuccess, setShopifyAuthSuccess] = useState(false);
+
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const [todayRank, setTodayRank] = useState(48);
+  const [rankChangeSignal, setRankChangeSignal] = useState(0);
+  const [coinGainSignal, setCoinGainSignal] = useState(0);
+  const [lastGainAmount, setLastGainAmount] = useState(0);
+  const [lastRankChange, setLastRankChange] = useState(0);
+  const [unlockToastSignal, setUnlockToastSignal] = useState(0);
 
   const syncShopifyBindingStatus = useCallback(async (forceRefresh = false) => {
     if (devPreviewActiveRef.current) {
@@ -2135,6 +2144,18 @@ export default function App() {
 
     const timing = getPointsEffectTiming(pts);
     spawnGainCallout(pts);
+
+    const prevCoins = points;
+    const newCoins = points + pts;
+    const change = computeRankChange(prevCoins, newCoins);
+    if (change > 0) {
+      setLastRankChange(change);
+      setRankChangeSignal((s) => s + 1);
+    }
+    setLastGainAmount(pts);
+    setCoinGainSignal((s) => s + 1);
+    setTodayRank((r) => Math.max(1, r - change));
+
     flyCoins(timing.count, () => {
       creditPoints(pts, timing.creditDuration);
     }, null, { staggerMs: timing.staggerMs, coinDuration: timing.coinDuration });
@@ -2182,6 +2203,7 @@ export default function App() {
     if (rewardPlanId && unlocked?.tier != null) {
       sessionStorage.setItem(tierReceiptSessionKey(touchId, rewardPlanId, unlocked.tier), '1');
     }
+    setUnlockToastSignal((s) => s + 1);
     setTargetPulse('ready unlocking');
     startConfetti();
     setReceiptCoupon(unlocked);
@@ -2760,9 +2782,15 @@ export default function App() {
               confirmOpen={!!claimConfirm}
               onTargetClick={handleTargetClick}
               onOpenRewardLadder={() => setRewardLadderOpen(true)}
+              todayRank={todayRank}
+              rankChangeSignal={rankChangeSignal}
+              lastRankChange={lastRankChange}
+              coinGainSignal={coinGainSignal}
+              lastGainAmount={lastGainAmount}
+              unlockToastSignal={unlockToastSignal}
             />
 
-            <Challenges challenges={challenges} dailyCapReached={dailyCapReached} onOpen={openChallenge} />
+            <Challenges challenges={challenges} dailyCapReached={dailyCapReached} onOpen={openChallenge} onOpenLeaderboard={() => setLeaderboardOpen(true)} />
             <RulesFooter rulesOpen={rulesOpen} onToggle={() => setRulesOpen((value) => !value)} />
           </>
         )}
@@ -2774,6 +2802,11 @@ export default function App() {
         discounts={discounts}
         points={points}
         onClose={() => setRewardLadderOpen(false)}
+      />
+      <LeaderboardSheet
+        open={leaderboardOpen}
+        currentUserCoins={points}
+        onClose={() => setLeaderboardOpen(false)}
       />
       </>
       )}
@@ -3369,7 +3402,13 @@ function CouponWallet({
   confirmOpen,
   onTargetClick,
   onOpenRewardLadder,
-  isClaimed = false
+  isClaimed = false,
+  todayRank,
+  rankChangeSignal,
+  lastRankChange,
+  coinGainSignal,
+  lastGainAmount,
+  unlockToastSignal
 }) {
   return (
     <section className={`wallet ${isBestOffer ? 'best-offer' : ''}`} data-screen-label="优惠券">
@@ -3396,6 +3435,18 @@ function CouponWallet({
           </div>
           <span className={`route-progress ${crediting ? 'crediting' : ''}`}>{points} / {targetPoints}</span>
         </div>
+      )}
+
+      {!isBestOffer && (
+        <RankBadge
+          rank={todayRank}
+          rankChangeSignal={rankChangeSignal}
+          lastRankChange={lastRankChange}
+          coinGainSignal={coinGainSignal}
+          lastGainAmount={lastGainAmount}
+          unlockToastSignal={unlockToastSignal}
+          next={next}
+        />
       )}
 
       <div className="coupon-pair" data-coupon-theme={COUPON_THEME}>
@@ -3579,11 +3630,19 @@ function RatingIcons({ count, type }) {
   );
 }
 
-function ChallengesBase({ challenges, dailyCapReached, onOpen }) {
+function ChallengesBase({ challenges, dailyCapReached, onOpen, onOpenLeaderboard }) {
   return (
     <section className="earn-progress-section" data-screen-label="挑战任务">
       <div className="section-head stacked">
-        <span className="section-tag">Play &amp; Earn</span>
+        <div className="section-head-with-lb">
+          <span className="section-tag">Play &amp; Earn</span>
+          <button className="leaderboard-entry-btn" type="button" onClick={onOpenLeaderboard}>
+            <span>Leaderboard</span>
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M7 4l6 6-6 6" />
+            </svg>
+          </button>
+        </div>
         <span className="section-note">Updated daily · New challenges every day</span>
       </div>
       <div className="challenges-swiper">
@@ -4283,5 +4342,112 @@ function ShopifyAuthorizationPage({ brand, source, onContinue, onSkip }) {
         </button>
       </div>
     </section>
+  );
+}
+
+function LeaderboardSheet({ open, currentUserCoins, onClose }) {
+  if (!open) return null;
+
+  const { players, currentUserRank } = getLeaderboard('You', currentUserCoins);
+  const topPlayers = players.slice(0, 3);
+  const aroundPlayers = (() => {
+    const start = Math.max(0, currentUserRank - 3);
+    const end = Math.min(players.length, currentUserRank + 2);
+    return players.slice(start, end);
+  })();
+
+  const avatarColors = ['#5c6e58', '#b89855', '#a08447', '#6b7e65', '#7a8c75', '#8b6b3d'];
+  const getAvatarColor = (name) => avatarColors[name.charCodeAt(0) % avatarColors.length];
+
+  return (
+    <div className="leaderboard-overlay" onClick={onClose}>
+      <div className="leaderboard-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="leaderboard-handle" />
+        <div className="leaderboard-head">
+          <div>
+            <h3>Today's Game Leaderboard</h3>
+            <p>Ranked by coins earned from games today.</p>
+          </div>
+          <button className="leaderboard-close" onClick={onClose}>&times;</button>
+        </div>
+
+        <div className="lb-podium-section">
+          <div className="lb-section-title">Top Players</div>
+          <div className="lb-podium">
+            {[topPlayers[1], topPlayers[0], topPlayers[2]].filter(Boolean).map((player, idx) => (
+              <div className="lb-podium-player" key={player.rank}>
+                <div className="lb-podium-avatar" style={{ background: getAvatarColor(player.name) }}>
+                  {player.name.charAt(0)}
+                </div>
+                <span className="lb-podium-rank">#{player.rank}</span>
+                <span className="lb-podium-name">{player.name}</span>
+                <span className="lb-podium-coins">{player.coins}</span>
+                <div className="lb-podium-bar">{idx === 0 ? '🥈' : idx === 1 ? '🥇' : '🥉'}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="lb-around-section">
+          <div className="lb-section-title">Around You</div>
+          <div className="lb-around-list">
+            {aroundPlayers.map((player) => (
+              <div className={`lb-row ${player.isCurrentUser ? 'is-current-user' : ''}`} key={player.rank}>
+                <span className="lb-row-rank">#{player.rank}</span>
+                <div className="lb-row-avatar" style={{ background: getAvatarColor(player.name) }}>
+                  {player.name.charAt(0)}
+                </div>
+                <div className="lb-row-info">
+                  <div className="lb-row-name">{player.isCurrentUser ? 'You' : player.name}</div>
+                </div>
+                <span className="lb-row-coins">{player.coins}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RankBadge({ rank, rankChangeSignal, lastRankChange, coinGainSignal, lastGainAmount, unlockToastSignal, next }) {
+  const [showRankChange, setShowRankChange] = useState(false);
+  const [showCoinGain, setShowCoinGain] = useState(false);
+  const [showUnlock, setShowUnlock] = useState(false);
+
+  useEffect(() => {
+    if (rankChangeSignal > 0 && lastRankChange > 0) {
+      setShowRankChange(true);
+      const t = setTimeout(() => setShowRankChange(false), 1800);
+      return () => clearTimeout(t);
+    }
+  }, [rankChangeSignal, lastRankChange]);
+
+  useEffect(() => {
+    if (coinGainSignal > 0 && lastGainAmount > 0) {
+      setShowCoinGain(true);
+      const t = setTimeout(() => setShowCoinGain(false), 1600);
+      return () => clearTimeout(t);
+    }
+  }, [coinGainSignal, lastGainAmount]);
+
+  useEffect(() => {
+    if (unlockToastSignal > 0) {
+      setShowUnlock(true);
+      const t = setTimeout(() => setShowUnlock(false), 2400);
+      return () => clearTimeout(t);
+    }
+  }, [unlockToastSignal]);
+
+  return (
+    <div className="wallet-rank-row">
+      <span className="rank-badge">
+        <span className="rank-badge-icon">🏆</span>
+        <span className="rank-badge-rank">#{rank}</span>
+      </span>
+      {showRankChange && <span className="rank-change">↑{lastRankChange}</span>}
+      {showCoinGain && <span className="coin-gain-toast">+{lastGainAmount} ¢</span>}
+      {showUnlock && next && <span className="coupon-unlock-toast">🎉 {next.num}% OFF Unlocked</span>}
+    </div>
   );
 }
