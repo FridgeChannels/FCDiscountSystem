@@ -6,4 +6,5 @@ export {
   isDevPreviewEnabled,
   navigateToDevScene,
   resolveDevScene,
+  shouldShowDevToolbar,
 } from './applyScene.js';

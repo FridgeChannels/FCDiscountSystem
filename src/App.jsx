@@ -24,6 +24,8 @@ import {
   clearClaimedCode,
   clearWelcomeCompleted,
   clearLegacyMagnetStorage,
+  readCachedProfile,
+  writeCachedProfile,
 } from './api/cache.js';
 import {
   applyClaimToDiscounts,
@@ -40,11 +42,13 @@ import {
   isDevPreviewEnabled,
   navigateToDevScene,
   resolveDevScene,
+  shouldShowDevToolbar,
 } from './dev/index.js';
 import { dbg, dbgError } from './lib/debug.js';
 import { applyBrandTheme, brandFromMagnetParam } from './lib/brandTheme.js';
 import { preloadRuntimeManifest } from './lib/runtimeRegistry.js';
 import { getLeaderboard, getTopPlayers, getAroundYou, computeRankChange } from './lib/leaderboard.js';
+import { getOrCreateLeaderboardIdentity } from './lib/leaderboardIdentity.js';
 
 // 阶段4:对不依赖每秒倒计时的叶子组件做 memo,
 // 避免倒计时每秒触发它们跟着整棵树一起重渲染。
@@ -136,6 +140,29 @@ function shopifyAccountLabel(binding) {
     binding.email ||
     (binding.shopifyCustomerId ? `Customer ${binding.shopifyCustomerId}` : 'Connected Shopify account')
   );
+}
+
+const PROFILE_AVATAR_OPTIONS = ['#a08447', '#5c6e58', '#b89855', '#6b7e65', '#8b6b3d', '#7a8c75'];
+const DEFAULT_PROFILE = {
+  nickname: 'You',
+  avatarColor: '#a08447',
+  avatarImageUrl: '',
+};
+
+function normalizeProfile(profile) {
+  const nickname = String(profile?.nickname ?? '').trim().slice(0, 18) || DEFAULT_PROFILE.nickname;
+  const avatarColor = PROFILE_AVATAR_OPTIONS.includes(profile?.avatarColor)
+    ? profile.avatarColor
+    : DEFAULT_PROFILE.avatarColor;
+  return {
+    nickname,
+    avatarColor,
+    avatarImageUrl: typeof profile?.avatarImageUrl === 'string' ? profile.avatarImageUrl : '',
+  };
+}
+
+function profileInitial(profile) {
+  return (profile?.nickname || DEFAULT_PROFILE.nickname).trim().charAt(0).toUpperCase() || 'Y';
 }
 
 function tierReceiptSessionKey(touchId, cycleId, tier) {
@@ -426,14 +453,28 @@ export default function App() {
   const [shopifyAuthOverlay, setShopifyAuthOverlay] = useState(null);
   const [shopifyAccountOpen, setShopifyAccountOpen] = useState(false);
   const [shopifyAuthSuccess, setShopifyAuthSuccess] = useState(false);
+  const [userProfile, setUserProfile] = useState(() => normalizeProfile(readCachedProfile(getTouchId())));
 
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [todayRank, setTodayRank] = useState(48);
-  const [rankChangeSignal, setRankChangeSignal] = useState(0);
   const [coinGainSignal, setCoinGainSignal] = useState(0);
   const [lastGainAmount, setLastGainAmount] = useState(0);
-  const [lastRankChange, setLastRankChange] = useState(0);
   const [unlockToastSignal, setUnlockToastSignal] = useState(0);
+
+  useEffect(() => {
+    setUserProfile(normalizeProfile(readCachedProfile(touchId)));
+  }, [touchId]);
+
+  // Stable, auto-assigned leaderboard identity ("{BrandName} {4-char code}").
+  // Read-only in V1; only avatar color is user-editable.
+  const leaderboardIdentity = useMemo(
+    () => getOrCreateLeaderboardIdentity(brand?.name),
+    [brand?.name]
+  );
+  const displayProfile = useMemo(
+    () => ({ ...userProfile, nickname: leaderboardIdentity.displayId }),
+    [userProfile, leaderboardIdentity]
+  );
 
   const syncShopifyBindingStatus = useCallback(async (forceRefresh = false) => {
     if (devPreviewActiveRef.current) {
@@ -1300,17 +1341,30 @@ export default function App() {
     return () => window.removeEventListener('pageshow', onPageShow);
   }, [reloadPlan, syncShopifyBindingStatus, touchId]);
 
-  const current = discounts[currentStepIndex] || discounts[discounts.length - 1] || { num: '15', target: 0, tier: 1 };
+  const ladderCurrent = discounts[currentStepIndex] || discounts[discounts.length - 1] || { num: '15', target: 0, tier: 1 };
+  const realDiscountTargets = discounts.filter((discount) => (rewardPercent(discount) ?? 0) > 0);
+  const singleTargetCoupon = !hasInitialDiscount && realDiscountTargets.length === 1 ? realDiscountTargets[0] : null;
+  const singleTargetMode = Boolean(
+    singleTargetCoupon &&
+    (currentStepIndex === 0 || (rewardPercent(ladderCurrent) ?? 0) === 0)
+  );
+  const current = singleTargetMode
+    ? { num: '0', value: '0% OFF', target: 0, tier: 0 }
+    : ladderCurrent;
   const currentTier = current.tier ?? currentStepIndex + 1;
-  const nextThreshold = nextTierThresholdFromDiscounts(discounts, currentTier);
+  const nextThreshold = singleTargetMode
+    ? singleTargetCoupon.target
+    : nextTierThresholdFromDiscounts(discounts, currentTier);
   const targetPoints = nextThreshold ?? current?.target ?? 0;
-  const next = nextThreshold != null ? discounts.find((d) => d.tier === currentTier + 1) ?? null : null;
-  const progressPct = nextThreshold != null ? Math.min((points / targetPoints) * 100, 100) : 100;
+  const next = singleTargetMode
+    ? singleTargetCoupon
+    : (nextThreshold != null ? discounts.find((d) => d.tier === currentTier + 1) ?? null : null);
+  const progressPct = nextThreshold != null && targetPoints > 0 ? Math.min((points / targetPoints) * 100, 100) : 100;
   const delta = nextThreshold != null ? Math.max(targetPoints - points, 0) : 0;
   // 最高档:后端 currentTier 已是顶级,或积分已达到阶梯最高门槛(currentTier 可能尚未刷新)
   const topTierStep = discounts[discounts.length - 1];
   const reachedTopByPoints = topTierStep != null && points >= (topTierStep.target ?? 0);
-  const isBestOffer = nextThreshold == null || reachedTopByPoints;
+  const isBestOffer = !singleTargetMode && (nextThreshold == null || reachedTopByPoints);
   // 已领取未核销:强制展示待核销页,直到后端确认已使用或过期。
   const claimRecord = readClaimRecord(touchId);
   const claimMatchesCurrentCycle = rewardPlanId
@@ -1830,6 +1884,7 @@ export default function App() {
 
 
   function resolveUnlockedCoupon(discountList, stepIndex) {
+    if (singleTargetMode) return singleTargetCoupon ?? discountList[0] ?? null;
     return discountList[stepIndex + 1] ?? discountList[stepIndex] ?? discountList[0] ?? null;
   }
 
@@ -1895,13 +1950,22 @@ export default function App() {
 
   function openShopifyAccountEntry() {
     const cached = readCachedShopifyStatus(touchId);
-    const binding = shopifyBinding?.connected ? shopifyBinding : cached;
-    if (binding?.connected || shopifyAuthStatus === 'connected') {
-      setShopifyBinding(binding?.connected ? binding : { connected: true });
-      setShopifyAccountOpen(true);
-      return;
+    if (cached?.connected && !shopifyBinding?.connected) {
+      setShopifyBinding(cached);
+      setShopifyAuthStatus('connected');
     }
-    showShopifyAuth('account_entry');
+    setShopifyAccountOpen(true);
+  }
+
+  function saveUserProfile(nextProfile) {
+    // Leaderboard identity is auto-assigned per brand and read-only in V1;
+    // only avatar fields are user-editable, so don't persist the display name.
+    const normalized = normalizeProfile({
+      avatarColor: nextProfile?.avatarColor,
+      avatarImageUrl: nextProfile?.avatarImageUrl,
+    });
+    setUserProfile(normalized);
+    writeCachedProfile(touchId, normalized);
   }
 
   function disconnectShopifyAccount() {
@@ -2211,10 +2275,6 @@ export default function App() {
     const prevCoins = points;
     const newCoins = points + pts;
     const change = computeRankChange(prevCoins, newCoins);
-    if (change > 0) {
-      setLastRankChange(change);
-      setRankChangeSignal((s) => s + 1);
-    }
     setLastGainAmount(pts);
     setCoinGainSignal((s) => s + 1);
     setTodayRank((r) => Math.max(1, r - change));
@@ -2802,7 +2862,12 @@ export default function App() {
 
       {showHome && (
       <>
-      <Header brand={brand} shopifyStatus={shopifyAuthStatus} onOpenShopifyAccount={openShopifyAccountEntry} />
+      <Header
+        brand={brand}
+        profile={displayProfile}
+        shopifyStatus={shopifyAuthStatus}
+        onOpenShopifyAccount={openShopifyAccountEntry}
+      />
 
       <main className="content-area">
         {showBestOffer ? (
@@ -2856,9 +2921,7 @@ export default function App() {
               confirmOpen={!!claimConfirm}
               onTargetClick={handleTargetClick}
               onOpenRewardLadder={() => setRewardLadderOpen(true)}
-              todayRank={todayRank}
-              rankChangeSignal={rankChangeSignal}
-              lastRankChange={lastRankChange}
+              singleTargetMode={singleTargetMode}
               coinGainSignal={coinGainSignal}
               lastGainAmount={lastGainAmount}
               unlockToastSignal={unlockToastSignal}
@@ -2880,6 +2943,7 @@ export default function App() {
       <LeaderboardSheet
         open={leaderboardOpen}
         currentUserCoins={points}
+        profile={displayProfile}
         onClose={() => setLeaderboardOpen(false)}
       />
       </>
@@ -2940,10 +3004,14 @@ export default function App() {
       )}
 
       {shopifyAccountOpen && (
-        <ShopifyAccountPage
+        <ProfilePage
           brand={brand}
+          profile={displayProfile}
           binding={shopifyBinding}
+          shopifyStatus={shopifyAuthStatus}
+          onSave={saveUserProfile}
           onClose={() => setShopifyAccountOpen(false)}
+          onConnect={() => showShopifyAuth('profile')}
           onDisconnect={disconnectShopifyAccount}
         />
       )}
@@ -2962,7 +3030,7 @@ export default function App() {
         </div>
       )}
 
-      {isDevPreviewEnabled() && (
+      {shouldShowDevToolbar() && (
         <DevToolbar
           activeScene={devScene}
           onSelectScene={(sceneId) => {
@@ -3207,10 +3275,11 @@ function BrandIntro() {
   return null;
 }
 
-function HeaderBase({ brand, shopifyStatus, onOpenShopifyAccount }) {
+function HeaderBase({ brand, profile, shopifyStatus, onOpenShopifyAccount }) {
   const connected = shopifyStatus === 'connected';
   const brandName = brand?.name?.trim() || 'FridgeChannel';
   const brandInitial = brandName.charAt(0).toUpperCase();
+  const userInitial = profileInitial(profile);
   return (
     <header className="brand-header">
       <div className="brand-info">
@@ -3225,14 +3294,17 @@ function HeaderBase({ brand, shopifyStatus, onOpenShopifyAccount }) {
         <button
           className={`account-entry-btn ${connected ? 'is-connected' : ''}`}
           type="button"
-          aria-label={connected ? 'View connected Shopify account' : 'Connect Shopify account'}
-          title={connected ? 'Shopify account' : 'Connect Shopify'}
+          aria-label="Open profile"
+          title="Profile"
           onClick={onOpenShopifyAccount}
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M20 21a8 8 0 0 0-16 0" />
-            <circle cx="12" cy="7" r="4" />
-          </svg>
+          {profile?.avatarImageUrl ? (
+            <img className="account-entry-avatar-img" src={profile.avatarImageUrl} alt="" aria-hidden="true" />
+          ) : (
+            <span className="account-entry-avatar" style={{ background: profile?.avatarColor || DEFAULT_PROFILE.avatarColor }}>
+              {userInitial}
+            </span>
+          )}
           {connected && <span className="account-entry-dot" aria-hidden="true" />}
         </button>
       </div>
@@ -3477,15 +3549,13 @@ function CouponWallet({
   onTargetClick,
   onOpenRewardLadder,
   isClaimed = false,
-  todayRank,
-  rankChangeSignal,
-  lastRankChange,
+  singleTargetMode = false,
   coinGainSignal,
   lastGainAmount,
   unlockToastSignal
 }) {
   return (
-    <section className={`wallet ${isBestOffer ? 'best-offer' : ''}`} data-screen-label="优惠券">
+    <section className={`wallet ${isBestOffer ? 'best-offer' : ''} ${singleTargetMode ? 'single-target' : ''}`} data-screen-label="优惠券">
       <div className="section-head">
         <span className="section-tag">{isBestOffer ? 'Best offer unlocked' : 'Your coupon'}</span>
         {!isBestOffer && <RewardLadderEntry onOpen={onOpenRewardLadder} />}
@@ -3499,7 +3569,7 @@ function CouponWallet({
       )}
 
       {!isBestOffer && (
-        <div className="coupon-route" aria-hidden="true">
+        <div className={`coupon-route ${singleTargetMode ? 'single-target-route' : ''}`} aria-hidden="true">
           <div className="route-arc-container">
             <svg className="route-arc" viewBox="0 0 178 70" preserveAspectRatio="none">
               <path className="route-arc-shadow" d="M8 58 C52 2 124 2 170 58" />
@@ -3511,65 +3581,62 @@ function CouponWallet({
         </div>
       )}
 
-      {!isBestOffer && (
-        <RankBadge
-          rank={todayRank}
-          rankChangeSignal={rankChangeSignal}
-          lastRankChange={lastRankChange}
-          coinGainSignal={coinGainSignal}
-          lastGainAmount={lastGainAmount}
-          unlockToastSignal={unlockToastSignal}
-          next={next}
-        />
-      )}
+      <CouponFeedbackToasts
+        coinGainSignal={coinGainSignal}
+        lastGainAmount={lastGainAmount}
+        unlockToastSignal={unlockToastSignal}
+        next={next}
+      />
 
-      <div className="coupon-pair" data-coupon-theme={COUPON_THEME}>
-        <div className={`coupon-wrap current ${currentSwap ? 'swap' : ''}`}>
-          <div className={`coupon coupon-current ${isExpired ? 'expired' : ''} ${confirmOpen ? 'confirm-open-zoom' : ''}`} data-tier={tierForDiscount(current.num)}>
-            <div className="coupon-face" ref={couponFaceRef}>
-              {isClaimed && (
-                <div className="wallet-coupon-claimed-badge">• CLAIMED ✓</div>
-              )}
-              <span className="coupon-kicker">{isBestOffer ? 'Current Coupon' : 'Unlocked Offer'}</span>
-              <span className="stub-value">{current.num}<small>%</small></span>
-              {isBestOffer ? (
-                <>
-                  <span className="max-discount-label">Best offer this round</span>
-                </>
-              ) : (
-                <>
-                  <span className="stub-off">OFF</span>
-                  <span className="coupon-title">Sitewide · No minimum</span>
-                </>
-              )}
+      <div className={`coupon-pair ${singleTargetMode ? 'single-target-pair' : ''}`} data-coupon-theme={COUPON_THEME}>
+        {!singleTargetMode && (
+          <div className={`coupon-wrap current ${currentSwap ? 'swap' : ''}`}>
+            <div className={`coupon coupon-current ${isExpired ? 'expired' : ''} ${confirmOpen ? 'confirm-open-zoom' : ''}`} data-tier={tierForDiscount(current.num)}>
+              <div className="coupon-face" ref={couponFaceRef}>
+                {isClaimed && (
+                  <div className="wallet-coupon-claimed-badge">• CLAIMED ✓</div>
+                )}
+                <span className="coupon-kicker">{isBestOffer ? 'Current Coupon' : 'Unlocked Offer'}</span>
+                <span className="stub-value">{current.num}<small>%</small></span>
+                {isBestOffer ? (
+                  <>
+                    <span className="max-discount-label">Best offer this round</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="stub-off">OFF</span>
+                    <span className="coupon-title">Sitewide · No minimum</span>
+                  </>
+                )}
+              </div>
+              <button className="btn-use" id="use-now-btn" aria-label="Use current coupon" disabled={isExpired} onClick={onUse}>
+                <span>{isExpired ? 'Expired' : (isClaimed ? 'Redeem' : 'Claim')}</span>
+                <svg className="use-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 4.5V19" />
+                  <path d="M6 13l6 6 6-6" />
+                </svg>
+              </button>
             </div>
-            <button className="btn-use" id="use-now-btn" aria-label="Use current coupon" disabled={isExpired} onClick={onUse}>
-              <span>{isExpired ? 'Expired' : (isClaimed ? 'Redeem' : 'Claim')}</span>
-              <svg className="use-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M12 4.5V19" />
-                <path d="M6 13l6 6 6-6" />
-              </svg>
-            </button>
           </div>
-        </div>
+        )}
 
         {next && (
           <div 
-            className={`coupon-wrap target ${delta <= 0 ? 'ready' : ''} ${targetPulse} ${currentSwap ? 'swap' : ''}`}
+            className={`coupon-wrap target ${singleTargetMode ? 'single-target-coupon' : ''} ${delta <= 0 ? 'ready' : ''} ${targetPulse} ${currentSwap ? 'swap' : ''}`}
             onClick={delta <= 0 ? onTargetClick : undefined}
             style={delta <= 0 ? { cursor: 'pointer' } : undefined}
           >
             <div className="coupon coupon-target" data-tier={tierForDiscount(next.num)} ref={targetCouponRef}>
               <div className="coupon-face">
-                <span className="coupon-kicker">Next Offer</span>
+                <span className="coupon-kicker">{singleTargetMode ? 'Target Offer' : 'Next Offer'}</span>
                 <span className="stub-value">{next.num}<small>%</small></span>
                 <span className="stub-off">OFF</span>
                 <span className="coupon-title">Orders $75+</span>
               </div>
               <div className="locked-floor">
                 <div className="coupon-fill" style={{ width: `${progressPct}%` }} />
-                <span>Locked</span>
-                <span>Need <b>{delta}</b> pts</span>
+                <span>{delta <= 0 ? 'Unlocked' : 'Locked'}</span>
+                <span>{delta <= 0 ? 'Claim' : <>Need <b>{delta}</b> pts</>}</span>
               </div>
             </div>
             <div className="lock-badge">
@@ -3711,6 +3778,7 @@ function ChallengesBase({ challenges, dailyCapReached, onOpen, onOpenLeaderboard
         <div className="section-head-with-lb">
           <span className="section-tag">Play &amp; Earn</span>
           <button className="leaderboard-entry-btn" type="button" onClick={onOpenLeaderboard}>
+            <span className="leaderboard-entry-icon" aria-hidden="true" />
             <span>Leaderboard</span>
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M7 4l6 6-6 6" />
@@ -4341,12 +4409,21 @@ function ZoomFlipCard({ coupon, colors, rect, phase, copyState, onClose, onCopy 
   );
 }
 
-function ShopifyAccountPage({ brand, binding, onClose, onDisconnect }) {
-  const accountLabel = shopifyAccountLabel(binding);
+function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onClose, onConnect, onDisconnect }) {
+  const [draft, setDraft] = useState(() => normalizeProfile(profile));
   const brandName = brand?.name || 'Your brand';
+  const connected = binding?.connected || shopifyStatus === 'connected';
+  const accountLabel = connected ? shopifyAccountLabel(binding?.connected ? binding : { connected: true }) : 'Not connected';
+  const draftInitial = profileInitial(draft);
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    onSave(draft);
+    onClose();
+  }
 
   return (
-    <section className="shopify-account-page" aria-label="Connected Shopify account">
+    <section className="shopify-account-page profile-page" aria-label="Profile settings">
       <header className="shopify-account-header">
         <div className="shopify-account-brand">
           {brand?.logoUrl ? (
@@ -4364,24 +4441,90 @@ function ShopifyAccountPage({ brand, binding, onClose, onDisconnect }) {
         </button>
       </header>
 
-      <main className="shopify-account-body">
-        <div className="shopify-account-icon" aria-hidden="true">
-          <img src="/gift-opening/shopify-icon.png" alt="" />
-        </div>
-        <span className="shopify-account-kicker">Shopify Connected</span>
-        <h1>Shopify account</h1>
-
-        <div className="shopify-account-card">
-          <span>Connected account</span>
-          <strong>{accountLabel}</strong>
-          {binding?.email && <p>{binding.email}</p>}
-          {binding?.shop && binding.shop !== accountLabel && <p>{binding.shop}</p>}
+      <form className="shopify-account-body profile-body" onSubmit={handleSubmit}>
+        <div className="profile-hero">
+          <div className="profile-avatar-preview" style={{ background: draft.avatarColor }} aria-hidden="true">
+            {draft.avatarImageUrl ? <img src={draft.avatarImageUrl} alt="" /> : draftInitial}
+          </div>
+          <h1>Profile</h1>
         </div>
 
-        <button className="shopify-account-disconnect" type="button" onClick={onDisconnect}>
-          Disconnect Shopify
+        <section className="profile-panel" aria-labelledby="leaderboard-identity-title">
+          <div className="profile-panel-head">
+            <span id="leaderboard-identity-title">Leaderboard identity</span>
+          </div>
+
+          <div className="profile-field">
+            <span>Leaderboard ID</span>
+            <output className="profile-readonly-id" aria-readonly="true">{draft.nickname}</output>
+            <small className="profile-field-hint">Auto-assigned and fixed for this brand.</small>
+          </div>
+
+          <div className="profile-field">
+            <span>Avatar color</span>
+            <div className="profile-avatar-options" role="radiogroup" aria-label="Avatar color">
+              {PROFILE_AVATAR_OPTIONS.map((color) => (
+                <button
+                  className={`profile-avatar-option ${draft.avatarColor === color ? 'is-selected' : ''}`}
+                  key={color}
+                  type="button"
+                  style={{ background: color }}
+                  aria-label={`Use avatar color ${color}`}
+                  aria-pressed={draft.avatarColor === color}
+                  onClick={() => setDraft((value) => ({ ...value, avatarColor: color, avatarImageUrl: '' }))}
+                >
+                  {draft.avatarColor === color && <span>{draftInitial}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className={`profile-panel shopify-profile-panel ${connected ? 'is-connected' : 'is-unconnected'}`} aria-labelledby="shopify-profile-title">
+          <div className="profile-panel-head">
+            <span id="shopify-profile-title">Shopify account</span>
+            <small>{connected ? 'Connected' : 'Not connected'}</small>
+          </div>
+
+          <div className="profile-shopify-row">
+            <div className="profile-shopify-icon" aria-hidden="true">
+              <img src="/gift-opening/shopify-icon.png" alt="" />
+            </div>
+            <div className="profile-shopify-copy">
+              <strong>{connected ? accountLabel : 'Connect Shopify'}</strong>
+              {connected ? (
+                <>
+                  {binding?.email && <p>{binding.email}</p>}
+                </>
+              ) : (
+                null
+              )}
+            </div>
+          </div>
+
+          {connected ? (
+            <button className="shopify-account-disconnect profile-secondary-action" type="button" onClick={onDisconnect}>
+              Disconnect Shopify
+            </button>
+          ) : (
+            <button
+              className="profile-connect-shopify"
+              type="button"
+              onClick={() => {
+                onSave(draft);
+                onConnect();
+              }}
+            >
+              <img src="/gift-opening/shopify-icon.png" alt="" aria-hidden="true" />
+              Connect Shopify
+            </button>
+          )}
+        </section>
+
+        <button className="profile-save-btn" type="submit">
+          Save changes
         </button>
-      </main>
+      </form>
     </section>
   );
 }
@@ -4419,10 +4562,11 @@ function ShopifyAuthorizationPage({ brand, source, onContinue, onSkip }) {
   );
 }
 
-function LeaderboardSheet({ open, currentUserCoins, onClose }) {
+function LeaderboardSheet({ open, currentUserCoins, profile, onClose }) {
   if (!open) return null;
 
-  const { players, currentUserRank } = getLeaderboard('You', currentUserCoins);
+  const displayProfile = normalizeProfile(profile);
+  const { players, currentUserRank } = getLeaderboard(displayProfile.nickname, currentUserCoins);
   const topPlayers = players.slice(0, 3);
   const aroundPlayers = (() => {
     const start = Math.max(0, currentUserRank - 3);
@@ -4432,6 +4576,8 @@ function LeaderboardSheet({ open, currentUserCoins, onClose }) {
 
   const avatarColors = ['#5c6e58', '#b89855', '#a08447', '#6b7e65', '#7a8c75', '#8b6b3d'];
   const getAvatarColor = (name) => avatarColors[name.charCodeAt(0) % avatarColors.length];
+  const playerAvatarColor = (player) => player.isCurrentUser ? displayProfile.avatarColor : getAvatarColor(player.name);
+  const playerInitial = (player) => player.isCurrentUser ? profileInitial(displayProfile) : player.name.charAt(0);
 
   return (
     <div className="leaderboard-overlay" onClick={onClose}>
@@ -4445,13 +4591,13 @@ function LeaderboardSheet({ open, currentUserCoins, onClose }) {
           <button className="leaderboard-close" onClick={onClose}>&times;</button>
         </div>
 
+        <div className="lb-section-title lb-podium-title">Top Players</div>
         <div className="lb-podium-section">
-          <div className="lb-section-title">Top Players</div>
           <div className="lb-podium">
             {[topPlayers[1], topPlayers[0], topPlayers[2]].filter(Boolean).map((player, idx) => (
               <div className="lb-podium-player" key={player.rank}>
-                <div className="lb-podium-avatar" style={{ background: getAvatarColor(player.name) }}>
-                  {player.name.charAt(0)}
+                <div className="lb-podium-avatar" style={{ background: playerAvatarColor(player) }}>
+                  {playerInitial(player)}
                 </div>
                 <span className="lb-podium-rank">#{player.rank}</span>
                 <span className="lb-podium-name">{player.name}</span>
@@ -4468,11 +4614,11 @@ function LeaderboardSheet({ open, currentUserCoins, onClose }) {
             {aroundPlayers.map((player) => (
               <div className={`lb-row ${player.isCurrentUser ? 'is-current-user' : ''}`} key={player.rank}>
                 <span className="lb-row-rank">#{player.rank}</span>
-                <div className="lb-row-avatar" style={{ background: getAvatarColor(player.name) }}>
-                  {player.name.charAt(0)}
+                <div className="lb-row-avatar" style={{ background: playerAvatarColor(player) }}>
+                  {playerInitial(player)}
                 </div>
                 <div className="lb-row-info">
-                  <div className="lb-row-name">{player.isCurrentUser ? 'You' : player.name}</div>
+                  <div className="lb-row-name">{player.name}</div>
                 </div>
                 <span className="lb-row-coins">{player.coins}</span>
               </div>
@@ -4484,18 +4630,9 @@ function LeaderboardSheet({ open, currentUserCoins, onClose }) {
   );
 }
 
-function RankBadge({ rank, rankChangeSignal, lastRankChange, coinGainSignal, lastGainAmount, unlockToastSignal, next }) {
-  const [showRankChange, setShowRankChange] = useState(false);
+function CouponFeedbackToasts({ coinGainSignal, lastGainAmount, unlockToastSignal, next }) {
   const [showCoinGain, setShowCoinGain] = useState(false);
   const [showUnlock, setShowUnlock] = useState(false);
-
-  useEffect(() => {
-    if (rankChangeSignal > 0 && lastRankChange > 0) {
-      setShowRankChange(true);
-      const t = setTimeout(() => setShowRankChange(false), 1800);
-      return () => clearTimeout(t);
-    }
-  }, [rankChangeSignal, lastRankChange]);
 
   useEffect(() => {
     if (coinGainSignal > 0 && lastGainAmount > 0) {
@@ -4513,13 +4650,10 @@ function RankBadge({ rank, rankChangeSignal, lastRankChange, coinGainSignal, las
     }
   }, [unlockToastSignal]);
 
+  if (!showCoinGain && !(showUnlock && next)) return null;
+
   return (
-    <div className="wallet-rank-row">
-      <span className="rank-badge">
-        <span className="rank-badge-icon">🏆</span>
-        <span className="rank-badge-rank">#{rank}</span>
-      </span>
-      {showRankChange && <span className="rank-change">↑{lastRankChange}</span>}
+    <div className="wallet-feedback-row">
       {showCoinGain && <span className="coin-gain-toast">+{lastGainAmount} ¢</span>}
       {showUnlock && next && <span className="coupon-unlock-toast">🎉 {next.num}% OFF Unlocked</span>}
     </div>

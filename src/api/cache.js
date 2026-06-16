@@ -3,6 +3,8 @@ const TOUCH_ID_COOKIE = 'fc_touch_id';
 const REWARD_PLAN_MAX_STALE_MS = 24 * 60 * 60 * 1000;
 const REWARD_PLAN_CACHE_VERSION = 3;
 const CLAIM_RECORD_VERSION = 1;
+const PROFILE_CACHE_PREFIX = 'fc.profile.';
+const PROFILE_CACHE_VERSION = 1;
 
 function canUseBrowserStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -160,6 +162,43 @@ export function clearClaimedCode(touchId) {
 export function clearWelcomeCompleted(touchId) {
   if (!canUseBrowserStorage() || !touchId) return;
   window.localStorage.removeItem(welcomeKey(touchId));
+}
+
+function profileKey(touchId) {
+  return `${PROFILE_CACHE_PREFIX}${touchId}`;
+}
+
+export function readCachedProfile(touchId) {
+  if (!canUseBrowserStorage() || !touchId) return null;
+  try {
+    const raw = window.localStorage.getItem(profileKey(touchId));
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    if (cached?.version !== PROFILE_CACHE_VERSION || !cached.profile) return null;
+    return {
+      nickname: typeof cached.profile.nickname === 'string' ? cached.profile.nickname : '',
+      avatarColor: typeof cached.profile.avatarColor === 'string' ? cached.profile.avatarColor : '',
+      avatarImageUrl: typeof cached.profile.avatarImageUrl === 'string' ? cached.profile.avatarImageUrl : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function writeCachedProfile(touchId, profile) {
+  if (!canUseBrowserStorage() || !touchId || !profile) return;
+  try {
+    window.localStorage.setItem(
+      profileKey(touchId),
+      JSON.stringify({
+        version: PROFILE_CACHE_VERSION,
+        updatedAt: Date.now(),
+        profile,
+      }),
+    );
+  } catch {
+    // Profile cache is user convenience only.
+  }
 }
 
 const SHOPIFY_STATUS_PREFIX = 'fc.shopifyStatus.';

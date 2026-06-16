@@ -48,6 +48,23 @@ const LADDER = [
   },
 ];
 
+const SINGLE_TARGET_LADDER = [
+  {
+    tier: 1,
+    couponId: 'camp_zero_t1',
+    campaignId: 'camp_zero_t1',
+    pointsThreshold: 0,
+    discountValue: '0',
+  },
+  {
+    tier: 2,
+    couponId: 'camp_single_t2',
+    campaignId: 'camp_single_t2',
+    pointsThreshold: 80,
+    discountValue: '20',
+  },
+];
+
 function isoAfter(ms) {
   return new Date(Date.now() + ms).toISOString();
 }
@@ -130,6 +147,15 @@ export const DEV_FIXTURES = {
     }),
 
   home: () => basePlan({ pointsBalance: 45, currentTier: 1 }),
+
+  singleTarget: () =>
+    basePlan({
+      pointsBalance: 28,
+      currentTier: 0,
+      currentCouponId: null,
+      targetCouponId: 'camp_single_t2',
+      ladder: SINGLE_TARGET_LADDER,
+    }),
 
   urgent: () =>
     basePlan({
