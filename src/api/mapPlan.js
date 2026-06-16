@@ -1,6 +1,27 @@
 import { iconForTemplate, labelForTemplate } from './gameLabels.js';
 import { mergeBrand } from '../lib/brandTheme.js';
 
+const GAME_PROGRESS_TIERS = [
+  { difficultyLevel: 1, rewardPotentialLevel: 1 },
+  { difficultyLevel: 2, rewardPotentialLevel: 2 },
+  { difficultyLevel: 3, rewardPotentialLevel: 3 },
+];
+
+function gameProgressForTask(task, gameIndex) {
+  const fallback = GAME_PROGRESS_TIERS[Math.min(gameIndex, GAME_PROGRESS_TIERS.length - 1)];
+
+  return {
+    difficultyLevel: clampGameRating(task.difficultyLevel ?? task.difficultyRating ?? task.difficulty ?? fallback.difficultyLevel),
+    rewardPotentialLevel: clampGameRating(task.rewardPotentialLevel ?? task.rewardPotential ?? task.rewardRating ?? fallback.rewardPotentialLevel),
+  };
+}
+
+function clampGameRating(value) {
+  const rating = Number.parseInt(value, 10);
+  if (Number.isNaN(rating)) return 1;
+  return Math.max(1, Math.min(3, rating));
+}
+
 function formatDiscountValue(step) {
   if (step.discountValue) return `${step.discountValue}%`;
   if (step.couponType === 'free_shipping') return 'Free Ship';
@@ -165,14 +186,17 @@ function mapTaskToChallenge(task, gameIndex) {
   }
 
   const index = gameIndex + 1;
+  const progress = gameProgressForTask(task, gameIndex);
   return {
     id: task.gameInstanceId,
     type: 'game',
     badge: `Game ${index}`,
     icon: iconForTemplate(task.templateKey),
     title: task.displayName || labelForTemplate(task.templateKey),
-    desc: 'Play to earn points toward your next coupon',
+    desc: '',
     reward: '+pts',
+    difficultyLevel: progress.difficultyLevel,
+    rewardPotentialLevel: progress.rewardPotentialLevel,
     cta: 'Play Now',
     gameInstanceId: task.gameInstanceId,
     templateKey: task.templateKey,

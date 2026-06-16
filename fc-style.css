@@ -495,6 +495,10 @@ body {
   cursor: pointer;
 }
 
+.account-entry-btn.is-connected {
+  border-color: transparent;
+}
+
 .account-entry-btn svg {
   width: 18px;
   height: 18px;
@@ -558,7 +562,6 @@ body {
 .brand-logo-img {
   display: block;
   object-fit: cover;
-  box-shadow: 0 6px 14px rgba(45, 51, 43, 0.12);
 }
 
 .brand-logo-fallback {
@@ -1130,6 +1133,70 @@ body {
   min-height: 30px;
 }
 
+.challenge-game-meta {
+  display: grid;
+  gap: 5px;
+  min-height: 38px;
+  align-content: center;
+  width: 100%;
+}
+
+.challenge-rating-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.challenge-rating-icons {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+}
+
+.challenge-rating-bolt {
+  position: relative;
+  width: 11px;
+  height: 13px;
+  flex: 0 0 11px;
+  display: inline-block;
+  filter: drop-shadow(0 1px 1px rgba(138, 100, 32, 0.28));
+}
+
+.challenge-rating-bolt::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(145deg, #fff2a8 0%, #f1c34e 48%, #bd8127 100%);
+  clip-path: polygon(52% 0, 10% 54%, 42% 54%, 30% 100%, 92% 38%, 58% 38%);
+}
+
+.challenge-rating-bolt::after {
+  content: '';
+  position: absolute;
+  inset: 1px 2px 6px 3px;
+  background: rgba(255, 255, 255, 0.55);
+  clip-path: polygon(44% 0, 8% 58%, 40% 54%, 72% 10%);
+  opacity: 0.85;
+}
+
+.challenge-rating-coin {
+  width: 11px;
+  height: 11px;
+}
+
+.challenge-rating-coin::after {
+  font-size: 7px;
+}
+
 .challenge-card .btn {
   font-size: 0.75rem;
   padding: 8px;
@@ -1197,6 +1264,205 @@ body {
   font-weight: 900;
   line-height: 1;
   color: #7c5a1d;
+}
+
+/* ============ Reward ladder ============ */
+.reward-ladder-entry {
+  margin: 0;
+}
+
+.reward-ladder-entry-btn {
+  min-height: 18px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--brand-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+}
+
+.reward-ladder-entry-btn svg {
+  width: 11px;
+  height: 11px;
+  color: var(--brand-secondary);
+}
+
+.reward-ladder-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 24;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(35, 39, 33, 0.34);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+
+.reward-ladder-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.reward-ladder-sheet {
+  width: 100%;
+  max-height: 86%;
+  overflow-y: auto;
+  background: #fffdf8;
+  border: 1px solid rgba(214, 207, 193, 0.95);
+  border-bottom: none;
+  border-radius: 20px 20px 0 0;
+  padding: 10px 20px 22px;
+  box-shadow: 0 -18px 44px rgba(45, 51, 43, 0.18);
+  transform: translateY(22px);
+  transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.reward-ladder-overlay.open .reward-ladder-sheet {
+  transform: translateY(0);
+}
+
+.reward-ladder-handle {
+  width: 42px;
+  height: 4px;
+  margin: 0 auto 16px;
+  border-radius: 999px;
+  background: rgba(45, 51, 43, 0.18);
+}
+
+.reward-ladder-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.reward-ladder-head h3 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+  color: var(--text-primary);
+}
+
+.reward-ladder-head p {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.reward-ladder-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(245, 241, 232, 0.9);
+  color: var(--text-secondary);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.reward-ladder-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 8px;
+}
+
+.reward-ladder-step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  color: rgba(45, 51, 43, 0.42);
+}
+
+.reward-ladder-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 29px;
+  bottom: -19px;
+  width: 1px;
+  background: rgba(176, 161, 123, 0.34);
+}
+
+.reward-ladder-node {
+  position: relative;
+  z-index: 1;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  border-radius: 50%;
+  background: #efe9da;
+  border: 1px solid rgba(176, 161, 123, 0.44);
+}
+
+.reward-ladder-copy {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.reward-ladder-copy strong {
+  font-family: var(--font-serif);
+  font-size: 1rem;
+}
+
+.reward-ladder-copy span {
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.reward-ladder-step.is-current {
+  color: var(--text-primary);
+}
+
+.reward-ladder-step.is-current .reward-ladder-node {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 5px rgba(94, 128, 62, 0.13);
+}
+
+.reward-ladder-step.is-next {
+  color: #8a6420;
+}
+
+.reward-ladder-step.is-next .reward-ladder-node {
+  background: #d8ad48;
+  border-color: #d8ad48;
+  box-shadow: 0 0 0 5px rgba(216, 173, 72, 0.15);
+}
+
+.reward-ladder-safety {
+  margin-top: 18px;
+  padding: 14px 15px;
+  border-radius: 12px;
+  background: #f7f4ec;
+  border: 1px solid rgba(214, 207, 193, 0.82);
+}
+
+.reward-ladder-safety strong {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 0.78rem;
+  color: var(--text-primary);
+}
+
+.reward-ladder-safety p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.45;
 }
 
 /* ============ Rules accordion ============ */
@@ -1284,6 +1550,16 @@ body {
 }
 
 .modal-overlay.open .modal-content { transform: scale(1); }
+
+#survey-modal .modal-content {
+  max-height: calc(100% - 40px);
+  display: flex;
+  flex-direction: column;
+}
+
+#survey-modal .modal-body {
+  overflow-y: auto;
+}
 
 .modal-card {
   background-color: var(--card-bg);
@@ -1551,17 +1827,13 @@ body {
 
 .survey-questions {
   position: relative;
-  min-height: 240px;
 }
 
 .survey-question-step {
-  display: none;
+  display: flex;
   flex-direction: column;
   gap: 16px;
-  position: absolute;
   width: 100%;
-  top: 0;
-  left: 0;
 }
 
 .survey-question-step.active {
@@ -1604,6 +1876,89 @@ body {
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* Survey exit confirmation */
+.survey-exit-confirm {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(20, 24, 18, 0.55);
+  z-index: 40;
+  animation: fade-in 0.2s ease;
+}
+
+.survey-exit-confirm-card {
+  background: var(--card-bg, #fff);
+  border-radius: 14px;
+  padding: 24px 22px;
+  text-align: center;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  max-width: 320px;
+  width: 100%;
+}
+
+.survey-exit-confirm-title {
+  font-family: var(--font-serif, var(--font-sans));
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 10px;
+  line-height: 1.3;
+}
+
+.survey-exit-confirm-desc {
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text-secondary, #555);
+  margin: 0 0 20px;
+}
+
+.survey-exit-confirm-desc strong {
+  color: var(--brand-primary);
+}
+
+.survey-exit-confirm-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.survey-exit-confirm-keep {
+  font-family: var(--font-sans);
+  background: var(--brand-primary);
+  color: #fff;
+  border: none;
+  padding: 13px 16px;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.2s ease;
+}
+
+.survey-exit-confirm-keep:hover {
+  filter: brightness(1.08);
+}
+
+.survey-exit-confirm-exit {
+  font-family: var(--font-sans);
+  background: transparent;
+  color: var(--text-secondary, #888);
+  border: none;
+  padding: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.survey-exit-confirm-exit:hover {
+  color: var(--text-primary);
 }
 
 /* Notification */

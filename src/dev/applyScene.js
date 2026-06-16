@@ -62,6 +62,8 @@ export function applyDevSceneUi(ui, ctx) {
     discounts,
     currentStepIndex,
     readCouponTokens,
+    readCouponTokensForTier,
+    tierForDiscount,
     targetCouponRef,
     viewportRef,
   } = setters;
@@ -113,7 +115,10 @@ export function applyDevSceneUi(ui, ctx) {
         discounts[currentStepIndex + 1] || discounts[currentStepIndex] || discounts[0];
       const targetEl = targetCouponRef?.current;
       setReceiptCoupon(unlocked);
-      setReceiptColors(targetEl ? readCouponTokens(targetEl.closest('.coupon')) : null);
+      const liveTokens = targetEl ? readCouponTokens(targetEl.closest('.coupon')) : null;
+      setReceiptColors(
+        liveTokens ?? readCouponTokensForTier?.(tierForDiscount?.(unlocked?.num) ?? 0) ?? null,
+      );
       setPendingPoints(points);
       setShowReceipt(true);
     }
@@ -126,7 +131,11 @@ export function applyDevSceneUi(ui, ctx) {
         : (discounts[currentStepIndex + 1] || discounts[currentStepIndex] || discounts[0]);
       const targetEl = targetCouponRef?.current;
       setZoomCoupon(coupon);
-      setZoomColors(targetEl ? readCouponTokens(targetEl.closest('.coupon')) : null);
+      const liveTokens = targetEl ? readCouponTokens(targetEl.closest('.coupon')) : null;
+      // 无可读券面时按档位回退,保证刮刮卡背景与券面一致
+      setZoomColors(
+        liveTokens ?? readCouponTokensForTier?.(tierForDiscount?.(coupon.num) ?? 0) ?? null,
+      );
       setZoomCopyState('Copy');
       setZoomPhase(ui.zoomPhase ?? 'flipped');
 

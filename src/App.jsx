@@ -178,6 +178,8 @@ const INITIAL_DISCOUNTS = [
   { num: '30', value: '30% OFF', target: 20, code: 'FC30RITUAL' }
 ];
 
+const REWARD_LADDER_PERCENTAGES = [5, 10, 15, 20, 25, 30];
+
 const COUPON_THEME = 'pop'; // Switch to 'dtc' to apply the premium coupon palette globally.
 
 const FALLBACK_CHALLENGES = [];
@@ -210,6 +212,18 @@ function fallbackCopy(text) {
       reject(err);
     }
   });
+}
+
+// 打开外部链接(品牌商店等)。Vite dev/预览的 iframe 沙箱只允许 localhost,跳转外域会被
+// 拦截并提示 "Preview only supports localhost URLs";开发环境下改为打印日志,避免打断测试,
+// 生产环境正常新开标签页。
+function openExternalLink(url) {
+  if (!url) return;
+  if (import.meta.env?.DEV) {
+    console.info('[dev] 外链在预览环境被抑制,生产环境会正常打开:', url);
+    return;
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 function tierForDiscount(num) {
@@ -274,6 +288,24 @@ function readCouponTokens(el) {
     ink: get('--coupon-ink'),
     gradient: get('--coupon-gradient')
   };
+}
+
+// 按券面档位解析配色 token:当页面上没有可读取的 .coupon 元素时(例如 best offer /
+// 已锁定流程),用一个隐藏探针元素套用 fc-tiers.css 的 [data-coupon-theme][data-tier]
+// 级联,拿到与该档位券面完全一致的 --coupon-* 值。
+function readCouponTokensForTier(tier) {
+  if (typeof document === 'undefined') return null;
+  const probe = document.createElement('div');
+  probe.setAttribute('data-coupon-theme', COUPON_THEME);
+  probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;left:-9999px;top:-9999px;';
+  const inner = document.createElement('div');
+  inner.className = 'coupon';
+  inner.setAttribute('data-tier', String(tier));
+  probe.appendChild(inner);
+  document.body.appendChild(probe);
+  const tokens = readCouponTokens(inner);
+  document.body.removeChild(probe);
+  return tokens;
 }
 
 // Map resolved tokens to the CSS custom properties consumed by the zoom card.
@@ -350,6 +382,7 @@ export default function App() {
   const [countdownSeconds, setCountdownSeconds] = useState(INITIAL_SECONDS);
   const [tick, setTick] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [rewardLadderOpen, setRewardLadderOpen] = useState(false);
   const [copyState, setCopyState] = useState('Copy');
   const [activeModal, setActiveModal] = useState(null);
   const [notification, setNotification] = useState(null);
@@ -367,6 +400,7 @@ export default function App() {
   const [renewGiftIntro, setRenewGiftIntro] = useState(false);
   const [renewFlowActive, setRenewFlowActive] = useState(false);
   const [renewPlanReady, setRenewPlanReady] = useState(false);
+  const [renewIssueAutoAdvance, setRenewIssueAutoAdvance] = useState(false);
   const [pendingRewardSignal, setPendingRewardSignal] = useState(0);
   const closeIntro = useCallback(() => setIntroActive(false), []);
   const [hasInitialDiscount, setHasInitialDiscount] = useState(false);
@@ -666,27 +700,28 @@ export default function App() {
 
     applyBrandTheme(vm.brand);
 
-    // 过渡页仅在权威 plan 同步时更新,避免缓存 plan 误触发 expired NC
-    if (!fromCache) {
+    // 核销是终态(券不会"反核销"),即便来自缓存也可信:命中后立即进入"已使用"结束页,
+    // 绝不再展示待核销/redeem 页。其余过渡(expired 等)仍仅在权威 plan 同步时更新,避免缓存误触发。
+    if (redeemedMatch && storedClaim && !fromNewChallengeRenew && !renewInProgress) {
+      const settlementCoupon = resolveSettlementCoupon({
+        discounts: vm.discounts,
+        claimRecord,
+        observedCoupon: plan.observedCoupon,
+      });
+      settlementCouponRef.current = settlementCoupon ?? settlementCouponRef.current;
+      clearClaimedCode(touchId);
+      setClaimedCode(null);
+      setNewChallenge((prev) => (
+        prev?.coupon
+          ? prev
+          : { reason: 'redeemed', coupon: settlementCoupon }
+      ));
+      setIntroActive(false);
+      setReturnIntroGate(false);
+      returnIntroPendingRef.current = false;
+    } else if (!fromCache) {
       if (fromNewChallengeRenew || renewInProgress) {
         setNewChallenge(null);
-      } else if (redeemedMatch && storedClaim) {
-        const settlementCoupon = resolveSettlementCoupon({
-          discounts: vm.discounts,
-          claimRecord,
-          observedCoupon: plan.observedCoupon,
-        });
-        settlementCouponRef.current = settlementCoupon ?? settlementCouponRef.current;
-        clearClaimedCode(touchId);
-        setClaimedCode(null);
-        setNewChallenge((prev) => (
-          prev?.coupon
-            ? prev
-            : { reason: 'redeemed', coupon: settlementCoupon }
-        ));
-        setIntroActive(false);
-        setReturnIntroGate(false);
-        returnIntroPendingRef.current = false;
       } else if (vm.cycleExpired && !welcomeInProgress) {
         const settlementCoupon = resolveSettlementCoupon({
           discounts: vm.discounts,
@@ -744,7 +779,9 @@ export default function App() {
       setClaimedCode(vm.claimedCouponCode);
     }
 
-    if (claimRecord?.code) {
+    // 已核销时上面已清空 claimedCode 并清掉记录,这里不能再用本地旧 claimRecord 把它复活,
+    // 否则会闪回一次待核销/redeem 页。
+    if (claimRecord?.code && !(redeemedMatch && storedClaim)) {
       setClaimedCode(claimRecord.code);
     }
 
@@ -819,6 +856,8 @@ export default function App() {
         discounts: vm.discounts.length ? vm.discounts : INITIAL_DISCOUNTS,
         currentStepIndex: vm.currentStepIndex,
         readCouponTokens,
+        readCouponTokensForTier,
+        tierForDiscount,
         targetCouponRef,
         viewportRef,
       },
@@ -1177,7 +1216,10 @@ export default function App() {
   const next = nextThreshold != null ? discounts.find((d) => d.tier === currentTier + 1) ?? null : null;
   const progressPct = nextThreshold != null ? Math.min((points / targetPoints) * 100, 100) : 100;
   const delta = nextThreshold != null ? Math.max(targetPoints - points, 0) : 0;
-  const isBestOffer = nextThreshold == null;
+  // 最高档:后端 currentTier 已是顶级,或积分已达到阶梯最高门槛(currentTier 可能尚未刷新)
+  const topTierStep = discounts[discounts.length - 1];
+  const reachedTopByPoints = topTierStep != null && points >= (topTierStep.target ?? 0);
+  const isBestOffer = nextThreshold == null || reachedTopByPoints;
   // 已领取未核销:强制展示待核销页,直到后端确认已使用或过期。
   const claimRecord = readClaimRecord(touchId);
   const claimMatchesCurrentCycle = rewardPlanId
@@ -1257,6 +1299,7 @@ export default function App() {
         renewFlowActiveRef.current = false;
         setRenewFlowActive(false);
         setRenewPlanReady(false);
+        setRenewIssueAutoAdvance(false);
         setRenewGiftIntro(false);
         setNewChallenge({ reason, coupon: newChallenge?.coupon ?? null });
         setIntroActive(false);
@@ -1273,6 +1316,7 @@ export default function App() {
     renewFlowActiveRef.current = true;
     setRenewFlowActive(true);
     setRenewPlanReady(false);
+    setRenewIssueAutoAdvance(false);
 
     setNewChallenge(null);
     setShowReceipt(false);
@@ -1295,13 +1339,18 @@ export default function App() {
   }
 
   useEffect(() => {
-    // 客户端倒计时归零且 plan 未标 expired 时的兜底(主路径为 plan.cycleExpired)
+    // 客户端倒计时归零且 plan 未标 expired 时的兜底(主路径为 plan.cycleExpired)。
+    // 已领取券的回合必须由 observeCoupon 判定 redeemed/expired,避免先显示 Round Complete 再切 Reward Used。
     const prev = prevCountdownRef.current;
     prevCountdownRef.current = countdownSeconds;
+    const activeClaim = readClaimRecord(touchId);
     if (
       prev > 0 &&
       countdownSeconds === 0 &&
       !newChallenge &&
+      !claimedCode &&
+      !activeClaim?.code &&
+      !showClaimedScreen &&
       readWelcomeCompleted(touchId)
     ) {
       setNewChallenge({
@@ -1312,7 +1361,7 @@ export default function App() {
         }),
       });
     }
-  }, [countdownSeconds, newChallenge, touchId]);
+  }, [claimedCode, countdownSeconds, newChallenge, showClaimedScreen, touchId]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1385,6 +1434,7 @@ export default function App() {
     renewFlowActiveRef.current = false;
     setRenewFlowActive(false);
     setRenewPlanReady(false);
+    setRenewIssueAutoAdvance(false);
     renewPlanRef.current = null;
     returnIntroShownRef.current = true;
     returnIntroPendingRef.current = false;
@@ -1436,11 +1486,13 @@ export default function App() {
       } else {
         setPoints(vm.points);
       }
+      setRenewIssueAutoAdvance(false);
       setWelcomeStep(1);
       return;
     }
 
     writeWelcomeCompleted(touchId);
+    setRenewIssueAutoAdvance(false);
     setWelcomeStep(3);
     finishRenewFlowToHome(vm);
   }, [finishRenewFlowToHome, syncFromPlan, touchId]);
@@ -1592,6 +1644,22 @@ export default function App() {
       if (confettiRef.current.frame) cancelAnimationFrame(confettiRef.current.frame);
     };
   }, []);
+
+  // Best offer 页面每次被访问(由隐藏切换为展示)时播放一遍撒彩带动效
+  const bestOfferConfettiPlayedRef = useRef(false);
+  useEffect(() => {
+    if (showBestOffer) {
+      if (!bestOfferConfettiPlayedRef.current) {
+        bestOfferConfettiPlayedRef.current = true;
+        if (!prefersReducedMotion()) {
+          // 推迟一帧,确保 canvas 已随 best offer 页面布局完成尺寸
+          requestAnimationFrame(() => startConfetti());
+        }
+      }
+    } else {
+      bestOfferConfettiPlayedRef.current = false;
+    }
+  }, [showBestOffer]);
 
   useEffect(() => {
     if (!tapGame.active) return undefined;
@@ -1746,6 +1814,8 @@ export default function App() {
     window.setTimeout(() => setShopifyAuthSuccess(false), 3500);
     void syncShopifyBindingStatus(true).then((status) => {
       if (status?.connected) {
+        clearCachedRewardPlan(touchId);
+        void reloadPlan({ refresh: true });
         scheduleShopifyResume(pending?.resume);
       }
     });
@@ -2147,7 +2217,7 @@ export default function App() {
 
   function handleShopNowDirect() {
     const shopUrl = (brand.shopUrl && brand.shopUrl !== '#') ? brand.shopUrl : 'https://ritual.com';
-    window.open(shopUrl, '_blank', 'noopener,noreferrer');
+    openExternalLink(shopUrl);
   }
 
   async function handleSettlementComplete(settlement) {
@@ -2166,32 +2236,28 @@ export default function App() {
 
     if (settlement.couponWon) {
       const unlocked = resolveUnlockedCoupon(discounts, currentStepIndex);
-      setReceiptCoupon(unlocked);
-      setReceiptColors(readCouponTokens(targetCouponRef.current));
-      setPendingPoints(settlement.pointsBalance ?? points + pts);
-      setShowReceipt(true);
-      startConfetti();
-      refreshPlan();
+      const showUnlockedReceipt = () => {
+        setReceiptCoupon(unlocked);
+        setReceiptColors(readCouponTokens(targetCouponRef.current));
+        setPendingPoints(settlement.pointsBalance ?? points + pts);
+        setShowReceipt(true);
+        startConfetti();
+        refreshPlan();
+      };
+
+      if (pts > 0) {
+        triggerLoginBonusAnimation(pts, settlement.pointsBalance ?? points + pts);
+        window.setTimeout(showUnlockedReceipt, 1900);
+      } else {
+        showUnlockedReceipt();
+      }
       return;
     }
 
     if (pts > 0) {
       const balanceAfter = settlement.pointsBalance ?? points + pts;
-      const timing = getPointsEffectTiming(pts);
-      const startPos = {
-        x: (viewportRef.current?.clientWidth ?? 360) / 2,
-        y: (viewportRef.current?.clientHeight ?? 640) * 0.42,
-      };
-      spawnGainCallout(pts);
-      flyCoins(
-        timing.count,
-        () => {
-          creditPoints(pts, timing.creditDuration, balanceAfter);
-          refreshPlan();
-        },
-        startPos,
-        { staggerMs: timing.staggerMs, coinDuration: timing.coinDuration },
-      );
+      triggerLoginBonusAnimation(pts, balanceAfter);
+      window.setTimeout(refreshPlan, 1900);
       return;
     }
 
@@ -2233,7 +2299,9 @@ export default function App() {
     const faceEl = couponFaceRef.current;
 
     setZoomCoupon(coupon);
-    setZoomColors(faceEl ? readCouponTokens(faceEl.closest('.coupon')) : null);
+    const liveTokens = faceEl ? readCouponTokens(faceEl.closest('.coupon')) : null;
+    // faceEl 不在当前视图时(best offer / 已锁定流程)按券面档位回退,保证刮刮卡背景与券面一致。
+    setZoomColors(liveTokens ?? readCouponTokensForTier(tierForDiscount(coupon.num)));
     setZoomCopyState('Copy');
     setZoomRect({
       left: vpRect.left + (vpRect.width - cardW) / 2,
@@ -2439,19 +2507,20 @@ export default function App() {
       return;
     }
 
+    const surveyReward = activeSurveyTask?.pointsOffered ?? 0;
+    const balanceBefore = pointsRef.current;
+
     setActiveModal(null);
     setSurveyStep(0);
     setSurveyAnswers([]);
     setSurveyQuestions([]);
     setActiveSurveyTask(null);
 
-    const surveyReward = activeSurveyTask?.pointsOffered ?? 0;
-    const balanceBefore = pointsRef.current;
-    const answeredCount = nextAnswers.filter((a) => a.action !== 'skipped').length;
-    const estimatedReward = activeSurveyTask?.pointsPerQuestion
-      ? answeredCount * activeSurveyTask.pointsPerQuestion
-      : surveyReward;
-    triggerLoginBonusAnimation(estimatedReward, balanceBefore + estimatedReward);
+    if (surveyReward > 0) {
+      window.setTimeout(() => {
+        triggerLoginBonusAnimation(surveyReward, balanceBefore + surveyReward);
+      }, 260);
+    }
 
     try {
       await submitSurveyAnswers(touchId, { answer: externalAnswer });
@@ -2474,6 +2543,11 @@ export default function App() {
   playPendingTapRewardRef.current = playPendingTapReward;
   devSceneRef.current = devScene;
   devPreviewActiveRef.current = Boolean(devScene);
+
+  const handleRenewIssueAutoAdvance = useCallback(() => {
+    setRenewIssueAutoAdvance(false);
+    setWelcomeStep(2);
+  }, []);
 
   const isReturnIntro = introActive && welcomeStep >= 3 && !renewGiftIntro && !renewFlowActive;
   const showBrandIntro =
@@ -2593,6 +2667,7 @@ export default function App() {
               countdownSeconds={countdownSeconds}
               confirmOpen={!!claimConfirm}
               onTargetClick={handleTargetClick}
+              onOpenRewardLadder={() => setRewardLadderOpen(true)}
             />
 
             <Challenges challenges={challenges} dailyCapReached={dailyCapReached} onOpen={openChallenge} />
@@ -2600,6 +2675,14 @@ export default function App() {
           </>
         )}
       </main>
+      <RewardLadderSheet
+        open={rewardLadderOpen}
+        current={current}
+        next={next}
+        discounts={discounts}
+        points={points}
+        onClose={() => setRewardLadderOpen(false)}
+      />
       </>
       )}
 
@@ -2624,7 +2707,7 @@ export default function App() {
         step={surveyStep}
         questions={surveyQuestions}
         loading={surveyLoading}
-        allowSkip={activeSurveyTask?.allowSkip ?? true}
+        reward={activeSurveyTask?.pointsOffered}
         onClose={() => {
           setActiveModal(null);
           setSurveyQuestions([]);
@@ -2728,11 +2811,14 @@ export default function App() {
           brand={brand}
           couponFaceRef={couponFaceRef}
           hasNextTier={!isBestOffer}
+          autoAdvance={renewIssueAutoAdvance}
+          onAutoAdvance={handleRenewIssueAutoAdvance}
           onAdvanceToSettle={handleWelcomeEarnMore}
           onUse={() => requestClaim(handleUseWelcomeCoupon, current.num)}
           onComplete={() => {
             setWelcomeStep(3);
             writeWelcomeCompleted(touchId);
+            setRenewIssueAutoAdvance(false);
             if (renewFlowActiveRef.current) {
               renewFlowActiveRef.current = false;
               setRenewFlowActive(false);
@@ -2777,7 +2863,7 @@ function BrandMark({ className = 'brand-logo' }) {
   );
 }
 
-function WelcomeRitual({ step, coupon, brand, couponFaceRef, hasNextTier, onAdvanceToSettle, onUse, onComplete }) {
+function WelcomeRitual({ step, coupon, brand, couponFaceRef, hasNextTier, autoAdvance = false, onAutoAdvance, onAdvanceToSettle, onUse, onComplete }) {
   const [rect, setRect] = useState(() => {
     if (typeof window !== 'undefined') {
       const wWidth = window.innerWidth;
@@ -2848,6 +2934,14 @@ function WelcomeRitual({ step, coupon, brand, couponFaceRef, hasNextTier, onAdva
       return () => clearTimeout(timer);
     }
   }, [step, couponFaceRef, onComplete]);
+
+  useEffect(() => {
+    if (!autoAdvance || step !== 1) return undefined;
+    const timer = setTimeout(() => {
+      onAutoAdvance?.();
+    }, 1400);
+    return () => clearTimeout(timer);
+  }, [autoAdvance, step, onAutoAdvance]);
 
   return (
     <>
@@ -3197,12 +3291,14 @@ function CouponWallet({
   countdownSeconds,
   confirmOpen,
   onTargetClick,
+  onOpenRewardLadder,
   isClaimed = false
 }) {
   return (
     <section className={`wallet ${isBestOffer ? 'best-offer' : ''}`} data-screen-label="优惠券">
       <div className="section-head">
         <span className="section-tag">{isBestOffer ? 'Best offer unlocked' : 'Your coupon'}</span>
+        {!isBestOffer && <RewardLadderEntry onOpen={onOpenRewardLadder} />}
       </div>
 
       {isBestOffer && (
@@ -3287,6 +3383,125 @@ function CouponWallet({
   );
 }
 
+function rewardPercent(coupon) {
+  const value = coupon?.num ?? coupon?.value;
+  const parsed = parseInt(String(value ?? '').replace(/[^\d]/g, ''), 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function RewardLadderEntry({ onOpen }) {
+  return (
+    <section className="reward-ladder-entry" aria-label="Reward ladder">
+      <button className="reward-ladder-entry-btn" type="button" onClick={onOpen}>
+        <span>View Reward Ladder</span>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M7 4l6 6-6 6" />
+        </svg>
+      </button>
+    </section>
+  );
+}
+
+function RewardLadderSheet({ open, current, next, discounts, points, onClose }) {
+  if (!open) return null;
+
+  const currentTier = current?.tier ?? null;
+  const nextTier = next?.tier ?? null;
+
+  // 用该用户 plan 的真实档位构建升级路径;无真实数据时回退到通用百分比阶梯。
+  const realSteps = (discounts ?? [])
+    .filter((step) => rewardPercent(step) != null)
+    .slice()
+    .sort((a, b) => (a.tier ?? 0) - (b.tier ?? 0));
+
+  const ladder = realSteps.length
+    ? realSteps.map((step) => {
+        const tier = step.tier;
+        const target = step.target ?? 0;
+        return {
+          percent: rewardPercent(step),
+          target,
+          isCurrent: currentTier != null && tier === currentTier,
+          isNext: nextTier != null && tier === nextTier,
+          // 已达到该档位的积分门槛即视为解锁
+          isUnlocked: typeof points === 'number' ? points >= target : false,
+        };
+      })
+    : REWARD_LADDER_PERCENTAGES.map((percent) => ({
+        percent,
+        target: null,
+        isCurrent: percent === rewardPercent(current),
+        isNext: percent === rewardPercent(next),
+        isUnlocked: false,
+      }));
+
+  const safetyNetPercent = ladder[0]?.percent ?? 5;
+
+  return (
+    <div
+      className={`reward-ladder-overlay ${open ? 'open' : ''}`}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Your Reward Journey"
+      onClick={onClose}
+    >
+      <div className="reward-ladder-sheet" onClick={(event) => event.stopPropagation()}>
+        <div className="reward-ladder-handle" aria-hidden="true" />
+        <div className="reward-ladder-head">
+          <div>
+            <h3>Your Reward Journey</h3>
+            <p>Earn points to unlock bigger discounts.</p>
+          </div>
+          <button className="reward-ladder-close" type="button" aria-label="Close reward ladder" onClick={onClose}>
+            &times;
+          </button>
+        </div>
+
+        <ol className="reward-ladder-list">
+          {ladder.map((step, index) => (
+            <li
+              className={`reward-ladder-step ${step.isCurrent ? 'is-current' : ''} ${step.isNext ? 'is-next' : ''} ${step.isUnlocked ? 'is-unlocked' : ''}`}
+              key={`${step.percent}-${step.target ?? index}`}
+            >
+              <span className="reward-ladder-node" aria-hidden="true" />
+              <div className="reward-ladder-copy">
+                <strong>{step.percent}% OFF</strong>
+                {step.isCurrent ? (
+                  <span>Current</span>
+                ) : step.isNext ? (
+                  <span>{step.target != null ? `Next · ${step.target} pts` : 'Next'}</span>
+                ) : step.isUnlocked ? (
+                  <span>Unlocked</span>
+                ) : step.target != null ? (
+                  <span>{step.target} pts</span>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ol>
+
+        <div className="reward-ladder-safety">
+          <strong>Safety Net</strong>
+          <p>No matter how your challenge ends,<br />you will always keep at least a {safetyNetPercent}% OFF coupon.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RatingIcons({ count, type }) {
+  const safeCount = Math.max(1, Math.min(3, Number.parseInt(count, 10) || 1));
+  return (
+    <span className={`challenge-rating-icons is-${type}`} aria-hidden="true">
+      {Array.from({ length: safeCount }).map((_, index) => (
+        type === 'reward'
+          ? <i className="coin-ic challenge-rating-coin" key={index} />
+          : <i className="challenge-rating-bolt" key={index} />
+      ))}
+    </span>
+  );
+}
+
 function ChallengesBase({ challenges, dailyCapReached, onOpen }) {
   return (
     <section className="earn-progress-section" data-screen-label="挑战任务">
@@ -3298,8 +3513,9 @@ function ChallengesBase({ challenges, dailyCapReached, onOpen }) {
         {challenges.map((challenge) => {
           const pts = challenge.reward.replace(/[^0-9]/g, '');
           const isShopifyConnect = challenge.type === 'shopify_connect';
+          const isGame = challenge.type === 'game';
           return (
-            <div className="challenge-card" key={challenge.id} style={isShopifyConnect ? { background: 'linear-gradient(135deg, #f6f9f4 0%, #eaf0e6 100%)', borderColor: 'rgba(94, 128, 62, 0.18)' } : undefined}>
+            <div className={`challenge-card ${isGame ? 'is-game-card' : ''}`} key={challenge.id} style={isShopifyConnect ? { background: 'linear-gradient(135deg, #f6f9f4 0%, #eaf0e6 100%)', borderColor: 'rgba(94, 128, 62, 0.18)' } : undefined}>
               <span className="challenge-badge">{challenge.badge}</span>
               <div className="challenge-icon-wrapper">
                 {isShopifyConnect ? (
@@ -3309,7 +3525,20 @@ function ChallengesBase({ challenges, dailyCapReached, onOpen }) {
                 )}
               </div>
               <h4 className="challenge-title">{challenge.title}</h4>
-              <p className="challenge-desc">{challenge.desc}</p>
+              {isGame ? (
+                <div className="challenge-game-meta">
+                  <div className="challenge-rating-row" aria-label={`Difficulty ${challenge.difficultyLevel} of 3`}>
+                    <span>Difficulty</span>
+                    <RatingIcons count={challenge.difficultyLevel} type="difficulty" />
+                  </div>
+                  <div className="challenge-rating-row" aria-label={`Reward potential ${challenge.rewardPotentialLevel} of 3`}>
+                    <span>Reward</span>
+                    <RatingIcons count={challenge.rewardPotentialLevel} type="reward" />
+                  </div>
+                </div>
+              ) : (
+                <p className="challenge-desc">{challenge.desc}</p>
+              )}
               <button
                 className={isShopifyConnect ? 'btn btn-play shopify-connect-btn' : 'btn btn-outline btn-play'}
                 id={challenge.type === 'survey' ? 'take-survey-btn' : `play-${challenge.id}-btn`}
@@ -3318,6 +3547,8 @@ function ChallengesBase({ challenges, dailyCapReached, onOpen }) {
               >
                 {dailyCapReached && !isShopifyConnect ? (
                   <span>Cap Reached</span>
+                ) : isGame ? (
+                  <span className="btn-play-label">{challenge.cta}</span>
                 ) : (
                   <>
                     <span className="btn-play-reward">+{pts}<i className="coin-ic" aria-hidden="true" /></span>
@@ -3419,17 +3650,34 @@ function SpinModal({ open, active, rotation, onClose, onStart }) {
   );
 }
 
-function SurveyModal({ open, step, questions, loading, allowSkip, onClose, onOption }) {
+function SurveyModal({ open, step, questions, loading, reward, onClose, onOption }) {
   const currentQuestion = questions?.[step];
   const total = questions?.length ?? 0;
   const startedAtRef = useRef(Date.now());
+  const [confirmExit, setConfirmExit] = useState(false);
 
   useEffect(() => {
     if (open) startedAtRef.current = Date.now();
   }, [open, step]);
 
+  // 关闭弹窗时重置二次确认状态
+  useEffect(() => {
+    if (!open) setConfirmExit(false);
+  }, [open]);
+
+  // 点击右上角叉:进行中且未完成时先弹二次确认,否则直接关闭
+  const requestExit = () => {
+    if (loading || !currentQuestion) {
+      onClose();
+    } else {
+      setConfirmExit(true);
+    }
+  };
+
+  const coinReward = reward ?? 30;
+
   return (
-    <Modal id="survey-modal" open={open} title="Quick Preferences Survey" onClose={onClose}>
+    <Modal id="survey-modal" open={open} title="Quick Preferences Survey" onClose={requestExit}>
       {loading ? (
         <p className="survey-loading">Loading questions…</p>
       ) : currentQuestion ? (
@@ -3454,17 +3702,38 @@ function SurveyModal({ open, step, questions, loading, allowSkip, onClose, onOpt
                   </button>
                 ))}
               </div>
-              {(currentQuestion.allow_skip ?? allowSkip) && (
-                <button
-                  className="survey-skip-btn"
-                  type="button"
-                  onClick={() => onOption(null, { action: 'skipped', startedAt: startedAtRef.current })}
-                >
-                  Skip
-                </button>
-              )}
             </div>
           </div>
+
+          {confirmExit && (
+            <div className="survey-exit-confirm">
+              <div className="survey-exit-confirm-card">
+                <h4 className="survey-exit-confirm-title">You're close to a bigger discount</h4>
+                <p className="survey-exit-confirm-desc">
+                  Complete this survey and earn <strong>+{coinReward} Coins</strong>.
+                  <br />
+                  Keep going to get closer to your next reward.
+                </p>
+                <div className="survey-exit-confirm-actions">
+                  <button
+                    className="survey-exit-confirm-keep"
+                    onClick={() => setConfirmExit(false)}
+                  >
+                    Keep Going
+                  </button>
+                  <button
+                    className="survey-exit-confirm-exit"
+                    onClick={() => {
+                      setConfirmExit(false);
+                      onClose();
+                    }}
+                  >
+                    Exit Anyway
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <p className="survey-loading">No questions available.</p>
@@ -3836,7 +4105,7 @@ function ZoomFlipCard({ coupon, colors, rect, phase, copyState, onClose, onCopy 
                 <button 
                   className="scratch-btn-use" 
                   onClick={() => {
-                    window.open('https://ritual.com', '_blank', 'noopener');
+                    openExternalLink('https://ritual.com');
                     onClose();
                   }}
                   type="button"
