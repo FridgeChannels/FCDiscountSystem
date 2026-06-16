@@ -26,19 +26,37 @@ export const MOCK_INITIAL_COINS = 30;
 export function deriveRail(coins, ladder = MOCK_COUPON_LADDER) {
   const safeCoins = Math.max(0, Number(coins) || 0);
   const sorted = [...(ladder ?? [])].sort((a, b) => a.threshold - b.threshold);
+  if (!sorted.length) {
+    return {
+      coins: safeCoins,
+      currentIndex: -1,
+      current: null,
+      next: null,
+      future: null,
+      leftToNext: 0,
+      leftToFuture: 0,
+      segmentPct: 0,
+      isMaxTier: false,
+      nodes: [],
+    };
+  }
 
-  let currentIndex = 0;
+  let currentIndex = -1;
   for (let i = 0; i < sorted.length; i += 1) {
     if (safeCoins >= sorted[i].threshold) currentIndex = i;
   }
 
-  const current = sorted[currentIndex] ?? null;
-  const next = sorted[currentIndex + 1] ?? null;
-  const future = sorted[currentIndex + 2] ?? null;
+  const current = currentIndex >= 0 ? sorted[currentIndex] ?? null : null;
+  const next = currentIndex >= 0
+    ? sorted[currentIndex + 1] ?? null
+    : sorted[0] ?? null;
+  const future = currentIndex >= 0
+    ? sorted[currentIndex + 2] ?? null
+    : sorted[1] ?? null;
 
-  const segStart = current?.threshold ?? 0;
+  const segStart = current ? current.threshold : 0;
   const segTotal = next ? next.threshold - segStart : 0;
-  const segDone = next ? Math.max(0, safeCoins - segStart) : segTotal;
+  const segDone = next ? Math.max(0, Math.min(segTotal, safeCoins - segStart)) : segTotal;
   const segmentPct = segTotal > 0 ? Math.min(100, (segDone / segTotal) * 100) : 100;
 
   // Rail 上展示的节点(current / next / future),每个带状态文案。
@@ -70,7 +88,7 @@ export function deriveRail(coins, ladder = MOCK_COUPON_LADDER) {
     leftToNext: next ? Math.max(0, next.threshold - safeCoins) : 0,
     leftToFuture: future ? Math.max(0, future.threshold - safeCoins) : 0,
     segmentPct,
-    isMaxTier: !next,
+    isMaxTier: currentIndex >= sorted.length - 1 && !next,
     nodes,
   };
 }

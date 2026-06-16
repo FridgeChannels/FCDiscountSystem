@@ -24,6 +24,7 @@ export default function ProgressRail({ rail, displayCoins, lastGain, todayRank, 
         {nodes.map((node, index) => {
           const isLast = index === nodes.length - 1;
           const fillPct = index === 0 ? segmentPct : 0;
+          const visibleFillPct = fillPct > 0 ? Math.max(fillPct, 1.5) : 0;
           return (
             <li
               className={`progress-rail-node-wrap is-${node.role}`}
@@ -35,7 +36,7 @@ export default function ProgressRail({ rail, displayCoins, lastGain, todayRank, 
                   <span className="progress-rail-line">
                     <span
                       className="progress-rail-line-fill"
-                      style={{ width: `${fillPct}%` }}
+                      style={{ width: `${visibleFillPct}%` }}
                     />
                   </span>
                 ) : null}

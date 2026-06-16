@@ -1,4 +1,15 @@
+import { readRememberedTouchId } from './cache.js';
 import { dbg } from '../lib/debug.js';
+
+function resolveTouchIdForRequest() {
+  if (typeof window === 'undefined') return '';
+  const params = new URLSearchParams(window.location.search);
+  const fromQuery = params.get('touchId');
+  if (fromQuery) return fromQuery;
+  const pathMatch = window.location.pathname.match(/^\/(?:p|t)\/([^/]+)\/?$/i);
+  if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]);
+  return readRememberedTouchId();
+}
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 const NORMALIZED_API_BASE = API_BASE.endsWith('/') ? API_BASE.slice(0, -1) : API_BASE;
@@ -69,9 +80,10 @@ async function request(path, options = {}) {
   return doFetch();
 }
 
-export function fetchRewardPlan(touchId, { refresh = false } = {}) {
+export function fetchRewardPlan(touchId, { refresh = false, skipTapReward = false } = {}) {
   const refreshQs = refresh ? '&refresh=1' : '';
-  return request(`/api/fc/reward-plan?touchId=${encodeURIComponent(touchId)}${refreshQs}`);
+  const skipTapQs = skipTapReward ? '&skipTapReward=1' : '';
+  return request(`/api/fc/reward-plan?touchId=${encodeURIComponent(touchId)}${refreshQs}${skipTapQs}`);
 }
 
 export function fetchShopifyStatus(touchId, { refresh = false } = {}) {
@@ -92,9 +104,10 @@ export function startGameSession(rewardPlanId, gameInstanceId) {
 }
 
 export function completeGameSession(payload) {
+  const touchId = resolveTouchIdForRequest();
   return request('/api/fc/session/complete', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(touchId ? { ...payload, touchId } : payload),
   });
 }
 

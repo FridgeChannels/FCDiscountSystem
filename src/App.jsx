@@ -7,6 +7,7 @@ import {
   readRememberedTouchId,
   rememberTouchId,
   writeCachedRewardPlan,
+  patchCachedRewardPlanPoints,
   writeCachedMagnetBrandParam,
   writeCachedShopifyStatus,
   clearCachedShopifyStatus,
@@ -343,6 +344,7 @@ export default function App() {
   const couponFaceRef = useRef(null);
   const pointsTweenRef = useRef(null);
   const pointsRef = useRef(0);
+  const lastSettlementBalanceRef = useRef(null);
   const prevCountdownRef = useRef(null);
   const pendingTapRewardRef = useRef(0);
   const pendingTapTargetRef = useRef(0);
@@ -669,21 +671,64 @@ export default function App() {
     const deferEntryFx =
       !blocksEntryReward &&
       (welcomeInProgress || (welcomeDone && !entryFxPlayed));
+    const entryFxKey = entryKind === 'shopify' ? shopifyFxKey : tapFxKey;
+    // 回访 +N 已计入 plan 总分;仅当展示分仍低于「总分-N」时才延迟播放入场动画。
+    const entryBasePoints = Math.max(0, vm.points - entryAwarded);
+    const shouldDeferEntryFx =
+      deferEntryFx &&
+      (welcomeInProgress || pointsRef.current < entryBasePoints);
+
+    const resolveSyncedPoints = (planPoints) => {
+      const settlementAnchor = lastSettlementBalanceRef.current;
+      if (
+        settlementAnchor != null
+        && tapAwarded > 0
+        && planPoints === settlementAnchor + tapAwarded
+      ) {
+        patchCachedRewardPlanPoints(touchId, settlementAnchor);
+        dbg('[FCDBG][App] ignore spurious tap bump on plan sync', {
+          planPoints,
+          settlementAnchor,
+          tapAwarded,
+        });
+        return settlementAnchor;
+      }
+      if (settlementAnchor != null && planPoints === settlementAnchor) {
+        lastSettlementBalanceRef.current = null;
+      }
+      return planPoints;
+    };
 
     if (!renewInProgress) {
       pendingTapTargetRef.current = vm.points;
       if (shopifyAwarded > 0) {
         setShopifyLoginTaskStatus('completed');
       }
-      if (deferEntryFx) {
+      const sameCycle = !plan.cycleId || !rewardPlanId || plan.cycleId === rewardPlanId;
+      const stalePlanPoints = sameCycle && vm.points < pointsRef.current;
+      if (shouldDeferEntryFx) {
         pendingRewardKindRef.current = entryKind;
         pendingTapRewardRef.current = entryAwarded;
         setPendingRewardSignal((value) => value + 1);
-        setPoints(Math.max(0, vm.points - entryAwarded));
+        setPoints(entryBasePoints);
+      } else if (deferEntryFx && entryAwarded > 0) {
+        // 入场 +N 已在余额里且用户已看到更高分(如刚结算),不再重复扣 5 分。
+        sessionStorage.setItem(entryFxKey, '1');
+        pendingTapRewardRef.current = 0;
+        pendingRewardKindRef.current = 'tap';
+        if (!stalePlanPoints) setPoints(resolveSyncedPoints(vm.points));
+      } else if (stalePlanPoints) {
+        pendingTapRewardRef.current = 0;
+        pendingRewardKindRef.current = 'tap';
+        dbg('[FCDBG][App] skip stale plan points regression', {
+          incoming: vm.points,
+          displayed: pointsRef.current,
+          cycleId: plan.cycleId,
+        });
       } else {
         pendingTapRewardRef.current = 0;
         pendingRewardKindRef.current = 'tap';
-        setPoints(vm.points);
+        setPoints(resolveSyncedPoints(vm.points));
       }
     }
 
@@ -906,7 +951,7 @@ export default function App() {
     touchId,
   ]);
 
-  const reloadPlan = useCallback(async ({ refresh = false, background = false } = {}) => {
+  const reloadPlan = useCallback(async ({ refresh = false, background = false, skipTapReward = false } = {}) => {
     if (devPreviewActiveRef.current) {
       const resolved = resolveDevScene(devSceneRef.current || 'home');
       if (resolved) {
@@ -917,7 +962,7 @@ export default function App() {
 
     if (!background) setPlanLoading(true);
     try {
-      const plan = await fetchRewardPlan(touchId, { refresh });
+      const plan = await fetchRewardPlan(touchId, { refresh, skipTapReward });
       clearGameSessionCache();
       writeCachedRewardPlan(touchId, plan);
       if (newChallengeRenewRef.current || renewFlowActiveRef.current) {
@@ -1287,12 +1332,30 @@ export default function App() {
   const time = useMemo(() => formatCountdown(countdownSeconds), [countdownSeconds]);
   const expiryDate = useMemo(() => formatExpiryDate(countdownSeconds), [countdownSeconds]);
   const urgent = countdownSeconds < 86400 && countdownSeconds > 0;
+  const gameProgressLadder = useMemo(() => {
+    const byTier = (discounts ?? [])
+      .map((step) => ({
+        tier: Math.max(0, Number(step?.tier) || 0),
+        percent: Math.max(0, Number(step?.num) || 0),
+        threshold: Math.max(0, Number(step?.target) || 0),
+      }))
+      .filter((step) => step.percent > 0)
+      .sort((a, b) => a.tier - b.tier);
+    if (!byTier.length) return null;
+    let floor = 0;
+    const normalized = byTier.map((step) => {
+      floor = Math.max(floor, step.threshold);
+      return { percent: step.percent, threshold: floor };
+    });
+    return normalized;
+  }, [discounts]);
   const gameProgressView = useMemo(() => ({
     currentPoints: points,
     targetPoints,
     progressPct,
     label: `${points} / ${targetPoints}`,
-  }), [points, progressPct, targetPoints]);
+    ladder: gameProgressLadder,
+  }), [gameProgressLadder, points, progressPct, targetPoints]);
 
   // 预留“游戏内实时进度”事件通道:产品确认埋点后,可在这里接入实时积分变更。
   const handleGameRuntimeEvent = useCallback((event) => {
@@ -2314,9 +2377,21 @@ export default function App() {
     setActiveModal(null);
     setGameStart(null);
     const pts = settlement.pointsAwarded ?? 0;
+    const balanceAfter = Number.isFinite(Number(settlement?.pointsBalance))
+      ? Math.max(0, Math.round(Number(settlement.pointsBalance)))
+      : points + pts;
+
+    if (balanceAfter > 0) {
+      patchCachedRewardPlanPoints(touchId, balanceAfter);
+    }
+    lastSettlementBalanceRef.current = balanceAfter;
+    // 结算后 plan 刷新不应再触发「入场 +5」延迟展示,否则会 602→597 并误判未达券档。
+    sessionStorage.setItem(`fc_tap_fx_${touchId}`, '1');
+    sessionStorage.setItem(`fc_shopify_fx_${touchId}`, '1');
+    pendingTapRewardRef.current = 0;
 
     const refreshPlan = () => {
-      reloadPlan().catch((err) => {
+      reloadPlan({ refresh: true, background: true, skipTapReward: true }).catch((err) => {
         dbgError('[FCDBG][App] background reloadPlan failed', err);
         setPlanError(err instanceof Error ? err.message : 'Could not refresh rewards');
       });
@@ -2327,14 +2402,14 @@ export default function App() {
       const showUnlockedReceipt = () => {
         setReceiptCoupon(unlocked);
         setReceiptColors(readCouponTokens(targetCouponRef.current));
-        setPendingPoints(settlement.pointsBalance ?? points + pts);
+        setPendingPoints(balanceAfter);
         setShowReceipt(true);
         startConfetti();
         refreshPlan();
       };
 
       if (pts > 0) {
-        triggerLoginBonusAnimation(pts, settlement.pointsBalance ?? points + pts);
+        triggerLoginBonusAnimation(pts, balanceAfter);
         window.setTimeout(showUnlockedReceipt, 1900);
       } else {
         showUnlockedReceipt();
@@ -2343,7 +2418,6 @@ export default function App() {
     }
 
     if (pts > 0) {
-      const balanceAfter = settlement.pointsBalance ?? points + pts;
       triggerLoginBonusAnimation(pts, balanceAfter);
       window.setTimeout(refreshPlan, 1900);
       return;

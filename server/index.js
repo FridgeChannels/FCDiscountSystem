@@ -27,13 +27,16 @@ function writePlanCache(touchId, data) {
   planCache.set(touchId, { data, expiresAt: Date.now() + PLAN_CACHE_TTL_MS });
 }
 
-function getPlanDeduped(touchId, timeoutMs = ENGINE_REWARD_PLAN_TIMEOUT_MS) {
-  const existing = planInflight.get(touchId);
+function getPlanDeduped(touchId, { timeoutMs = ENGINE_REWARD_PLAN_TIMEOUT_MS, skipTapReward = false } = {}) {
+  const inflightKey = `${touchId}:${skipTapReward ? 'skipTap' : 'tap'}`;
+  const existing = planInflight.get(inflightKey);
   if (existing) return existing;
-  const promise = callEngine('/reward-plan/generate', { touchId }, timeoutMs).finally(() => {
-    planInflight.delete(touchId);
+  const body = { touchId };
+  if (skipTapReward) body.skipTapReward = true;
+  const promise = callEngine('/reward-plan/generate', body, timeoutMs).finally(() => {
+    planInflight.delete(inflightKey);
   });
-  planInflight.set(touchId, promise);
+  planInflight.set(inflightKey, promise);
   return promise;
 }
 
@@ -246,6 +249,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const skipPlanCache = url.searchParams.get('refresh') === '1';
+      const skipTapReward = url.searchParams.get('skipTapReward') === '1';
       if (!skipPlanCache) {
         const cachedPlan = readPlanCache(touchId);
         if (cachedPlan) {
@@ -253,7 +257,10 @@ const server = http.createServer(async (req, res) => {
           return;
         }
       }
-      const data = await getPlanDeduped(touchId, ENGINE_REWARD_PLAN_TIMEOUT_MS);
+      const data = await getPlanDeduped(touchId, {
+        timeoutMs: ENGINE_REWARD_PLAN_TIMEOUT_MS,
+        skipTapReward,
+      });
       writePlanCache(touchId, data);
       sendJson(res, 200, data);
       return;
@@ -302,8 +309,10 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && url.pathname === '/api/fc/session/complete') {
       const body = await readJson(req);
-      const data = await callEngine('/games/session/complete', body);
-      if (body.touchId) planCache.delete(body.touchId);
+      const touchId = typeof body.touchId === 'string' ? body.touchId : '';
+      const { touchId: _omitTouchId, ...engineBody } = body;
+      const data = await callEngine('/games/session/complete', engineBody);
+      if (touchId) planCache.delete(touchId);
       sendJson(res, 200, data);
       return;
     }

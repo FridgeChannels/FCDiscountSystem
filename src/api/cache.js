@@ -59,6 +59,16 @@ export function writeCachedRewardPlan(touchId, plan) {
   }
 }
 
+/** 结算后立刻把本地 plan 缓存里的积分对齐到权威余额,避免刷新读到旧积分。 */
+export function patchCachedRewardPlanPoints(touchId, pointsBalance) {
+  if (!canUseBrowserStorage() || !touchId) return;
+  const nextBalance = Math.max(0, Math.round(Number(pointsBalance) || 0));
+  if (!Number.isFinite(nextBalance)) return;
+  const plan = readCachedRewardPlan(touchId);
+  if (!plan) return;
+  writeCachedRewardPlan(touchId, { ...plan, pointsBalance: nextBalance });
+}
+
 export function clearCachedRewardPlan(touchId) {
   if (!canUseBrowserStorage() || !touchId) return;
   window.localStorage.removeItem(`${REWARD_PLAN_CACHE_PREFIX}${touchId}`);

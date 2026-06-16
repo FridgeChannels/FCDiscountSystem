@@ -1,22 +1,31 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import GameHost from './GameHost.jsx';
 import ProgressRail from './ProgressRail.jsx';
 import CouponUnlockedModal from './CouponUnlockedModal.jsx';
 import { useGameProgress, MOCK_INITIAL_COINS } from '../lib/gameProgress.js';
 
-/** 从游戏运行时事件里尽力解析“本次获得金币”。真实埋点确定后可收敛字段。 */
-function readCoinDelta(event) {
-  if (!event || typeof event !== 'object') return 0;
-  const candidates = [event.coins, event.coinsAwarded, event.pointsAwarded, event.delta, event.amount];
-  const isCoinish =
-    event.type === 'coins' ||
-    event.type === 'coin' ||
-    event.type === 'score' ||
-    event.type === 'reward' ||
-    candidates.some((value) => typeof value === 'number');
-  if (!isCoinish) return 0;
-  const value = candidates.find((candidate) => typeof candidate === 'number');
-  return Math.max(0, Math.round(Number(value) || 0));
+function parseProgressCoinEvent(event, expectedSessionId, prevTotalCoinsInSession = 0) {
+  if (!event || typeof event !== 'object') return null;
+  const gameEvent = event.type === 'fc.game.event' ? event.payload : event;
+  if (!gameEvent || typeof gameEvent !== 'object') return null;
+  if (gameEvent.type !== 'progress.coin_awarded') return null;
+  const payload = gameEvent.payload;
+  if (!payload || typeof payload !== 'object') return null;
+
+  const sessionId = String(payload.sessionId || '');
+  if (!sessionId || (expectedSessionId && sessionId !== expectedSessionId)) return null;
+
+  const seqValue = Number(payload.seq);
+  const seq = Number.isFinite(seqValue) && seqValue > 0 ? seqValue : null;
+  const totalCoinsInSession = Math.max(0, Math.round(Number(payload.totalCoinsInSession) || 0));
+
+  let deltaCoins = Math.max(0, Math.round(Number(payload.deltaCoins) || 0));
+  if (deltaCoins <= 0 && totalCoinsInSession > prevTotalCoinsInSession) {
+    deltaCoins = totalCoinsInSession - prevTotalCoinsInSession;
+  }
+  if (deltaCoins <= 0) return null;
+
+  return { sessionId, seq, deltaCoins, totalCoinsInSession };
 }
 
 /** 游戏层铺满 mobile-viewport 卡片(非居中小弹窗)，沉浸式全屏仅保留关闭按钮 */
@@ -32,8 +41,12 @@ export default function PlatformGameModal({
   onError,
   onRuntimeEvent,
 }) {
-  // Progress Rail 状态(第一版 mock):进入游戏时用当前真实金币播种,阶梯用 mock。
+  // Progress Rail 状态:用真实 points 播种,优先使用后端阶梯(无则回退 mock)。
   const initialCoins = Number(progressView?.currentPoints ?? MOCK_INITIAL_COINS);
+  const ladder = useMemo(
+    () => (Array.isArray(progressView?.ladder) && progressView.ladder.length ? progressView.ladder : undefined),
+    [progressView?.ladder],
+  );
   const {
     displayCoins,
     displayRail,
@@ -44,13 +57,24 @@ export default function PlatformGameModal({
     awardCoins,
     clearUpgrade,
     resetTo,
-  } = useGameProgress({ initialCoins });
+  } = useGameProgress({ initialCoins, ladder });
+  const seenEventSeqRef = useRef(0);
+  const seenSessionTotalRef = useRef(0);
+  const runtimeAwardedCoinsRef = useRef(0);
+  const activeSessionRef = useRef('');
+  const seedCoinsRef = useRef(initialCoins);
 
   // 进入新一局时用最新真实金币重新播种 Rail。
   useEffect(() => {
-    if (open) resetTo(initialCoins);
+    if (!open) return;
+    resetTo(initialCoins);
+    seedCoinsRef.current = initialCoins;
+    activeSessionRef.current = gameStart?.sessionId || '';
+    seenEventSeqRef.current = 0;
+    seenSessionTotalRef.current = 0;
+    runtimeAwardedCoinsRef.current = 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, gameStart?.sessionId]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -84,16 +108,42 @@ export default function PlatformGameModal({
 
   // 实时进度:游戏运行时若发出含金币的事件,立即推进 Rail。
   const handleRuntimeEvent = useCallback((event) => {
-    const delta = readCoinDelta(event);
-    if (delta > 0) awardCoins(delta);
+    const parsed = parseProgressCoinEvent(event, activeSessionRef.current, seenSessionTotalRef.current);
+    if (parsed) {
+      const hasNewSeq = parsed.seq ? parsed.seq > seenEventSeqRef.current : false;
+      const hasNewSessionTotal = parsed.totalCoinsInSession > seenSessionTotalRef.current;
+      if (!hasNewSeq && !hasNewSessionTotal) return;
+      if (parsed.seq && parsed.seq > seenEventSeqRef.current) {
+        seenEventSeqRef.current = parsed.seq;
+      }
+      if (parsed.totalCoinsInSession > seenSessionTotalRef.current) {
+        seenSessionTotalRef.current = parsed.totalCoinsInSession;
+      }
+      runtimeAwardedCoinsRef.current += parsed.deltaCoins;
+      awardCoins(parsed.deltaCoins);
+    }
     onRuntimeEvent?.(event);
   }, [awardCoins, onRuntimeEvent]);
 
-  // 游戏结束:先把本次金币反馈到顶部 Rail(+N Coins / count-up / 升级检测),再交还父级结算。
+  // 游戏结束:仅补齐“结算金币 - 已实时发放金币”,避免重复累计。
   const handleDone = useCallback((settlement) => {
-    const delta = Math.max(0, Math.round(Number(settlement?.pointsAwarded ?? settlement?.coinsAwarded ?? 0)));
-    if (delta > 0) awardCoins(delta);
-    onDone?.(settlement);
+    const totalAwarded = Math.max(
+      0,
+      Math.round(Number(settlement?.pointsAwarded ?? settlement?.coinsAwarded ?? 0)),
+    );
+    const remaining = Math.max(0, totalAwarded - runtimeAwardedCoinsRef.current);
+    if (remaining > 0) awardCoins(remaining);
+    const authoritativeTotal = Number.isFinite(Number(settlement?.pointsBalance))
+      ? Math.max(0, Math.round(Number(settlement.pointsBalance)))
+      : seedCoinsRef.current + totalAwarded;
+
+    // 结算前强制对齐到后端权威积分,避免用户感知“游戏内与首页不一致”。
+    resetTo(authoritativeTotal);
+    runtimeAwardedCoinsRef.current = totalAwarded;
+
+    window.setTimeout(() => {
+      onDone?.(settlement);
+    }, 80);
   }, [awardCoins, onDone]);
 
   if (!open) return null;
