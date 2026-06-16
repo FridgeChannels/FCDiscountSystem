@@ -352,6 +352,8 @@ export default function App() {
   const newChallengeRenewRef = useRef(null);
   const renewPlanRef = useRef(null);
   const renewFlowActiveRef = useRef(false);
+  const giftEndedPendingRenewRef = useRef(false);
+  const renewPlanAppliedRef = useRef(false);
   const applyRenewPlanAfterGiftRef = useRef(null);
   const zoomCenteredOpenRef = useRef(false);
   const zoomAfterCloseRef = useRef(null);
@@ -360,6 +362,8 @@ export default function App() {
   const devPreviewActiveRef = useRef(false);
   const devSceneRef = useRef('');
   const magnetBrandParamRef = useRef(null);
+  // 仅在 bootstrap 成功结束后标记，避免 StrictMode 二次挂载时跳过 plan 请求导致一直 loading
+  const sessionBootstrapCompleteRef = useRef(null);
 
   const touchId = useTouchId();
   const [devScene, setDevScene] = useState(() => getDevScene());
@@ -376,6 +380,8 @@ export default function App() {
   const [activeSurveyTask, setActiveSurveyTask] = useState(null);
   const [surveyLoading, setSurveyLoading] = useState(false);
   const [welcomeStep, setWelcomeStep] = useState(() => (isReturnVisitor(getTouchId()) ? 3 : 0));
+  const welcomeStepRef = useRef(welcomeStep);
+  const [welcomeCoupon, setWelcomeCoupon] = useState(null);
   const [welcomeTargetPoints, setWelcomeTargetPoints] = useState(67);
   const [points, setPoints] = useState(0);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -481,6 +487,10 @@ export default function App() {
     }
   }, [applyMagnetBrandParam, touchId]);
 
+  useEffect(() => {
+    welcomeStepRef.current = welcomeStep;
+  }, [welcomeStep]);
+
   const [isWelcomeVideoActive, setIsWelcomeVideoActive] = useState(false);
   const [welcomeVideoFading, setWelcomeVideoFading] = useState(false);
   const welcomeVideoRef = useRef(null);
@@ -495,6 +505,9 @@ export default function App() {
     setWelcomeVideoFading(true);
 
     if (renewFlowActiveRef.current) {
+      giftEndedPendingRenewRef.current = true;
+      setIntroActive(false);
+      setRenewGiftIntro(false);
       void applyRenewPlanAfterGiftRef.current?.();
     } else if (welcomeStep >= 3) {
       returnIntroShownRef.current = true;
@@ -680,7 +693,7 @@ export default function App() {
 
     if (!fromNewChallengeRenew && !renewInProgress) {
       if (welcomeInProgress) {
-        setIntroActive(welcomeStep === 0);
+        setIntroActive(welcomeStepRef.current === 0);
       } else if (shouldShowReturnIntro || returnIntroPendingRef.current) {
         // 非首次回访:礼盒与 plan 并行,结束后再进首页
         if (!welcomeDone) writeWelcomeCompleted(touchId);
@@ -801,7 +814,7 @@ export default function App() {
     }
 
     return vm;
-  }, [touchId, welcomeStep]);
+  }, [touchId]);
 
   const applyDevPreviewScene = useCallback((sceneId) => {
     const resolved = resolveDevScene(sceneId);
@@ -884,7 +897,7 @@ export default function App() {
     touchId,
   ]);
 
-  const reloadPlan = useCallback(async ({ refresh = false } = {}) => {
+  const reloadPlan = useCallback(async ({ refresh = false, background = false } = {}) => {
     if (devPreviewActiveRef.current) {
       const resolved = resolveDevScene(devSceneRef.current || 'home');
       if (resolved) {
@@ -893,15 +906,20 @@ export default function App() {
       }
     }
 
-    const plan = await fetchRewardPlan(touchId, { refresh });
-    clearGameSessionCache();
-    writeCachedRewardPlan(touchId, plan);
-    if (newChallengeRenewRef.current || renewFlowActiveRef.current) {
-      syncFromPlan(plan, { fromNewChallengeRenew: true });
-    } else {
-      syncFromPlan(plan);
+    if (!background) setPlanLoading(true);
+    try {
+      const plan = await fetchRewardPlan(touchId, { refresh });
+      clearGameSessionCache();
+      writeCachedRewardPlan(touchId, plan);
+      if (newChallengeRenewRef.current || renewFlowActiveRef.current) {
+        syncFromPlan(plan, { fromNewChallengeRenew: true });
+      } else {
+        syncFromPlan(plan);
+      }
+      return plan;
+    } finally {
+      if (!background) setPlanLoading(false);
     }
-    return plan;
   }, [clearGameSessionCache, syncFromPlan, touchId]);
 
   // 领取:调用 redeem 发券,持久化本周期券码,返回带 code 的 coupon 供 Zoom 展示。
@@ -988,9 +1006,11 @@ export default function App() {
   const handleWelcomeEarnMore = useCallback(async () => {
     const advanceWelcome = () => {
       setWelcomeStep(2);
-      reloadPlan().catch((err) => {
-        dbgError('[FCDBG][App] welcome earn more reload failed', err);
-      });
+      if (!renewFlowActiveRef.current) {
+        reloadPlan({ background: true }).catch((err) => {
+          dbgError('[FCDBG][App] welcome earn more reload failed', err);
+        });
+      }
     };
 
     if (needsShopifyAuth() && !getMoreOffAuthPromptSeen) {
@@ -1089,6 +1109,19 @@ export default function App() {
       };
     }
 
+    // renew / welcome 流程进行中时，禁止重跑整段 session 初始化（否则会重置 intro 导致 gift 重播）
+    if (renewFlowActiveRef.current || newChallengeRenewRef.current) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (sessionBootstrapCompleteRef.current === touchId) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const returnVisitorOnEntry = isReturnVisitor(touchId);
     setWelcomeStep(returnVisitorOnEntry ? 3 : 0);
     setClaimedCode(readClaimRecord(touchId)?.code ?? null);
@@ -1120,8 +1153,9 @@ export default function App() {
       setIntroActive(false);
       setWelcomeStep(3);
     } else {
+      // 首登与 plan 并行播放礼盒，避免等待接口期间只显示 Refreshing rewards…
       setReturnIntroGate(false);
-      setIntroActive(false);
+      setIntroActive(true);
     }
 
     preloadRuntimeManifest(touchId).catch((err) => {
@@ -1176,7 +1210,10 @@ export default function App() {
       } catch (err) {
         if (!cancelled) setPlanError(err instanceof Error ? err.message : 'Failed to load rewards');
       } finally {
-        if (!cancelled) setPlanLoading(false);
+        if (!cancelled) {
+          setPlanLoading(false);
+          sessionBootstrapCompleteRef.current = touchId;
+        }
       }
     })();
     return () => {
@@ -1301,10 +1338,14 @@ export default function App() {
         writeCachedRewardPlan(touchId, plan);
         renewPlanRef.current = plan;
         setRenewPlanReady(true);
+        if (giftEndedPendingRenewRef.current) {
+          void applyRenewPlanAfterGiftRef.current?.();
+        }
         return plan;
       })
       .catch((err) => {
         dbgError('[FCDBG][App] start new challenge failed', err);
+        giftEndedPendingRenewRef.current = false;
         newChallengeRenewRef.current = null;
         renewPlanRef.current = null;
         renewFlowActiveRef.current = false;
@@ -1328,6 +1369,7 @@ export default function App() {
     setRenewFlowActive(true);
     setRenewPlanReady(false);
     setRenewIssueAutoAdvance(false);
+    renewPlanAppliedRef.current = false;
 
     setNewChallenge(null);
     setShowReceipt(false);
@@ -1344,6 +1386,7 @@ export default function App() {
 
     setWelcomeStep(0);
     setPoints(0);
+    setWelcomeCoupon(null);
     setRenewGiftIntro(true);
     setReturnIntroGate(true);
     setIntroActive(true);
@@ -1479,14 +1522,18 @@ export default function App() {
       }
     }
     if (!plan) return;
+    if (renewPlanAppliedRef.current) return;
+    renewPlanAppliedRef.current = true;
 
+    giftEndedPendingRenewRef.current = false;
     newChallengeRenewRef.current = null;
     setRenewGiftIntro(false);
     setIntroActive(false);
     setReturnIntroGate(false);
 
     const vm = syncFromPlan(plan, { fromNewChallengeRenew: true });
-    const welcomeNeeded = vm.hasInitialDiscount && !readWelcomeCompleted(touchId);
+    setPlanLoading(false);
+    const welcomeNeeded = (vm.discounts?.length ?? 0) > 0;
 
     if (welcomeNeeded) {
       const tapAwarded = vm.tapReward?.awarded ?? 0;
@@ -1498,7 +1545,11 @@ export default function App() {
         setPoints(vm.points);
       }
       setRenewIssueAutoAdvance(false);
+      const displayCoupon = vm.discounts[vm.currentStepIndex] ?? vm.discounts[0] ?? null;
+      setWelcomeCoupon(displayCoupon);
       setWelcomeStep(1);
+      setIntroActive(false);
+      setRenewGiftIntro(false);
       return;
     }
 
@@ -1522,6 +1573,7 @@ export default function App() {
   // 回访礼盒结束且首页就绪后再播 +5/Shopify(不在 intro 期间触发)
   useEffect(() => {
     if (introActive || planLoading || isWelcomeVideoActive || welcomeVideoFading) return undefined;
+    if (welcomeStep < 3 && !readWelcomeCompleted(touchId)) return undefined;
     if (!returnIntroShownRef.current) return undefined;
     if (!pendingTapRewardRef.current) return undefined;
 
@@ -1543,6 +1595,7 @@ export default function App() {
     planLoading,
     playPendingTapReward,
     touchId,
+    welcomeStep,
     welcomeVideoFading,
   ]);
 
@@ -1550,7 +1603,7 @@ export default function App() {
   useEffect(() => {
     if (introActive || planLoading || isWelcomeVideoActive || welcomeVideoFading) return undefined;
     if (returnIntroPendingRef.current && !returnIntroShownRef.current) return undefined;
-    if (welcomeStep < 3 && hasInitialDiscount && !readWelcomeCompleted(touchId)) return undefined;
+    if (welcomeStep < 3 && !readWelcomeCompleted(touchId)) return undefined;
     if (showReceipt || newChallenge || showClaimedScreen) return undefined;
     if (pendingTapRewardRef.current > 0) return undefined;
     if (!next || nextThreshold == null || points < targetPoints) return undefined;
@@ -1659,6 +1712,7 @@ export default function App() {
   // Best offer 页面每次被访问(由隐藏切换为展示)时播放一遍撒彩带动效
   const bestOfferConfettiPlayedRef = useRef(false);
   useEffect(() => {
+    if (welcomeStep < 3 && !introActive) return;
     if (showBestOffer) {
       if (!bestOfferConfettiPlayedRef.current) {
         bestOfferConfettiPlayedRef.current = true;
@@ -1670,7 +1724,7 @@ export default function App() {
     } else {
       bestOfferConfettiPlayedRef.current = false;
     }
-  }, [showBestOffer]);
+  }, [introActive, showBestOffer, welcomeStep]);
 
   useEffect(() => {
     if (!tapGame.active) return undefined;
@@ -1883,6 +1937,7 @@ export default function App() {
   }
 
   function startConfetti() {
+    if (welcomeStep < 3 && !introActive) return;
     const canvas = canvasRef.current;
     const ctx = confettiRef.current.ctx;
     if (!canvas || !ctx) return;
@@ -2562,12 +2617,36 @@ export default function App() {
     setWelcomeStep(2);
   }, []);
 
+  const handleWelcomeRitualComplete = useCallback(() => {
+    setWelcomeStep(3);
+    writeWelcomeCompleted(touchId);
+    setRenewIssueAutoAdvance(false);
+    setWelcomeCoupon(null);
+    setPlanLoading(false);
+    if (renewFlowActiveRef.current) {
+      renewFlowActiveRef.current = false;
+      setRenewFlowActive(false);
+      setRenewPlanReady(false);
+      renewPlanRef.current = null;
+      returnIntroShownRef.current = true;
+      returnIntroPendingRef.current = false;
+    }
+    if (pendingTapRewardRef.current > 0) {
+      playPendingTapReward();
+    } else {
+      tweenPointsTo(welcomeTargetPoints);
+    }
+  }, [playPendingTapReward, touchId, tweenPointsTo, welcomeTargetPoints]);
+
   const isReturnIntro = introActive && welcomeStep >= 3 && !renewGiftIntro && !renewFlowActive;
   const showBrandIntro =
     (introActive || renewGiftIntro) &&
     (renewGiftIntro || (!renewFlowActive && hasInitialDiscount) || isReturnIntro);
   const brandIntroIsWelcome = renewGiftIntro || welcomeStep < 3;
-  const showHome = !introActive && !planLoading && !returnIntroGate && !renewGiftIntro;
+  const showRenewWelcomeLoading = renewFlowActive && !introActive && welcomeStep < 1;
+  const showWelcomeRitual = welcomeStep >= 1 && welcomeStep < 3 && !introActive;
+  const planBlocksHome = planLoading && !rewardPlanId;
+  const showHome = !introActive && !planBlocksHome && !returnIntroGate && !renewGiftIntro && !showWelcomeRitual;
 
   return (
     <div
@@ -2619,7 +2698,7 @@ export default function App() {
         />
       )}
 
-      {planLoading && !introActive && !returnIntroGate && (
+      {(showRenewWelcomeLoading || (planLoading && !introActive && !returnIntroGate && !showWelcomeRitual)) && (
         <div className="reward-sync-status" role="status">
           Refreshing rewards…
         </div>
@@ -2819,35 +2898,18 @@ export default function App() {
         />
       )}
 
-      {welcomeStep < 3 && !introActive && hasInitialDiscount && (
+      {showWelcomeRitual && (
         <WelcomeRitual
           step={welcomeStep}
-          coupon={current}
+          coupon={welcomeCoupon ?? current}
           brand={brand}
           couponFaceRef={couponFaceRef}
           hasNextTier={!isBestOffer}
           autoAdvance={renewIssueAutoAdvance}
           onAutoAdvance={handleRenewIssueAutoAdvance}
           onAdvanceToSettle={handleWelcomeEarnMore}
-          onUse={() => requestClaim(handleUseWelcomeCoupon, current.num)}
-          onComplete={() => {
-            setWelcomeStep(3);
-            writeWelcomeCompleted(touchId);
-            setRenewIssueAutoAdvance(false);
-            if (renewFlowActiveRef.current) {
-              renewFlowActiveRef.current = false;
-              setRenewFlowActive(false);
-              setRenewPlanReady(false);
-              renewPlanRef.current = null;
-              returnIntroShownRef.current = true;
-              returnIntroPendingRef.current = false;
-            }
-            if (pendingTapRewardRef.current > 0) {
-              playPendingTapReward();
-            } else {
-              tweenPointsTo(welcomeTargetPoints);
-            }
-          }}
+          onUse={() => requestClaim(handleUseWelcomeCoupon, (welcomeCoupon ?? current).num)}
+          onComplete={handleWelcomeRitualComplete}
         />
       )}
     </div>
@@ -3534,7 +3596,9 @@ function ChallengesBase({ challenges, dailyCapReached, onOpen }) {
               <span className="challenge-badge">{challenge.badge}</span>
               <div className="challenge-icon-wrapper">
                 {isShopifyConnect ? (
-                  <img className="challenge-shopify-icon" src="/gift-opening/shopify-icon.png" alt="" aria-hidden="true" />
+                  <img className="challenge-card-icon" src="/gift-opening/shopify-icon.png" alt="" aria-hidden="true" />
+                ) : challenge.iconUrl ? (
+                  <img className="challenge-card-icon" src={challenge.iconUrl} alt="" aria-hidden="true" />
                 ) : (
                   challenge.icon
                 )}

@@ -360,7 +360,10 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const data = await callEngine('/cycle/renew', body);
-      if (touchId) planCache.delete(touchId);
+      if (touchId) {
+        planCache.delete(touchId);
+        writePlanCache(touchId, data);
+      }
       sendJson(res, 200, data);
       return;
     }

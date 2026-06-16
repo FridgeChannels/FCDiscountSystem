@@ -192,6 +192,7 @@ function mapTaskToChallenge(task, gameIndex) {
     type: 'game',
     badge: `Game ${index}`,
     icon: iconForTemplate(task.templateKey),
+    iconUrl: task.iconUrl,
     title: task.displayName || labelForTemplate(task.templateKey),
     desc: '',
     reward: '+pts',
