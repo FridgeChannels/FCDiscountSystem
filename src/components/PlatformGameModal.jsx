@@ -1,5 +1,23 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import GameHost from './GameHost.jsx';
+import ProgressRail from './ProgressRail.jsx';
+import CouponUnlockedModal from './CouponUnlockedModal.jsx';
+import { useGameProgress, MOCK_INITIAL_COINS } from '../lib/gameProgress.js';
+
+/** 从游戏运行时事件里尽力解析“本次获得金币”。真实埋点确定后可收敛字段。 */
+function readCoinDelta(event) {
+  if (!event || typeof event !== 'object') return 0;
+  const candidates = [event.coins, event.coinsAwarded, event.pointsAwarded, event.delta, event.amount];
+  const isCoinish =
+    event.type === 'coins' ||
+    event.type === 'coin' ||
+    event.type === 'score' ||
+    event.type === 'reward' ||
+    candidates.some((value) => typeof value === 'number');
+  if (!isCoinish) return 0;
+  const value = candidates.find((candidate) => typeof candidate === 'number');
+  return Math.max(0, Math.round(Number(value) || 0));
+}
 
 /** 游戏层铺满 mobile-viewport 卡片(非居中小弹窗)，沉浸式全屏仅保留关闭按钮 */
 export default function PlatformGameModal({
@@ -14,6 +32,26 @@ export default function PlatformGameModal({
   onError,
   onRuntimeEvent,
 }) {
+  // Progress Rail 状态(第一版 mock):进入游戏时用当前真实金币播种,阶梯用 mock。
+  const initialCoins = Number(progressView?.currentPoints ?? MOCK_INITIAL_COINS);
+  const {
+    displayCoins,
+    displayRail,
+    lastGain,
+    upgrade,
+    todayRank,
+    rankChange,
+    awardCoins,
+    clearUpgrade,
+    resetTo,
+  } = useGameProgress({ initialCoins });
+
+  // 进入新一局时用最新真实金币重新播种 Rail。
+  useEffect(() => {
+    if (open) resetTo(initialCoins);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   useEffect(() => {
     if (!open) return undefined;
 
@@ -44,16 +82,21 @@ export default function PlatformGameModal({
     };
   }, [open]);
 
-  if (!open) return null;
+  // 实时进度:游戏运行时若发出含金币的事件,立即推进 Rail。
+  const handleRuntimeEvent = useCallback((event) => {
+    const delta = readCoinDelta(event);
+    if (delta > 0) awardCoins(delta);
+    onRuntimeEvent?.(event);
+  }, [awardCoins, onRuntimeEvent]);
 
-  const currentPoints = Number(progressView?.currentPoints ?? 0);
-  const targetPoints = Math.max(1, Number(progressView?.targetPoints ?? 100));
-  const progressPct = Math.max(
-    0,
-    Math.min(Number(progressView?.progressPct ?? (currentPoints / targetPoints) * 100), 100),
-  );
-  const progressLabel = progressView?.label ?? `${currentPoints} / ${targetPoints}`;
-  const brandName = brand?.name || 'Brand';
+  // 游戏结束:先把本次金币反馈到顶部 Rail(+N Coins / count-up / 升级检测),再交还父级结算。
+  const handleDone = useCallback((settlement) => {
+    const delta = Math.max(0, Math.round(Number(settlement?.pointsAwarded ?? settlement?.coinsAwarded ?? 0)));
+    if (delta > 0) awardCoins(delta);
+    onDone?.(settlement);
+  }, [awardCoins, onDone]);
+
+  if (!open) return null;
 
   return (
     <div
@@ -62,25 +105,16 @@ export default function PlatformGameModal({
       aria-label={title}
     >
       <div className="platform-game-topbar">
-        <div className="platform-game-topbar-brand">
-          {brand?.logoUrl ? (
-            <img className="platform-game-topbar-logo" src={brand.logoUrl} alt={`${brandName} logo`} />
-          ) : null}
-          <span className="platform-game-topbar-name">{brandName}</span>
-        </div>
-        <div className="platform-game-topbar-progress" aria-label="Game progress placeholder">
-          <div className="platform-game-topbar-progress-track">
-            <div className="platform-game-topbar-progress-fill" style={{ width: `${progressPct}%` }} />
-          </div>
-          <span className="platform-game-topbar-progress-text">{progressLabel}</span>
-        </div>
+        <ProgressRail rail={displayRail} displayCoins={displayCoins} lastGain={lastGain} todayRank={todayRank} rankChange={rankChange} />
+
         <button type="button" className="platform-game-close" onClick={onClose} aria-label="Close game">
           Exit
         </button>
       </div>
+
       {gameStart ? (
         <div className="platform-game-stage">
-          <GameHost start={gameStart} onDone={onDone} onError={onError} onRuntimeEvent={onRuntimeEvent} />
+          <GameHost start={gameStart} onDone={handleDone} onError={onError} onRuntimeEvent={handleRuntimeEvent} />
         </div>
       ) : (
         <div className="platform-game-loading platform-game-loading--immersive">
@@ -88,6 +122,12 @@ export default function PlatformGameModal({
           <p>{loadingMessage || 'Preparing game…'}</p>
         </div>
       )}
+
+      <CouponUnlockedModal
+        open={!!upgrade}
+        percent={upgrade?.percent}
+        onContinue={clearUpgrade}
+      />
     </div>
   );
 }

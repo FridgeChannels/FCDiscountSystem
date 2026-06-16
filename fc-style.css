@@ -2122,7 +2122,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: max(8px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) 8px max(10px, env(safe-area-inset-left, 0px));
+  padding: max(19px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) 19px max(10px, env(safe-area-inset-left, 0px));
   background: rgba(12, 12, 12, 0.9);
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
@@ -2194,6 +2194,231 @@ body {
   letter-spacing: 0.01em;
   cursor: pointer;
   touch-action: manipulation;
+}
+
+/* ── Progress Rail (游戏顶部进度轨道) ───────────────────────────── */
+.progress-rail {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.progress-rail-coins {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.progress-rail-coin-icon.coin-ic {
+  width: 17px;
+  height: 17px;
+  margin-left: 0;
+}
+
+.progress-rail-coin-value {
+  color: #f1d98a;
+  font-weight: 800;
+  font-size: 1.05rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-rail-coin-gain {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 1px);
+  color: #8fd58a;
+  font-weight: 800;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  animation: rail-gain-float 1.6s ease forwards;
+  pointer-events: none;
+}
+
+@keyframes rail-gain-float {
+  0% { opacity: 0; transform: translate(-50%, 4px); }
+  18% { opacity: 1; transform: translate(-50%, 0); }
+  78% { opacity: 1; transform: translate(-50%, -5px); }
+  100% { opacity: 0; transform: translate(-50%, -11px); }
+}
+
+.progress-rail-track {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.progress-rail-node-wrap {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.progress-rail-node-wrap:last-child {
+  flex: 0 0 auto;
+}
+
+.progress-rail-node-row {
+  display: flex;
+  align-items: center;
+}
+
+.progress-rail-node {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+}
+
+.progress-rail-node-wrap.is-current .progress-rail-node {
+  background: #f1d98a;
+  box-shadow: 0 0 0 2px rgba(241, 217, 138, 0.3);
+}
+
+.progress-rail-line {
+  flex: 1;
+  height: 3px;
+  margin: 0 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+
+.progress-rail-line-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #d9bd70 0%, #8fd58a 100%);
+  transition: width 220ms ease;
+}
+
+.progress-rail-node-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 3px;
+  white-space: nowrap;
+}
+
+.progress-rail-node-copy strong {
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.progress-rail-node-status {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.6rem;
+  line-height: 1;
+}
+
+.progress-rail-node-wrap.is-current .progress-rail-node-status {
+  color: #8fd58a;
+}
+
+.progress-rail-max {
+  align-self: flex-start;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #211a16;
+  background: #f1d98a;
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+.platform-game-dev-earn {
+  flex: none;
+  border: 1px dashed rgba(255, 255, 255, 0.4);
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ── 优惠券升级弹层 ─────────────────────────────────────────────── */
+.coupon-unlocked-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(12, 14, 11, 0.62);
+  animation: fade-in 0.2s ease;
+}
+
+.coupon-unlocked-card {
+  width: 100%;
+  max-width: 300px;
+  background: var(--card-bg, #fff);
+  border-radius: 18px;
+  padding: 28px 24px;
+  text-align: center;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.3);
+}
+
+.coupon-unlocked-emoji {
+  font-size: 2.6rem;
+  line-height: 1;
+  margin-bottom: 10px;
+}
+
+.coupon-unlocked-title {
+  font-family: var(--font-serif, var(--font-sans));
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0 0 14px;
+}
+
+.coupon-unlocked-value {
+  font-family: var(--font-serif, var(--font-sans));
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: var(--brand-primary, #5c6e58);
+  line-height: 1;
+}
+
+.coupon-unlocked-sub {
+  margin: 6px 0 22px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary, #888);
+}
+
+.coupon-unlocked-btn {
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: var(--brand-primary, #5c6e58);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.2s ease;
+}
+
+.coupon-unlocked-btn:hover {
+  filter: brightness(1.08);
 }
 
 .platform-game-shell {
