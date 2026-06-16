@@ -176,6 +176,30 @@
   align-items: stretch;
 }
 
+.wallet.single-target .coupon-route {
+  height: 76px;
+  margin: 0 4px -2px;
+}
+
+.wallet.single-target .route-arc-container {
+  width: 54%;
+  bottom: 0;
+}
+
+.wallet.single-target .route-progress {
+  top: 41px;
+}
+
+.single-target-pair {
+  --coupon-col: min(76%, 280px);
+  grid-template-columns: var(--coupon-col);
+  justify-content: center;
+}
+
+.single-target-coupon {
+  width: 100%;
+}
+
 .coupon-wrap {
   position: relative;
   min-width: 0;
@@ -627,6 +651,8 @@
 
 .coupon-wrap.ready .locked-floor {
   color: #fff7dc;
+  cursor: pointer;
+  filter: none;
 }
 
 @keyframes ready-glow {

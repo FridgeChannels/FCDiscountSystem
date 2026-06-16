@@ -512,6 +512,27 @@ body {
   height: 18px;
 }
 
+.account-entry-avatar,
+.account-entry-avatar-img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-family: var(--font-serif);
+  font-size: 0.82rem;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.24),
+    0 2px 6px rgba(45, 51, 43, 0.12);
+}
+
+.account-entry-avatar-img {
+  object-fit: cover;
+}
+
 .account-entry-dot {
   position: absolute;
   right: 2px;
@@ -2954,6 +2975,281 @@ body {
   font-size: 0.98rem;
   font-weight: 800;
   cursor: pointer;
+}
+
+/* Profile Page */
+.profile-page {
+  background:
+    radial-gradient(circle at 50% 12%, rgba(255, 255, 255, 0.96) 0%, rgba(255, 255, 255, 0.5) 34%, transparent 62%),
+    linear-gradient(180deg, #fffdf8 0%, #f3eddf 100%);
+}
+
+.profile-body {
+  min-height: calc(100% - 72px);
+  padding: 24px 22px 36px;
+  align-items: stretch;
+  gap: 14px;
+  text-align: left;
+}
+
+.profile-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0 8px 4px;
+}
+
+.profile-avatar-preview {
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-family: var(--font-serif);
+  font-size: 2rem;
+  font-weight: 900;
+  box-shadow:
+    inset 0 2px 2px rgba(255, 255, 255, 0.22),
+    0 14px 30px rgba(45, 51, 43, 0.16);
+}
+
+.profile-avatar-preview img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.profile-hero h1 {
+  margin: 10px 0 0;
+  color: var(--text-primary);
+  font-family: var(--font-serif);
+  font-size: 2rem;
+  line-height: 1.05;
+}
+
+.profile-panel {
+  width: min(100%, 340px);
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid rgba(214, 207, 193, 0.78);
+  border-radius: 14px;
+  background: rgba(255, 253, 248, 0.88);
+  box-shadow: 0 10px 22px rgba(45, 51, 43, 0.07);
+}
+
+.profile-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.profile-panel-head span {
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.profile-panel-head small {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(184, 152, 85, 0.12);
+  color: #8a6420;
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+
+.shopify-profile-panel.is-connected .profile-panel-head small {
+  background: rgba(94, 142, 62, 0.12);
+  color: #4f7a31;
+}
+
+.shopify-profile-panel.is-unconnected .profile-panel-head small {
+  background: rgba(92, 100, 88, 0.1);
+  color: var(--text-secondary);
+}
+
+.profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-field + .profile-field {
+  margin-top: 14px;
+}
+
+.profile-field > span {
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.profile-field input {
+  width: 100%;
+  height: 44px;
+  box-sizing: border-box;
+  border: 1px solid rgba(214, 207, 193, 0.9);
+  border-radius: 10px;
+  background: #fffaf0;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.96rem;
+  font-weight: 800;
+  padding: 0 12px;
+  outline: none;
+}
+
+.profile-field input:focus {
+  border-color: rgba(184, 152, 85, 0.72);
+  box-shadow: 0 0 0 3px rgba(184, 152, 85, 0.14);
+}
+
+.profile-readonly-id {
+  display: block;
+  width: 100%;
+  height: 44px;
+  box-sizing: border-box;
+  border: 1px solid rgba(214, 207, 193, 0.9);
+  border-radius: 10px;
+  background: #f4efe2;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.96rem;
+  font-weight: 800;
+  padding: 0 12px;
+  line-height: 44px;
+  cursor: default;
+}
+
+.profile-field-hint {
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  text-transform: none;
+}
+
+.profile-avatar-options {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+.profile-avatar-option {
+  position: relative;
+  aspect-ratio: 1;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-family: var(--font-serif);
+  font-size: 0.8rem;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.2),
+    0 4px 10px rgba(45, 51, 43, 0.12);
+}
+
+.profile-avatar-option.is-selected {
+  border-color: #fffdf8;
+  outline: 2px solid rgba(184, 152, 85, 0.62);
+}
+
+.profile-shopify-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.profile-shopify-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  background: #e9f4e1;
+}
+
+.profile-shopify-icon img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
+.profile-shopify-copy {
+  min-width: 0;
+}
+
+.profile-shopify-copy strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  line-height: 1.25;
+}
+
+.profile-shopify-copy p {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.profile-secondary-action {
+  width: 100%;
+  height: 44px;
+  margin-top: 14px;
+  font-size: 0.86rem;
+}
+
+.profile-connect-shopify,
+.profile-save-btn {
+  width: min(100%, 340px);
+  height: 50px;
+  margin: 0 auto;
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.profile-connect-shopify {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+  border: 1px solid rgba(94, 128, 62, 0.22);
+  background: #e9f4e1;
+  color: #355626;
+}
+
+.profile-connect-shopify img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.profile-save-btn {
+  border: none;
+  background: var(--brand-primary);
+  color: #fff;
+  box-shadow: 0 12px 26px rgba(94, 128, 62, 0.22);
 }
 
 /* Shopify Auth Success Toast */

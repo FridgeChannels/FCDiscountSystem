@@ -13,6 +13,12 @@ export function isDevPreviewEnabled() {
   );
 }
 
+export function shouldShowDevToolbar() {
+  if (!isDevPreviewEnabled()) return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.get('toolbar') === '1';
+}
+
 export function getDevScene() {
   if (!isDevPreviewEnabled()) return '';
   const params = new URLSearchParams(window.location.search);

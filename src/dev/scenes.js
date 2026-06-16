@@ -73,6 +73,17 @@ export const DEV_SCENES = [
     },
   },
   {
+    id: 'single-target',
+    label: 'Single',
+    fixture: DEV_FIXTURES.singleTarget,
+    ui: {
+      welcomeStep: 3,
+      introActive: false,
+      setWelcomeCompleted: true,
+      clearClaimed: true,
+    },
+  },
+  {
     id: 'urgent',
     label: 'Countdown',
     fixture: DEV_FIXTURES.urgent,
