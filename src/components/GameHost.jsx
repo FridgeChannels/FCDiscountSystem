@@ -1,7 +1,12 @@
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { completeGameSession } from '../api/client.js';
 import { dbg, dbgError } from '../lib/debug.js';
-import { ensureRuntimesRegistered, getRuntime, getRuntimeManifestEntry } from '../lib/runtimeRegistry.js';
+import {
+  ensureRuntimesRegistered,
+  getRuntime,
+  getRuntimeManifestEntry,
+  subscribeRuntimeManifest,
+} from '../lib/runtimeRegistry.js';
 import { getRuntimeLoadConfig } from '../lib/runtimeLoadConfig.js';
 import IframeGameHost from './IframeGameHost.jsx';
 
@@ -25,7 +30,7 @@ function normalizeStartPayloadForLocalHost(start) {
   };
 }
 
-function InlineGameHost({ start, onDone, onError }) {
+function InlineGameHost({ start, onDone, onError, onRuntimeEvent }) {
   const [Comp, setComp] = useState(null);
   const [err, setErr] = useState(null);
   const eventsRef = useRef([]);
@@ -97,7 +102,8 @@ function InlineGameHost({ start, onDone, onError }) {
   const handleRuntimeEvent = useCallback((event) => {
     eventsRef.current.push(event);
     eventLogCountRef.current += 1;
-  }, []);
+    onRuntimeEvent?.(event);
+  }, [onRuntimeEvent]);
 
   if (err) {
     return <p className="platform-game-error">{err}</p>;
@@ -117,8 +123,17 @@ function InlineGameHost({ start, onDone, onError }) {
   );
 }
 
-export default function GameHost({ start, onDone, onError }) {
-  const manifestEntry = getRuntimeManifestEntry(start.runtimeComponent);
+export default function GameHost({ start, onDone, onError, onRuntimeEvent }) {
+  const [manifestVersion, setManifestVersion] = useState(0);
+
+  useEffect(() => subscribeRuntimeManifest(() => {
+    setManifestVersion((value) => value + 1);
+  }), []);
+
+  const manifestEntry = useMemo(
+    () => getRuntimeManifestEntry(start.runtimeComponent),
+    [manifestVersion, start.runtimeComponent],
+  );
   const loadConfig = useMemo(
     () => getRuntimeLoadConfig(start.runtimeComponent, manifestEntry),
     [manifestEntry, start.runtimeComponent],
@@ -150,9 +165,26 @@ export default function GameHost({ start, onDone, onError }) {
         allowedOrigin={loadConfig.allowedOrigin}
         onDone={onDone}
         onError={onError}
+        onRuntimeEvent={onRuntimeEvent}
       />
     );
   }
 
-  return <InlineGameHost start={start} onDone={onDone} onError={onError} />;
+  if (!manifestEntry && !getRuntime(start.runtimeComponent)) {
+    return (
+      <div className="platform-game-loading platform-game-loading--immersive">
+        <span className="platform-game-spinner" aria-hidden="true" />
+        <p>Loading game…</p>
+      </div>
+    );
+  }
+
+  return (
+    <InlineGameHost
+      start={start}
+      onDone={onDone}
+      onError={onError}
+      onRuntimeEvent={onRuntimeEvent}
+    />
+  );
 }

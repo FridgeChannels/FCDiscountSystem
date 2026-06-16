@@ -3,10 +3,18 @@ import { attachIframeHost } from '@fc/game-bridge';
 import { completeGameSession } from '../api/client.js';
 import { dbg, dbgError } from '../lib/debug.js';
 
-export default function IframeGameHost({ start, iframeUrl, allowedOrigin, onDone, onError }) {
+export default function IframeGameHost({
+  start,
+  iframeUrl,
+  allowedOrigin,
+  onDone,
+  onError,
+  onRuntimeEvent,
+}) {
   const iframeRef = useRef(null);
   const [status, setStatus] = useState('loading');
   const [errorMessage, setErrorMessage] = useState('');
+  const [bootAttempt, setBootAttempt] = useState(0);
   const onDoneRef = useRef(onDone);
   const onErrorRef = useRef(onError);
   const startRef = useRef(start);
@@ -17,13 +25,20 @@ export default function IframeGameHost({ start, iframeUrl, allowedOrigin, onDone
   const iframeSrc = useMemo(() => {
     const url = new URL(iframeUrl, window.location.href);
     url.searchParams.set('parentOrigin', window.location.origin);
+    url.searchParams.set('hostBoot', String(bootAttempt));
     return url.toString();
-  }, [iframeUrl]);
+  }, [bootAttempt, iframeUrl]);
 
   const resolvedAllowedOrigin = useMemo(
     () => new URL(iframeSrc, window.location.href).origin,
     [iframeSrc],
   );
+
+  useEffect(() => {
+    setBootAttempt(0);
+    setStatus('loading');
+    setErrorMessage('');
+  }, [start.sessionId]);
 
   useEffect(() => {
     const iframe = iframeRef.current;
@@ -47,7 +62,13 @@ export default function IframeGameHost({ start, iframeUrl, allowedOrigin, onDone
         allowedOrigin: resolvedAllowedOrigin,
         payload: startRef.current,
         handlers: {
-          onReady: () => setStatus('playing'),
+          onReady: () => {
+            dbg('[FCDBG][IframeGameHost] runtime ready', {
+              sessionId: startRef.current?.sessionId,
+              attempt: bootAttempt,
+            });
+            setStatus('playing');
+          },
           onComplete: async (result) => {
             try {
               const view = await completeGameSession(result);
@@ -59,6 +80,9 @@ export default function IframeGameHost({ start, iframeUrl, allowedOrigin, onDone
               setErrorMessage(message);
               onErrorRef.current?.(message);
             }
+          },
+          onEvent: (event) => {
+            onRuntimeEvent?.(event);
           },
           onError: (message) => {
             dbgError('[FCDBG][IframeGameHost] runtime error', message);
@@ -81,7 +105,38 @@ export default function IframeGameHost({ start, iframeUrl, allowedOrigin, onDone
       iframe.removeEventListener('load', attach);
       session?.cancel();
     };
-  }, [iframeSrc, resolvedAllowedOrigin, start.sessionId]);
+  }, [bootAttempt, iframeSrc, resolvedAllowedOrigin, start.sessionId]);
+
+  useEffect(() => {
+    if (status !== 'loading') return undefined;
+    if (bootAttempt >= 2) return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      dbgError('[FCDBG][IframeGameHost] ready timeout; retry bootstrap', {
+        sessionId: start.sessionId,
+        attempt: bootAttempt,
+      });
+      setBootAttempt((value) => value + 1);
+    }, 4500);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [bootAttempt, start.sessionId, status]);
+
+  useEffect(() => {
+    if (status !== 'loading' || bootAttempt < 2) return;
+    const timeoutId = window.setTimeout(() => {
+      if (status !== 'loading') return;
+      const message = 'Game start timed out. Please retry.';
+      setStatus('error');
+      setErrorMessage(message);
+      onErrorRef.current?.(message);
+    }, 6500);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [bootAttempt, status]);
 
   if (status === 'error') {
     return <p className="platform-game-error">{errorMessage || 'Game failed to load'}</p>;
@@ -95,6 +150,7 @@ export default function IframeGameHost({ start, iframeUrl, allowedOrigin, onDone
         src={iframeSrc}
         sandbox="allow-scripts allow-same-origin"
         className="platform-game-iframe"
+        scrolling="no"
         aria-hidden={status === 'loading'}
       />
       {status === 'loading' ? (

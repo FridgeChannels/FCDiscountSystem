@@ -57,7 +57,7 @@ body {
   width: min(100%, 440px);
   flex: 1;
   height: 92vh;
-  min-height: 760px;
+  min-height: min(760px, 100vh);
   background-color: var(--bg-color);
   border: 1px solid var(--border-color);
   border-radius: 24px;
@@ -66,6 +66,12 @@ body {
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  overscroll-behavior: none;
+}
+
+.mobile-viewport:has(.platform-game-overlay.open) {
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 /* 真机 / 窄屏:NFC 落地页铺满视口宽,仍保持单页卡片结构 */
@@ -77,6 +83,8 @@ body {
   .mobile-viewport {
     width: 100%;
     max-width: none;
+    min-height: 100svh;
+    height: 100svh;
     min-height: 100dvh;
     height: 100dvh;
     border-radius: 0;
@@ -1672,11 +1680,17 @@ body {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .platform-game-overlay.open {
   opacity: 1;
   pointer-events: auto;
+}
+
+.platform-game-overlay--playing {
+  background: #000;
 }
 
 .platform-game-brand-bar {
@@ -1739,23 +1753,92 @@ body {
   overflow: hidden;
 }
 
-.platform-game-close {
-  position: absolute;
-  top: max(10px, env(safe-area-inset-top, 0px));
-  right: max(10px, env(safe-area-inset-right, 0px));
-  z-index: 50;
-  width: 36px;
-  height: 36px;
-  border: none;
+.platform-game-stage-inner {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.platform-game-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: max(8px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) 8px max(10px, env(safe-area-inset-left, 0px));
+  background: rgba(12, 12, 12, 0.9);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.platform-game-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 34%;
+}
+
+.platform-game-topbar-logo {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
   border-radius: 50%;
-  background: rgba(20, 24, 20, 0.55);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.platform-game-topbar-name {
   color: #fff;
-  font-size: 1.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.platform-game-topbar-progress {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.platform-game-topbar-progress-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  overflow: hidden;
+}
+
+.platform-game-topbar-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #d9bd70 0%, #8fd58a 100%);
+  transition: width 180ms ease;
+}
+
+.platform-game-topbar-progress-text {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.72rem;
   line-height: 1;
+  text-align: center;
+}
+
+.platform-game-close {
+  flex: none;
+  border: none;
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  display: grid;
-  place-items: center;
-  backdrop-filter: blur(6px);
+  touch-action: manipulation;
 }
 
 .platform-game-shell {
@@ -1810,12 +1893,13 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .platform-game-loading--overlay {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 3;
   width: 100%;
   height: 100%;
   flex: none;
@@ -1823,13 +1907,16 @@ body {
 }
 
 .platform-game-iframe {
-  flex: 1;
+  flex: 1 1 auto;
   width: 100%;
   height: 100%;
   min-height: 0;
   border: 0;
   border-radius: 0;
-  background: #fff;
+  background: #000;
+  display: block;
+  overflow: hidden;
+  touch-action: auto;
 }
 
 .platform-game-error {

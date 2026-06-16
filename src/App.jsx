@@ -1199,6 +1199,17 @@ export default function App() {
   const time = useMemo(() => formatCountdown(countdownSeconds), [countdownSeconds]);
   const expiryDate = useMemo(() => formatExpiryDate(countdownSeconds), [countdownSeconds]);
   const urgent = countdownSeconds < 86400 && countdownSeconds > 0;
+  const gameProgressView = useMemo(() => ({
+    currentPoints: points,
+    targetPoints,
+    progressPct,
+    label: `${points} / ${targetPoints}`,
+  }), [points, progressPct, targetPoints]);
+
+  // 预留“游戏内实时进度”事件通道:产品确认埋点后,可在这里接入实时积分变更。
+  const handleGameRuntimeEvent = useCallback((event) => {
+    dbg('[FCDBG][App] game runtime event channel', event);
+  }, []);
 
   function resetRound() {
     setDiscounts((prevDiscounts) => {
@@ -2310,6 +2321,8 @@ export default function App() {
     setGameLoadingMessage('Loading game…');
 
     try {
+      await preloadRuntimeManifest(touchId);
+
       const key = `${rewardPlanId}:${challenge.gameInstanceId}`;
       const preloaded = preloadedGameStartsRef.current.get(key);
       if (preloaded) {
@@ -2608,6 +2621,7 @@ export default function App() {
         title={gameModalTitle}
         gameStart={gameStart}
         brand={brand}
+        progressView={gameProgressView}
         loadingMessage={gameLoadingMessage}
         onClose={() => {
           activeGameRequestRef.current += 1;
@@ -2617,6 +2631,7 @@ export default function App() {
         }}
         onDone={handleSettlementComplete}
         onError={(message) => showNotification('Game error', message, '⚠️')}
+        onRuntimeEvent={handleGameRuntimeEvent}
       />
 
       <SurveyModal

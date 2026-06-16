@@ -10,6 +10,12 @@ function resolvePublicIframeUrl(iframeUrl) {
     const parsed = new URL(iframeUrl, shellBase || pageOrigin || undefined);
     const pathWithSearch = `${parsed.pathname}${parsed.search}`;
 
+    // Paths proxied by nginx / vite dev server — load same-origin to avoid cross-origin iframe sizing bugs.
+    const sameOriginPaths = ['/runtime-shell/', '/uploaded-games/', '/brand-assets/', '/_next/'];
+    if (pageOrigin && sameOriginPaths.some((prefix) => parsed.pathname.startsWith(prefix))) {
+      return `${pageOrigin}${pathWithSearch}`;
+    }
+
     // Production: runtime shell is reverse-proxied on the same public host as the coupon app.
     if (shellBase && pageOrigin && shellBase === pageOrigin) {
       return `${pageOrigin}${pathWithSearch}`;

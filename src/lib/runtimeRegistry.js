@@ -27,6 +27,24 @@ let manifestReady = false;
 let manifestTouchId = null;
 let manifestMap = new Map();
 let inflightManifest = null;
+const manifestListeners = new Set();
+
+function notifyManifestListeners() {
+  manifestListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch (err) {
+      dbgError('[FCDBG][RuntimeRegistry] manifest listener failed', err);
+    }
+  });
+}
+
+export function subscribeRuntimeManifest(listener) {
+  manifestListeners.add(listener);
+  return () => {
+    manifestListeners.delete(listener);
+  };
+}
 
 function resetManifestRegistry() {
   manifestReady = false;
@@ -42,7 +60,14 @@ function stableStringify(value) {
   return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
 }
 
+function hasWebCrypto() {
+  return Boolean(globalThis.crypto?.subtle);
+}
+
 async function sha256Hex(content) {
+  if (!hasWebCrypto()) {
+    throw new Error('Web Crypto API unavailable (HTTPS required for integrity checks)');
+  }
   const bytes = new TextEncoder().encode(content);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest))
@@ -72,6 +97,10 @@ function pemToArrayBuffer(pem) {
 async function verifyManifestSignature(document) {
   const signature = document?.signature;
   if (!signature || signature.algorithm === 'none') return !REQUIRE_SIGNATURE;
+  if (!hasWebCrypto()) {
+    dbg('[FCDBG][RuntimeRegistry] skipping signature verify (no Web Crypto, HTTP context)');
+    return !REQUIRE_SIGNATURE;
+  }
   if (signature.algorithm !== 'rsa-sha256') return false;
   const publicKeyPem = normalizePem(import.meta.env.VITE_MANIFEST_PUBLIC_KEY_PEM ?? '');
   if (!publicKeyPem) return !REQUIRE_SIGNATURE;
@@ -96,6 +125,10 @@ async function verifyManifestSignature(document) {
 }
 
 async function verifyEntryIntegrity(entry) {
+  if (!hasWebCrypto()) {
+    dbg('[FCDBG][RuntimeRegistry] skipping integrity verify (no Web Crypto, HTTP context)');
+    return !REQUIRE_SIGNATURE;
+  }
   for (const variant of [entry.selected, entry.fallback]) {
     if (!variant?.moduleSpecifier || !variant?.version || !variant?.fileSha256 || !variant?.integrity) {
       return false;
@@ -123,6 +156,7 @@ async function applyManifestDocument(document) {
   }
   manifestMap = next;
   manifestReady = true;
+  notifyManifestListeners();
 }
 
 async function tryLoad(specifier) {
