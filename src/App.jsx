@@ -471,10 +471,14 @@ export default function App() {
     () => getOrCreateLeaderboardIdentity(brand?.name),
     [brand?.name]
   );
-  const displayProfile = useMemo(
-    () => ({ ...userProfile, nickname: leaderboardIdentity.displayId }),
-    [userProfile, leaderboardIdentity]
-  );
+  const displayProfile = useMemo(() => {
+    const customNickname = String(userProfile.nickname ?? '').trim();
+    const hasCustomNickname = customNickname && customNickname !== DEFAULT_PROFILE.nickname;
+    return {
+      ...userProfile,
+      nickname: hasCustomNickname ? customNickname : leaderboardIdentity.displayId,
+    };
+  }, [userProfile, leaderboardIdentity]);
 
   const syncShopifyBindingStatus = useCallback(async (forceRefresh = false) => {
     if (devPreviewActiveRef.current) {
@@ -1344,13 +1348,17 @@ export default function App() {
   const ladderCurrent = discounts[currentStepIndex] || discounts[discounts.length - 1] || { num: '15', target: 0, tier: 1 };
   const realDiscountTargets = discounts.filter((discount) => (rewardPercent(discount) ?? 0) > 0);
   const singleTargetCoupon = !hasInitialDiscount && realDiscountTargets.length === 1 ? realDiscountTargets[0] : null;
+  // 单档券:积分达到该档门槛即具备领取资格,需立即切到 best offer 待领页,
+  // 不能再等后端 currentTier 刷新(否则达标后仍停留在进度页)。
+  const reachedSingleTarget = singleTargetCoupon != null && points >= (singleTargetCoupon.target ?? 0);
   const singleTargetMode = Boolean(
     singleTargetCoupon &&
+    !reachedSingleTarget &&
     (currentStepIndex === 0 || (rewardPercent(ladderCurrent) ?? 0) === 0)
   );
   const current = singleTargetMode
     ? { num: '0', value: '0% OFF', target: 0, tier: 0 }
-    : ladderCurrent;
+    : (reachedSingleTarget ? singleTargetCoupon : ladderCurrent);
   const currentTier = current.tier ?? currentStepIndex + 1;
   const nextThreshold = singleTargetMode
     ? singleTargetCoupon.target
@@ -1958,9 +1966,8 @@ export default function App() {
   }
 
   function saveUserProfile(nextProfile) {
-    // Leaderboard identity is auto-assigned per brand and read-only in V1;
-    // only avatar fields are user-editable, so don't persist the display name.
     const normalized = normalizeProfile({
+      nickname: nextProfile?.nickname,
       avatarColor: nextProfile?.avatarColor,
       avatarImageUrl: nextProfile?.avatarImageUrl,
     });
@@ -4455,9 +4462,16 @@ function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onClose, 
           </div>
 
           <div className="profile-field">
-            <span>Leaderboard ID</span>
-            <output className="profile-readonly-id" aria-readonly="true">{draft.nickname}</output>
-            <small className="profile-field-hint">Auto-assigned and fixed for this brand.</small>
+            <span>Nickname</span>
+            <input
+              type="text"
+              value={draft.nickname}
+              maxLength={18}
+              placeholder="Your nickname"
+              aria-label="Nickname"
+              onChange={(event) => setDraft((value) => ({ ...value, nickname: event.target.value }))}
+            />
+            <small className="profile-field-hint">Shown on the leaderboard. Up to 18 characters.</small>
           </div>
 
           <div className="profile-field">
