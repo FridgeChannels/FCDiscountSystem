@@ -1,5 +1,10 @@
 import http from 'node:http';
 import { getRuntimeManifest, validateManifestEntry } from './runtime-manifest.js';
+import {
+  fetchBrandAsset,
+  isAllowedBrandAssetUrl,
+  unwrapBrandAssetProxyUrl,
+} from './brandAssetProxy.js';
 
 const ENGINE_BASE_URL = process.env.ENGINE_BASE_URL ?? 'http://localhost:8787';
 const PORT = Number(process.env.BFF_PORT ?? 3001);
@@ -300,6 +305,16 @@ function sendJson(res, status, payload, extraHeaders = {}) {
   res.end(JSON.stringify(payload));
 }
 
+function sendBinary(res, status, body, contentType, extraHeaders = {}) {
+  res.writeHead(status, {
+    'content-type': contentType,
+    'cache-control': 'public, max-age=300',
+    'access-control-allow-origin': '*',
+    ...extraHeaders,
+  });
+  res.end(body);
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     sendJson(res, 204, null);
@@ -311,6 +326,29 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/api/fc/health') {
       sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/brand-asset') {
+      const rawTarget = url.searchParams.get('url')?.trim();
+      if (!rawTarget) {
+        sendJson(res, 400, { error: 'url query parameter required' });
+        return;
+      }
+      const target = unwrapBrandAssetProxyUrl(rawTarget);
+      if (!isAllowedBrandAssetUrl(target)) {
+        sendJson(res, 403, { error: 'url not allowed' });
+        return;
+      }
+      try {
+        const asset = await fetchBrandAsset(target);
+        sendBinary(res, 200, asset.body, asset.contentType);
+      } catch (err) {
+        const status = err?.statusCode === 502 ? 502 : 502;
+        sendJson(res, status, {
+          error: err instanceof Error ? err.message : 'brand asset proxy failed',
+        });
+      }
       return;
     }
 

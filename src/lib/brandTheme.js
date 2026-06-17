@@ -4,6 +4,14 @@ function runtimeBaseUrl() {
   return import.meta.env.VITE_RUNTIME_SHELL_BASE_URL || 'http://localhost:8789';
 }
 
+/** Prefer same-origin in browser so /api/brand-asset hits the app proxy (BFF), not fc-platform web. */
+function assetBaseUrl(fallbackBaseUrl = runtimeBaseUrl()) {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+  return String(fallbackBaseUrl || '').replace(/\/$/, '');
+}
+
 function isBrandAssetProxyUrl(url) {
   try {
     const parsed = new URL(url.trim());
@@ -28,7 +36,7 @@ function unwrapBrandAssetProxyUrl(url) {
   return current;
 }
 
-export function normalizeLogoUrl(url, baseUrl = runtimeBaseUrl()) {
+export function normalizeLogoUrl(url, baseUrl = assetBaseUrl()) {
   if (!url || typeof url !== 'string') return null;
   const trimmed = url.trim();
   if (trimmed.startsWith('data:')) return trimmed;
@@ -62,7 +70,7 @@ export function normalizeLogoUrl(url, baseUrl = runtimeBaseUrl()) {
 export function mergeBrand(customerBrand, magnetBrandParam) {
   const customer = customerBrand && typeof customerBrand === 'object' ? customerBrand : {};
   const param = magnetBrandParam && typeof magnetBrandParam === 'object' ? magnetBrandParam : null;
-  const baseUrl = runtimeBaseUrl();
+  const baseUrl = assetBaseUrl();
 
   if (!param) {
     return {
@@ -155,7 +163,7 @@ export function applyBrandCssVar(primaryColor) {
 export function resolveBrandDisplay(customerBrand, gameBrandTheme) {
   const customer = customerBrand && typeof customerBrand === 'object' ? customerBrand : {};
   const theme = gameBrandTheme && typeof gameBrandTheme === 'object' ? gameBrandTheme : {};
-  const baseUrl = runtimeBaseUrl();
+  const baseUrl = assetBaseUrl();
 
   const rawLogo = theme.logoUrl || theme.logo || customer.logoUrl || null;
   const logoUrl = normalizeLogoUrl(rawLogo, baseUrl);
