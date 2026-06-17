@@ -1404,13 +1404,17 @@ export default function App() {
   const ladderCurrent = discounts[currentStepIndex] || discounts[discounts.length - 1] || { num: '15', target: 0, tier: 1 };
   const realDiscountTargets = discounts.filter((discount) => (rewardPercent(discount) ?? 0) > 0);
   const singleTargetCoupon = !hasInitialDiscount && realDiscountTargets.length === 1 ? realDiscountTargets[0] : null;
+  // 单档券:积分达到该档门槛即具备领取资格,需立即切到 best offer 待领页,
+  // 不能再等后端 currentTier 刷新(否则达标后仍停留在进度页)。
+  const reachedSingleTarget = singleTargetCoupon != null && points >= (singleTargetCoupon.target ?? 0);
   const singleTargetMode = Boolean(
     singleTargetCoupon &&
+    !reachedSingleTarget &&
     (currentStepIndex === 0 || (rewardPercent(ladderCurrent) ?? 0) === 0)
   );
   const current = singleTargetMode
     ? { num: '0', value: '0% OFF', target: 0, tier: 0 }
-    : ladderCurrent;
+    : (reachedSingleTarget ? singleTargetCoupon : ladderCurrent);
   const currentTier = current.tier ?? currentStepIndex + 1;
   const nextThreshold = singleTargetMode
     ? singleTargetCoupon.target
