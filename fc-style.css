@@ -2760,6 +2760,18 @@ body {
   object-fit: cover;
 }
 
+.gift-plan-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 131;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-color, #f4f1e8);
+  color: var(--text-secondary, #6b6560);
+  font-size: 0.9rem;
+}
+
 /* ==========================================================================
    Shopify Authorization Page
    ========================================================================== */

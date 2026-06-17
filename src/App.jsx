@@ -410,6 +410,7 @@ export default function App() {
   const touchId = useTouchId();
   const [devScene, setDevScene] = useState(() => getDevScene());
   const [planLoading, setPlanLoading] = useState(true);
+  const [rewardPlanFetched, setRewardPlanFetched] = useState(false);
   const [planError, setPlanError] = useState(null);
   const [rewardPlanId, setRewardPlanId] = useState(null);
   const [brand, setBrand] = useState({ name: null, logoUrl: null, primaryColor: null, shopUrl: '#' });
@@ -604,21 +605,22 @@ export default function App() {
   const [welcomeVideoFading, setWelcomeVideoFading] = useState(false);
   const welcomeVideoRef = useRef(null);
   const welcomeVideoFallbackTimerRef = useRef(null);
+  const giftEndPendingRef = useRef(false);
+  const rewardPlanFetchedRef = useRef(false);
+  const renewPlanReadyRef = useRef(false);
 
-  const handleWelcomeVideoEnd = useCallback(() => {
-    if (welcomeVideoFading) return;
-    if (welcomeVideoFallbackTimerRef.current) {
-      window.clearTimeout(welcomeVideoFallbackTimerRef.current);
-      welcomeVideoFallbackTimerRef.current = null;
-    }
-    setWelcomeVideoFading(true);
+  const [giftWaitingPlan, setGiftWaitingPlan] = useState(false);
+
+  const completeGiftVideoTransition = useCallback(() => {
+    giftEndPendingRef.current = false;
+    setGiftWaitingPlan(false);
 
     if (renewFlowActiveRef.current) {
       giftEndedPendingRenewRef.current = true;
       setIntroActive(false);
       setRenewGiftIntro(false);
       void applyRenewPlanAfterGiftRef.current?.();
-    } else if (welcomeStep >= 3) {
+    } else if (welcomeStepRef.current >= 3) {
       returnIntroShownRef.current = true;
       returnIntroPendingRef.current = false;
       setReturnIntroGate(false);
@@ -628,7 +630,6 @@ export default function App() {
         window.setTimeout(() => playPendingTapRewardRef.current(), 760);
       }
     } else {
-      // 立即触发拆开礼包过渡到 WelcomeRitual 页面 (welcomeStep -> 1, introActive -> false)
       setWelcomeStep(1);
       setIntroActive(false);
     }
@@ -636,15 +637,55 @@ export default function App() {
     if (navigator.vibrate) {
       navigator.vibrate(60);
     }
+  }, [planLoading]);
+
+  const handleWelcomeVideoEnd = useCallback(() => {
+    if (welcomeVideoFading) return;
+    if (welcomeVideoFallbackTimerRef.current) {
+      window.clearTimeout(welcomeVideoFallbackTimerRef.current);
+      welcomeVideoFallbackTimerRef.current = null;
+    }
+    setWelcomeVideoFading(true);
+
+    const planReady = renewFlowActiveRef.current
+      ? renewPlanReadyRef.current
+      : rewardPlanFetchedRef.current;
 
     setTimeout(() => {
       setIsWelcomeVideoActive(false);
       setWelcomeVideoFading(false);
+      if (planReady) {
+        completeGiftVideoTransition();
+      } else {
+        giftEndPendingRef.current = true;
+        setGiftWaitingPlan(true);
+      }
     }, 500);
-  }, [planLoading, welcomeStep, welcomeVideoFading]);
+  }, [completeGiftVideoTransition, welcomeVideoFading]);
+
+  const canSkipGiftVideo = renewFlowActive ? renewPlanReady : rewardPlanFetched;
+
+  const handleGiftVideoClick = useCallback(() => {
+    if (!canSkipGiftVideo) return;
+    handleWelcomeVideoEnd();
+  }, [canSkipGiftVideo, handleWelcomeVideoEnd]);
+
+  useEffect(() => {
+    rewardPlanFetchedRef.current = rewardPlanFetched;
+  }, [rewardPlanFetched]);
+
+  useEffect(() => {
+    renewPlanReadyRef.current = renewPlanReady;
+  }, [renewPlanReady]);
+
+  useEffect(() => {
+    if (!giftEndPendingRef.current || !canSkipGiftVideo) return;
+    completeGiftVideoTransition();
+  }, [canSkipGiftVideo, giftWaitingPlan, completeGiftVideoTransition]);
 
   // 同步礼盒视频状态:首登和回访礼盒都直接播放同一段开场动画。
   useEffect(() => {
+    if (giftWaitingPlan) return;
     if ((welcomeStep === 0 || welcomeStep >= 3) && introActive) {
       setIsWelcomeVideoActive(true);
       setWelcomeVideoFading(false);
@@ -652,7 +693,7 @@ export default function App() {
       // 如果是非渐淡退出的切换，立即关闭视频
       setIsWelcomeVideoActive((prev) => (welcomeVideoFading ? prev : false));
     }
-  }, [welcomeStep, introActive, welcomeVideoFading]);
+  }, [welcomeStep, introActive, welcomeVideoFading, giftWaitingPlan]);
 
   useEffect(() => {
     if (isWelcomeVideoActive && welcomeVideoRef.current) {
@@ -979,6 +1020,7 @@ export default function App() {
     clearGameSessionCache();
     setPlanError(null);
     setPlanLoading(false);
+    setRewardPlanFetched(true);
     setNewChallenge(null);
     setShowReceipt(false);
     setReceiptCoupon(null);
@@ -1283,6 +1325,9 @@ export default function App() {
     setPlanError(null);
     setRewardPlanId(null);
     clearGameSessionCache();
+    setRewardPlanFetched(false);
+    giftEndPendingRef.current = false;
+    setGiftWaitingPlan(false);
 
     rememberTouchId(touchId);
     returnIntroShownRef.current = false;
@@ -1367,6 +1412,7 @@ export default function App() {
       } finally {
         if (!cancelled) {
           setPlanLoading(false);
+          setRewardPlanFetched(true);
           sessionBootstrapCompleteRef.current = touchId;
         }
       }
@@ -1514,6 +1560,8 @@ export default function App() {
     setPoints(0);                       // 首登从 0 金币开始累积
     setWelcomeStep(0);                  // 回到欢迎流起点
     setIntroActive(true);               // 重新播放开场礼盒
+    giftEndPendingRef.current = false;
+    setGiftWaitingPlan(false);
     setNewChallenge(null);
   }
 
@@ -1577,6 +1625,8 @@ export default function App() {
     setWelcomeStep(0);
     setPoints(0);
     setWelcomeCoupon(null);
+    giftEndPendingRef.current = false;
+    setGiftWaitingPlan(false);
     setRenewGiftIntro(true);
     setReturnIntroGate(true);
     setIntroActive(true);
@@ -1899,6 +1949,21 @@ export default function App() {
     };
   }, []);
 
+  // Welcome Ritual 激活(step 1)时与券卡弹出同步撒彩带:首登开箱、Renew 后欢迎流
+  const welcomeConfettiPlayedRef = useRef(false);
+  useEffect(() => {
+    if (welcomeStep === 0) {
+      welcomeConfettiPlayedRef.current = false;
+      return;
+    }
+    if (welcomeStep !== 1 || introActive) return;
+    if (welcomeConfettiPlayedRef.current) return;
+    welcomeConfettiPlayedRef.current = true;
+    if (!prefersReducedMotion()) {
+      requestAnimationFrame(() => startConfetti());
+    }
+  }, [welcomeStep, introActive]);
+
   // Best offer 页面每次被访问(由隐藏切换为展示)时播放一遍撒彩带动效
   const bestOfferConfettiPlayedRef = useRef(false);
   useEffect(() => {
@@ -2185,7 +2250,6 @@ export default function App() {
   }
 
   function startConfetti() {
-    if (welcomeStep < 3 && !introActive) return;
     const canvas = canvasRef.current;
     const ctx = confettiRef.current.ctx;
     if (!canvas || !ctx) return;
@@ -2940,9 +3004,10 @@ export default function App() {
           className="gift-video-container"
           style={{
             opacity: welcomeVideoFading ? 0 : 1,
-            pointerEvents: welcomeVideoFading ? 'none' : 'auto'
+            pointerEvents: welcomeVideoFading ? 'none' : 'auto',
+            cursor: canSkipGiftVideo ? 'pointer' : 'default',
           }}
-          onClick={handleWelcomeVideoEnd}
+          onClick={handleGiftVideoClick}
         >
           <video
             ref={welcomeVideoRef}
@@ -2972,7 +3037,13 @@ export default function App() {
         />
       )}
 
-      {(showRenewWelcomeLoading || (planLoading && !introActive && !returnIntroGate && !showWelcomeRitual)) && (
+      {giftWaitingPlan && (
+        <div className="gift-plan-loading" role="status">
+          Refreshing rewards…
+        </div>
+      )}
+
+      {(showRenewWelcomeLoading || (planLoading && !introActive && !returnIntroGate && !showWelcomeRitual && !giftWaitingPlan)) && (
         <div className="reward-sync-status" role="status">
           Refreshing rewards…
         </div>
