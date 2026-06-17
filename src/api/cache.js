@@ -177,6 +177,7 @@ export function readCachedProfile(touchId) {
     if (cached?.version !== PROFILE_CACHE_VERSION || !cached.profile) return null;
     return {
       nickname: typeof cached.profile.nickname === 'string' ? cached.profile.nickname : '',
+      displayCode: typeof cached.profile.displayCode === 'string' ? cached.profile.displayCode : '',
       avatarColor: typeof cached.profile.avatarColor === 'string' ? cached.profile.avatarColor : '',
       avatarImageUrl: typeof cached.profile.avatarImageUrl === 'string' ? cached.profile.avatarImageUrl : '',
     };

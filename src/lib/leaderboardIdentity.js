@@ -11,7 +11,7 @@
  *  - Codes are case-insensitive and always stored/displayed uppercase.
  *  - The identity is stable across challenge rounds for the same brand,
  *    so it is persisted per brand and never regenerated once assigned.
- *  - The identity is read-only in Profile; only avatar color is editable.
+ *  - The 4-char code suffix is editable in Profile (avatar color too).
  *
  * NOTE: true cross-user uniqueness ("unique under the same brand_id, never
  * reassigned") must be enforced by the backend. This client module owns the
@@ -51,6 +51,32 @@ export function generateCode(length = CODE_LENGTH) {
 export function formatLeaderboardId(brandName, code) {
   const name = String(brandName ?? '').trim() || 'Player';
   return `${name} ${code}`;
+}
+
+/** True when `code` is exactly 4 chars from the allowed pool. */
+export function isValidDisplayCode(code) {
+  return /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/i.test(String(code ?? '').trim());
+}
+
+/** Keep only allowed pool characters, uppercase, max 4 chars. */
+export function sanitizeDisplayCodeInput(raw) {
+  return String(raw ?? '')
+    .toUpperCase()
+    .split('')
+    .filter((char) => CODE_POOL.includes(char))
+    .join('')
+    .slice(0, 4);
+}
+
+/** Extract the code suffix from a full leaderboard ID or trailing token. */
+export function parseDisplayCodeFromLeaderboardId(brandName, value) {
+  const raw = String(value ?? '').trim();
+  const name = String(brandName ?? '').trim();
+  if (name && raw.toLowerCase().startsWith(name.toLowerCase())) {
+    return sanitizeDisplayCodeInput(raw.slice(name.length));
+  }
+  const parts = raw.split(/\s+/);
+  return sanitizeDisplayCodeInput(parts[parts.length - 1] ?? '');
 }
 
 /**

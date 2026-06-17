@@ -3,10 +3,18 @@
  * 展示:当前金币(🪙 N) + 全路径折扣(current / next / future)与剩余距离。
  * 金币增长与路径推进由父级通过 displayCoins/rail 驱动(见 useGameProgress)。
  */
-export default function ProgressRail({ rail, displayCoins, lastGain, todayRank, rankChange }) {
+export default function ProgressRail({
+  rail,
+  displayCoins,
+  lastGain,
+  tierUnlock,
+  todayRank,
+  rankChange,
+}) {
   if (!rail) return null;
 
   const { nodes, segmentPct, isMaxTier } = rail;
+  const unlockPercent = tierUnlock?.percent;
 
   return (
     <div className="progress-rail" aria-label="Game progress">
@@ -25,9 +33,10 @@ export default function ProgressRail({ rail, displayCoins, lastGain, todayRank, 
           const isLast = index === nodes.length - 1;
           const fillPct = index === 0 ? segmentPct : 0;
           const visibleFillPct = fillPct > 0 ? Math.max(fillPct, 1.5) : 0;
+          const isUnlockPulse = unlockPercent === node.percent;
           return (
             <li
-              className={`progress-rail-node-wrap is-${node.role}`}
+              className={`progress-rail-node-wrap is-${node.role}${isUnlockPulse ? ' is-unlock-pulse' : ''}`}
               key={`${node.percent}-${node.role}`}
             >
               <div className="progress-rail-node-row">
@@ -43,7 +52,12 @@ export default function ProgressRail({ rail, displayCoins, lastGain, todayRank, 
               </div>
               <div className="progress-rail-node-copy">
                 <strong>{node.percent}% OFF</strong>
-                <span className="progress-rail-node-status">{node.status}</span>
+                <span
+                  className="progress-rail-node-status"
+                  key={isUnlockPulse ? tierUnlock.id : node.status}
+                >
+                  {isUnlockPulse ? 'Unlocked!' : node.status}
+                </span>
               </div>
             </li>
           );
@@ -57,7 +71,7 @@ export default function ProgressRail({ rail, displayCoins, lastGain, todayRank, 
       {todayRank != null && (
         <div className="progress-rail-rank" aria-label={`Today rank ${todayRank}`}>
           <span className="progress-rail-rank-icon">🏆</span>
-          <span className="progress-rail-rank-value">#{todayRank}</span>
+          <span className="progress-rail-rank-value" key={todayRank}>#{todayRank}</span>
           {rankChange ? (
             <span className="progress-rail-rank-up" key={rankChange.id}>
               ↑{rankChange.amount}

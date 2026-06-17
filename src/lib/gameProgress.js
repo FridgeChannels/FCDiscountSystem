@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getLeaderboard } from './leaderboard.js';
 
 // ───────────────────────────────────────────────────────────────────────────
 // Progress Rail 数据模型(第一版:mock 数据)
@@ -59,7 +58,6 @@ export function deriveRail(coins, ladder = MOCK_COUPON_LADDER) {
   const segDone = next ? Math.max(0, Math.min(segTotal, safeCoins - segStart)) : segTotal;
   const segmentPct = segTotal > 0 ? Math.min(100, (segDone / segTotal) * 100) : 100;
 
-  // Rail 上展示的节点(current / next / future),每个带状态文案。
   const nodes = [];
   if (current) nodes.push({ ...current, role: 'current', status: 'Current', left: 0 });
   if (next) {
@@ -95,19 +93,7 @@ export function deriveRail(coins, ladder = MOCK_COUPON_LADDER) {
 
 /**
  * Progress Rail 控制器 hook。
- * 管理:当前金币、金币 count-up 动画值、+N Coins 反馈、跨档升级弹层事件。
- *
- * @returns {{
- *   coins: number,                 // 真实金币(动画目标值)
- *   displayCoins: number,          // 用于展示的动画过程值(count-up)
- *   lastGain: { amount: number, id: number } | null,  // 最近一次获得金币(+N Coins 反馈)
- *   upgrade: { percent: number } | null,              // 升级弹层事件(跨档时触发)
- *   rail: object,                  // 基于真实金币派生的 Rail 视图
- *   displayRail: object,           // 基于动画值派生的 Rail 视图(路径推进用)
- *   awardCoins: (amount: number) => void,             // 发放金币(动画 + 升级检测 + 反馈)
- *   clearUpgrade: () => void,
- *   reset: () => void,
- * }}
+ * 管理:当前金币、金币 count-up 动画值、+N Coins 反馈、跨档解锁轨道动效。
  */
 export function useGameProgress({
   ladder = MOCK_COUPON_LADDER,
@@ -116,16 +102,13 @@ export function useGameProgress({
   const [coins, setCoins] = useState(initialCoins);
   const [displayCoins, setDisplayCoins] = useState(initialCoins);
   const [lastGain, setLastGain] = useState(null);
-  const [upgrade, setUpgrade] = useState(null);
-  const [todayRank, setTodayRank] = useState(() => getLeaderboard('You', initialCoins).currentUserRank);
-  const [rankChange, setRankChange] = useState(null);
+  const [tierUnlock, setTierUnlock] = useState(null);
 
   const coinsRef = useRef(initialCoins);
   const rafRef = useRef(null);
   const gainTimerRef = useRef(null);
-  const rankTimerRef = useRef(null);
+  const unlockTimerRef = useRef(null);
 
-  // count-up:displayCoins 平滑追上 coins(数字动态增长,强化奖励感)
   useEffect(() => {
     if (displayCoins === coins) return undefined;
     const from = displayCoins;
@@ -148,16 +131,14 @@ export function useGameProgress({
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-    // 仅在目标值变化时重新启动动画
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coins]);
 
   useEffect(() => () => {
     if (gainTimerRef.current) clearTimeout(gainTimerRef.current);
-    if (rankTimerRef.current) clearTimeout(rankTimerRef.current);
+    if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
   }, []);
 
-  // 发放金币:更新金币、展示 +N、跨档则触发升级弹层。
   const awardCoins = useCallback((amount) => {
     const n = Math.round(Number(amount) || 0);
     if (n <= 0) return;
@@ -170,38 +151,23 @@ export function useGameProgress({
     const beforeIndex = deriveRail(before, ladder).currentIndex;
     const afterRail = deriveRail(after, ladder);
     if (afterRail.currentIndex > beforeIndex && afterRail.current) {
-      setUpgrade({ percent: afterRail.current.percent });
+      setTierUnlock({ percent: afterRail.current.percent, id: Date.now() });
+      if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
+      unlockTimerRef.current = setTimeout(() => setTierUnlock(null), 2200);
     }
 
     setLastGain({ amount: n, id: Date.now() });
     if (gainTimerRef.current) clearTimeout(gainTimerRef.current);
     gainTimerRef.current = setTimeout(() => setLastGain(null), 1800);
-
-    const prevRank = getLeaderboard('You', before).currentUserRank;
-    const nextRank = getLeaderboard('You', after).currentUserRank;
-    const delta = prevRank - nextRank;
-    if (delta > 0) {
-      setTodayRank(nextRank);
-      setRankChange({ amount: delta, id: Date.now() });
-      if (rankTimerRef.current) clearTimeout(rankTimerRef.current);
-      rankTimerRef.current = setTimeout(() => setRankChange(null), 2200);
-    } else {
-      setTodayRank(nextRank);
-    }
   }, [ladder]);
 
-  const clearUpgrade = useCallback(() => setUpgrade(null), []);
-
-  // 重置到指定金币(进入新一局游戏时,用当前真实金币重新播种 Rail)。
   const resetTo = useCallback((value) => {
     const v = Math.max(0, Math.round(Number(value) || 0));
     coinsRef.current = v;
     setCoins(v);
     setDisplayCoins(v);
     setLastGain(null);
-    setUpgrade(null);
-    setRankChange(null);
-    setTodayRank(getLeaderboard('You', v).currentUserRank);
+    setTierUnlock(null);
   }, []);
 
   const reset = useCallback(() => resetTo(initialCoins), [initialCoins, resetTo]);
@@ -210,13 +176,10 @@ export function useGameProgress({
     coins,
     displayCoins,
     lastGain,
-    upgrade,
-    todayRank,
-    rankChange,
+    tierUnlock,
     rail: deriveRail(coins, ladder),
     displayRail: deriveRail(displayCoins, ladder),
     awardCoins,
-    clearUpgrade,
     reset,
     resetTo,
   };

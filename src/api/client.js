@@ -96,6 +96,46 @@ export function fetchMagnetBrandParam(touchId, { refresh = false } = {}) {
   return request(`/api/fc/magnet-brand-param?touchId=${encodeURIComponent(touchId)}${refreshQs}`);
 }
 
+export function fetchPlayerProfile(touchId, { refresh = false } = {}) {
+  const refreshQs = refresh ? '&refresh=1' : '';
+  return request(`/api/fc/player-profile?touchId=${encodeURIComponent(touchId)}${refreshQs}`);
+}
+
+export function updatePlayerProfile(touchId, { displayCode, avatarColor, clearAvatarImage } = {}) {
+  return request('/api/fc/player-profile', {
+    method: 'PATCH',
+    body: JSON.stringify({ touchId, displayCode, avatarColor, clearAvatarImage }),
+  });
+}
+
+function fileToBase64(file) {
+  return file.arrayBuffer().then((buffer) => {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 1) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  });
+}
+
+export async function uploadPlayerAvatar(touchId, file) {
+  const dataBase64 = await fileToBase64(file);
+  return request('/api/fc/player-profile/avatar', {
+    method: 'POST',
+    body: JSON.stringify({
+      touchId,
+      contentType: file.type,
+      dataBase64,
+    }),
+  });
+}
+
+export function fetchTodayLeaderboard(touchId, { refresh = false } = {}) {
+  const refreshQs = refresh ? '&refresh=1' : '';
+  return request(`/api/fc/leaderboard/today?touchId=${encodeURIComponent(touchId)}${refreshQs}`);
+}
+
 export function startGameSession(rewardPlanId, gameInstanceId) {
   return request('/api/fc/session/start', {
     method: 'POST',

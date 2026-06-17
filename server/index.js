@@ -98,6 +98,26 @@ async function callEngineGetAllowNull(path, timeoutMs = ENGINE_TIMEOUT_MS) {
   return json.data ?? null;
 }
 
+async function callEnginePatch(path, body, timeoutMs = ENGINE_TIMEOUT_MS) {
+  const headers = { 'content-type': 'application/json' };
+  if (ENGINE_SERVICE_TOKEN) {
+    headers.authorization = `Bearer ${ENGINE_SERVICE_TOKEN}`;
+  }
+
+  const res = await fetch(`${ENGINE_BASE_URL}${path}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const json = await res.json();
+  if (!res.ok || json.error || json.data === null) {
+    const msg = json.error ? `${json.error.code}: ${json.error.message}` : `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return json.data;
+}
+
 const SHOPIFY_STATUS_CACHE_TTL_MS = Number(process.env.SHOPIFY_STATUS_CACHE_TTL_MS ?? 3600000);
 const shopifyStatusCache = new Map(); // touchId -> { data, expiresAt }
 const shopifyStatusInflight = new Map(); // touchId -> Promise
@@ -105,6 +125,14 @@ const shopifyStatusInflight = new Map(); // touchId -> Promise
 const MAGNET_BRAND_PARAM_CACHE_TTL_MS = Number(process.env.MAGNET_BRAND_PARAM_CACHE_TTL_MS ?? 86400000);
 const magnetBrandParamCache = new Map(); // touchId -> { data, expiresAt }
 const magnetBrandParamInflight = new Map(); // touchId -> Promise
+
+const PLAYER_PROFILE_CACHE_TTL_MS = Number(process.env.PLAYER_PROFILE_CACHE_TTL_MS ?? 86400000);
+const playerProfileCache = new Map(); // touchId -> { data, expiresAt }
+const playerProfileInflight = new Map(); // touchId -> Promise
+
+const LEADERBOARD_CACHE_TTL_MS = Number(process.env.LEADERBOARD_CACHE_TTL_MS ?? 30000);
+const leaderboardCache = new Map(); // touchId -> { data, expiresAt }
+const leaderboardInflight = new Map(); // touchId -> Promise
 
 function readShopifyStatusCache(touchId) {
   const entry = shopifyStatusCache.get(touchId);
@@ -175,6 +203,74 @@ function getMagnetBrandParamDeduped(touchId, refresh = false) {
   return promise;
 }
 
+function readPlayerProfileCache(touchId) {
+  const entry = playerProfileCache.get(touchId);
+  if (entry && entry.expiresAt > Date.now()) return entry.data;
+  if (entry) playerProfileCache.delete(touchId);
+  return null;
+}
+
+function writePlayerProfileCache(touchId, data) {
+  playerProfileCache.set(touchId, { data, expiresAt: Date.now() + PLAYER_PROFILE_CACHE_TTL_MS });
+}
+
+function getPlayerProfileDeduped(touchId, refresh = false) {
+  if (!refresh) {
+    const cached = readPlayerProfileCache(touchId);
+    if (cached) return Promise.resolve(cached);
+  } else {
+    playerProfileCache.delete(touchId);
+  }
+  const existing = playerProfileInflight.get(touchId);
+  if (existing) return existing;
+  const promise = callEngineGet(
+    `/identity/player-profile?touchId=${encodeURIComponent(touchId)}`,
+  )
+    .then((data) => {
+      writePlayerProfileCache(touchId, data);
+      return data;
+    })
+    .finally(() => {
+      playerProfileInflight.delete(touchId);
+    });
+  playerProfileInflight.set(touchId, promise);
+  return promise;
+}
+
+function readLeaderboardCache(touchId) {
+  const entry = leaderboardCache.get(touchId);
+  if (entry && entry.expiresAt > Date.now()) return entry.data;
+  if (entry) leaderboardCache.delete(touchId);
+  return null;
+}
+
+function writeLeaderboardCache(touchId, data) {
+  leaderboardCache.set(touchId, { data, expiresAt: Date.now() + LEADERBOARD_CACHE_TTL_MS });
+}
+
+function getLeaderboardDeduped(touchId, refresh = false) {
+  if (!refresh) {
+    const cached = readLeaderboardCache(touchId);
+    if (cached) return Promise.resolve(cached);
+  } else {
+    leaderboardCache.delete(touchId);
+  }
+  const existing = leaderboardInflight.get(touchId);
+  if (existing) return existing;
+  const promise = callEngineGet(
+    `/leaderboard/today?touchId=${encodeURIComponent(touchId)}`,
+  )
+    .then((data) => {
+      writeLeaderboardCache(touchId, data);
+      return data;
+    })
+    .finally(() => {
+      leaderboardInflight.delete(touchId);
+    });
+  leaderboardInflight.set(touchId, promise);
+  return promise;
+}
+
 
 function readJson(req) {
   return new Promise((resolve, reject) => {
@@ -197,7 +293,7 @@ function sendJson(res, status, payload, extraHeaders = {}) {
   res.writeHead(status, {
     'content-type': 'application/json',
     'access-control-allow-origin': '*',
-    'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
+    'access-control-allow-methods': 'GET,POST,PUT,PATCH,OPTIONS',
     'access-control-allow-headers': 'content-type,if-none-match',
     ...extraHeaders,
   });
@@ -238,6 +334,65 @@ const server = http.createServer(async (req, res) => {
       }
       const refresh = url.searchParams.get('refresh') === '1';
       const data = await getMagnetBrandParamDeduped(touchId, refresh);
+      sendJson(res, 200, data);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/fc/player-profile') {
+      const touchId = url.searchParams.get('touchId');
+      if (!touchId) {
+        sendJson(res, 400, { error: 'touchId required' });
+        return;
+      }
+      const refresh = url.searchParams.get('refresh') === '1';
+      const data = await getPlayerProfileDeduped(touchId, refresh);
+      sendJson(res, 200, data);
+      return;
+    }
+
+    if (req.method === 'PATCH' && url.pathname === '/api/fc/player-profile') {
+      const body = await readJson(req);
+      if (!body?.touchId) {
+        sendJson(res, 400, { error: 'touchId required' });
+        return;
+      }
+      const data = await callEnginePatch('/identity/player-profile', {
+        touchId: body.touchId,
+        displayCode: body.displayCode,
+        avatarColor: body.avatarColor,
+        clearAvatarImage: body.clearAvatarImage,
+      });
+      writePlayerProfileCache(body.touchId, data);
+      leaderboardCache.delete(body.touchId);
+      sendJson(res, 200, data);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/fc/player-profile/avatar') {
+      const body = await readJson(req);
+      if (!body?.touchId || !body?.contentType || !body?.dataBase64) {
+        sendJson(res, 400, { error: 'touchId, contentType and dataBase64 required' });
+        return;
+      }
+      const data = await callEngine('/identity/player-profile/avatar', {
+        touchId: body.touchId,
+        contentType: body.contentType,
+        dataBase64: body.dataBase64,
+      });
+      writePlayerProfileCache(body.touchId, data);
+      leaderboardCache.delete(body.touchId);
+      sendJson(res, 200, data);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/fc/leaderboard/today') {
+      const touchId = url.searchParams.get('touchId');
+      if (!touchId) {
+        sendJson(res, 400, { error: 'touchId required' });
+        return;
+      }
+      const refresh = url.searchParams.get('refresh') === '1';
+      const data = await getLeaderboardDeduped(touchId, refresh);
       sendJson(res, 200, data);
       return;
     }

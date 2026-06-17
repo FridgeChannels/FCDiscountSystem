@@ -4,8 +4,10 @@ const MOCK_NAMES = [
   'Mason', 'Charlotte', 'Logan', 'Amelia', 'Aiden', 'Harper', 'Elijah',
   'Ella', 'Jackson', 'Scarlett', 'Sebastian', 'Grace', 'Mateo', 'Chloe',
   'Owen', 'Zoey', 'Daniel', 'Nora', 'Henry', 'Riley', 'Alexander',
-  'Layla', 'Jack', 'Aria', 'Leo', 'Penelope'
+  'Layla', 'Jack', 'Aria', 'Leo', 'Penelope',
 ];
+
+const FALLBACK_RANK = 48;
 
 function generateMockPlayers(count = 50) {
   const players = [];
@@ -34,6 +36,7 @@ function generateMockPlayers(count = 50) {
       name,
       coins: baseCoins,
       isCurrentUser: false,
+      isMock: true,
     });
   }
 
@@ -42,15 +45,16 @@ function generateMockPlayers(count = 50) {
 
 let cachedPlayers = null;
 
-function getAllPlayers() {
+function getAllMockPlayers() {
   if (!cachedPlayers) {
     cachedPlayers = generateMockPlayers(50);
   }
   return cachedPlayers;
 }
 
+/** Offline / dev fallback when API is unavailable. */
 export function getLeaderboard(currentUserName = 'You', currentUserCoins = 0) {
-  const all = getAllPlayers();
+  const all = getAllMockPlayers();
   const sorted = [...all].sort((a, b) => b.coins - a.coins);
 
   let insertRank = sorted.length + 1;
@@ -77,27 +81,59 @@ export function getLeaderboard(currentUserName = 'You', currentUserCoins = 0) {
     players: result,
     currentUserRank: insertRank,
     currentUserCoins,
+    topPlayers: result.slice(0, 3),
+    aroundYou: (() => {
+      const start = Math.max(0, insertRank - 3);
+      const end = Math.min(result.length, insertRank + 2);
+      return result.slice(start, end);
+    })(),
   };
 }
 
-export function getTopPlayers(count = 3) {
-  const all = getAllPlayers();
-  return all.slice(0, count).map((p, i) => ({ ...p, rank: i + 1 }));
+export function normalizeLeaderboardView(data, fallbackName = 'You', fallbackCoins = 0) {
+  if (!data || !Array.isArray(data.players) || !data.players.length) {
+    return getLeaderboard(fallbackName, fallbackCoins);
+  }
+  return {
+    players: data.players,
+    currentUserRank: data.currentUserRank ?? FALLBACK_RANK,
+    currentUserCoins: data.currentUserCoins ?? fallbackCoins,
+    topPlayers: Array.isArray(data.topPlayers) && data.topPlayers.length
+      ? data.topPlayers
+      : data.players.slice(0, 3),
+    aroundYou: Array.isArray(data.aroundYou) && data.aroundYou.length
+      ? data.aroundYou
+      : data.players.slice(
+        Math.max(0, (data.currentUserRank ?? FALLBACK_RANK) - 3),
+        Math.min(data.players.length, (data.currentUserRank ?? FALLBACK_RANK) + 2),
+      ),
+  };
 }
 
-export function getAroundYou(currentUserName = 'You', currentUserCoins = 0, range = 2) {
-  const { players, currentUserRank } = getLeaderboard(currentUserName, currentUserCoins);
-  const start = Math.max(0, currentUserRank - 1 - range);
-  const end = Math.min(players.length, currentUserRank + range);
-  return players.slice(start, end);
+export function computeRankChange(previousRank, nextRank) {
+  const prev = Number(previousRank) || FALLBACK_RANK;
+  const next = Number(nextRank) || FALLBACK_RANK;
+  return prev - next;
 }
 
-export function computeRankChange(previousCoins, currentCoins) {
-  const prev = getLeaderboard('You', previousCoins);
-  const curr = getLeaderboard('You', currentCoins);
-  return prev.currentUserRank - curr.currentUserRank;
+/** Project today's rank from a leaderboard snapshot + hypothetical game coins. */
+export function projectUserRank(players, projectedTodayCoins) {
+  const list = Array.isArray(players) && players.length ? players : getAllMockPlayers();
+  const others = list.filter((player) => !player.isCurrentUser);
+  const coins = Math.max(0, Math.round(Number(projectedTodayCoins) || 0));
+
+  let rank = others.length + 1;
+  for (let i = 0; i < others.length; i += 1) {
+    if (coins >= others[i].coins) {
+      rank = i + 1;
+      break;
+    }
+  }
+  return rank;
 }
 
 export function refreshMockData() {
   cachedPlayers = null;
 }
+
+export { FALLBACK_RANK };

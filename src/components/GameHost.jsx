@@ -1,6 +1,6 @@
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { completeGameSession } from '../api/client.js';
 import { dbg, dbgError } from '../lib/debug.js';
+import { useGameOverSettlement } from '../lib/gameOverSettlement.js';
 import {
   ensureRuntimesRegistered,
   getRuntime,
@@ -9,6 +9,7 @@ import {
 } from '../lib/runtimeRegistry.js';
 import { getRuntimeLoadConfig } from '../lib/runtimeLoadConfig.js';
 import IframeGameHost from './IframeGameHost.jsx';
+import GameOverOverlay from './GameOverOverlay.jsx';
 
 function normalizeStartPayloadForLocalHost(start) {
   const params = { ...(start.difficultyParams ?? {}) };
@@ -35,12 +36,14 @@ function InlineGameHost({ start, onDone, onError, onRuntimeEvent }) {
   const [err, setErr] = useState(null);
   const eventsRef = useRef([]);
   const eventLogCountRef = useRef(0);
-  const onDoneRef = useRef(onDone);
-  const onErrorRef = useRef(onError);
-  onDoneRef.current = onDone;
-  onErrorRef.current = onError;
 
   const normalizedStart = useMemo(() => normalizeStartPayloadForLocalHost(start), [start]);
+
+  const { gameOverVisible, settleGameResultSafe } = useGameOverSettlement({
+    onDone,
+    onError,
+    sessionId: start.sessionId,
+  });
 
   useEffect(() => {
     eventsRef.current = [];
@@ -83,21 +86,19 @@ function InlineGameHost({ start, onDone, onError, onRuntimeEvent }) {
   }, [start.pointsMode, start.runtimeComponent, start.sessionId, start.templateKey]);
 
   const handleComplete = useCallback(async (result) => {
+    const payload = {
+      ...result,
+      rawEvents:
+        result.rawEvents?.length || eventsRef.current.length === 0
+          ? result.rawEvents
+          : eventsRef.current,
+    };
     try {
-      const payload = {
-        ...result,
-        rawEvents:
-          result.rawEvents?.length || eventsRef.current.length === 0
-            ? result.rawEvents
-            : eventsRef.current,
-      };
-      const view = await completeGameSession(payload);
-      onDoneRef.current?.(view);
+      await settleGameResultSafe(payload);
     } catch (error) {
       dbgError('[FCDBG][GameHost] complete failed', error);
-      onErrorRef.current?.(error instanceof Error ? error.message : 'Complete failed');
     }
-  }, []);
+  }, [settleGameResultSafe]);
 
   const handleRuntimeEvent = useCallback((event) => {
     eventsRef.current.push(event);
@@ -119,6 +120,7 @@ function InlineGameHost({ start, onDone, onError, onRuntimeEvent }) {
         onComplete: handleComplete,
         onEvent: handleRuntimeEvent,
       })}
+      <GameOverOverlay visible={gameOverVisible} />
     </div>
   );
 }

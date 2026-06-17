@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
-import { claimCoupon, completeSurvey, fetchMagnetBrandParam, fetchRewardPlan, fetchShopifyStatus, fetchSurveyQuestions, observeCoupon, redeemCoupon, renewCycle, startGameSession, submitSurveyAnswers } from './api/client.js';
+import { claimCoupon, completeSurvey, fetchMagnetBrandParam, fetchPlayerProfile, fetchRewardPlan, fetchShopifyStatus, fetchSurveyQuestions, fetchTodayLeaderboard, observeCoupon, redeemCoupon, renewCycle, startGameSession, submitSurveyAnswers, updatePlayerProfile, uploadPlayerAvatar } from './api/client.js';
 import {
   readCachedRewardPlan,
   readCachedMagnetBrandParam,
@@ -47,8 +47,13 @@ import {
 import { dbg, dbgError } from './lib/debug.js';
 import { applyBrandTheme, brandFromMagnetParam } from './lib/brandTheme.js';
 import { preloadRuntimeManifest } from './lib/runtimeRegistry.js';
-import { getLeaderboard, getTopPlayers, getAroundYou, computeRankChange } from './lib/leaderboard.js';
-import { getOrCreateLeaderboardIdentity } from './lib/leaderboardIdentity.js';
+import { normalizeLeaderboardView, FALLBACK_RANK } from './lib/leaderboard.js';
+import {
+  formatLeaderboardId,
+  isValidDisplayCode,
+  parseDisplayCodeFromLeaderboardId,
+  sanitizeDisplayCodeInput,
+} from './lib/leaderboardIdentity.js';
 
 // 阶段4:对不依赖每秒倒计时的叶子组件做 memo,
 // 避免倒计时每秒触发它们跟着整棵树一起重渲染。
@@ -150,12 +155,19 @@ const DEFAULT_PROFILE = {
 };
 
 function normalizeProfile(profile) {
-  const nickname = String(profile?.nickname ?? '').trim().slice(0, 18) || DEFAULT_PROFILE.nickname;
+  const brandName = String(profile?.brandName ?? '').trim();
+  const displayCode = sanitizeDisplayCodeInput(
+    profile?.displayCode ?? parseDisplayCodeFromLeaderboardId(brandName, profile?.nickname),
+  );
+  const nickname = displayCode
+    ? formatLeaderboardId(brandName || 'Player', displayCode)
+    : String(profile?.nickname ?? '').trim().slice(0, 18) || DEFAULT_PROFILE.nickname;
   const avatarColor = PROFILE_AVATAR_OPTIONS.includes(profile?.avatarColor)
     ? profile.avatarColor
     : DEFAULT_PROFILE.avatarColor;
   return {
     nickname,
+    displayCode,
     avatarColor,
     avatarImageUrl: typeof profile?.avatarImageUrl === 'string' ? profile.avatarImageUrl : '',
   };
@@ -454,27 +466,72 @@ export default function App() {
   const [shopifyAccountOpen, setShopifyAccountOpen] = useState(false);
   const [shopifyAuthSuccess, setShopifyAuthSuccess] = useState(false);
   const [userProfile, setUserProfile] = useState(() => normalizeProfile(readCachedProfile(getTouchId())));
+  const [playerProfile, setPlayerProfile] = useState(null);
 
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
-  const [todayRank, setTodayRank] = useState(48);
+  const [leaderboardData, setLeaderboardData] = useState(null);
   const [coinGainSignal, setCoinGainSignal] = useState(0);
   const [lastGainAmount, setLastGainAmount] = useState(0);
   const [unlockToastSignal, setUnlockToastSignal] = useState(0);
 
+  const prevLeaderboardRankRef = useRef(FALLBACK_RANK);
+
   useEffect(() => {
     setUserProfile(normalizeProfile(readCachedProfile(touchId)));
+    setPlayerProfile(null);
+    setLeaderboardData(null);
   }, [touchId]);
 
-  // Stable, auto-assigned leaderboard identity ("{BrandName} {4-char code}").
-  // Read-only in V1; only avatar color is user-editable.
-  const leaderboardIdentity = useMemo(
-    () => getOrCreateLeaderboardIdentity(brand?.name),
-    [brand?.name]
-  );
-  const displayProfile = useMemo(
-    () => ({ ...userProfile, nickname: leaderboardIdentity.displayId }),
-    [userProfile, leaderboardIdentity]
-  );
+  const displayProfile = useMemo(() => {
+    if (playerProfile) {
+      return normalizeProfile({
+        nickname: playerProfile.displayName,
+        displayCode: playerProfile.displayCode,
+        brandName: playerProfile.brandName,
+        avatarColor: playerProfile.avatarColor,
+        avatarImageUrl: playerProfile.avatarImageUrl || '',
+      });
+    }
+    return normalizeProfile({ ...userProfile, brandName: brand?.name });
+  }, [playerProfile, userProfile, brand?.name]);
+
+  const syncPlayerProfile = useCallback(async (forceRefresh = false) => {
+    if (devPreviewActiveRef.current) return null;
+    try {
+      const profile = await fetchPlayerProfile(touchId, { refresh: forceRefresh });
+      setPlayerProfile(profile);
+      writeCachedProfile(touchId, {
+        nickname: profile.displayName,
+        displayCode: profile.displayCode,
+        avatarColor: profile.avatarColor,
+        avatarImageUrl: profile.avatarImageUrl || '',
+      });
+      return profile;
+    } catch (err) {
+      dbgError('[FCDBG][App] fetch player profile failed', err);
+      return null;
+    }
+  }, [touchId]);
+
+  const syncLeaderboard = useCallback(async (forceRefresh = false) => {
+    if (devPreviewActiveRef.current) return null;
+    try {
+      const raw = await fetchTodayLeaderboard(touchId, { refresh: forceRefresh });
+      const view = normalizeLeaderboardView(
+        raw,
+        displayProfile.nickname,
+        raw?.currentUserCoins ?? 0,
+      );
+      prevLeaderboardRankRef.current = view.currentUserRank;
+      setLeaderboardData(view);
+      return view;
+    } catch (err) {
+      dbgError('[FCDBG][App] fetch leaderboard failed', err);
+      const fallback = normalizeLeaderboardView(null, displayProfile.nickname, 0);
+      setLeaderboardData(fallback);
+      return fallback;
+    }
+  }, [touchId, displayProfile.nickname]);
 
   const syncShopifyBindingStatus = useCallback(async (forceRefresh = false) => {
     if (devPreviewActiveRef.current) {
@@ -1273,6 +1330,9 @@ export default function App() {
         await syncMagnetBrandParam();
         if (cancelled) return;
 
+        void syncPlayerProfile();
+        void syncLeaderboard();
+
         const status = await syncShopifyBindingStatus(true);
         if (cancelled) return;
 
@@ -1958,14 +2018,62 @@ export default function App() {
   }
 
   function saveUserProfile(nextProfile) {
-    // Leaderboard identity is auto-assigned per brand and read-only in V1;
-    // only avatar fields are user-editable, so don't persist the display name.
     const normalized = normalizeProfile({
-      avatarColor: nextProfile?.avatarColor,
-      avatarImageUrl: nextProfile?.avatarImageUrl,
+      ...nextProfile,
+      brandName: brand?.name,
     });
+    if (!isValidDisplayCode(normalized.displayCode)) {
+      showNotification(
+        'Invalid Leaderboard ID',
+        'Use 4 characters (A–Z, 2–9). Avoid 0, O, 1, I, and L.',
+        '⚠️',
+      );
+      return;
+    }
     setUserProfile(normalized);
-    writeCachedProfile(touchId, normalized);
+    void updatePlayerProfile(touchId, {
+      displayCode: normalized.displayCode,
+      avatarColor: normalized.avatarColor,
+      clearAvatarImage: !normalized.avatarImageUrl,
+    })
+      .then((updated) => {
+        setPlayerProfile(updated);
+        writeCachedProfile(touchId, {
+          nickname: updated.displayName,
+          displayCode: updated.displayCode,
+          avatarColor: updated.avatarColor,
+          avatarImageUrl: updated.avatarImageUrl || '',
+        });
+        void syncLeaderboard(true);
+      })
+      .catch((err) => {
+        dbgError('[FCDBG][App] update player profile failed', err);
+        const message = err instanceof Error ? err.message : 'Could not save profile';
+        showNotification('Save failed', message, '⚠️');
+        writeCachedProfile(touchId, normalized);
+      });
+  }
+
+  function uploadUserAvatar(file) {
+    if (!file) return;
+    void uploadPlayerAvatar(touchId, file)
+      .then((updated) => {
+        setPlayerProfile(updated);
+        const normalized = normalizeProfile({
+          nickname: updated.displayName,
+          displayCode: updated.displayCode,
+          brandName: updated.brandName,
+          avatarColor: updated.avatarColor,
+          avatarImageUrl: updated.avatarImageUrl || '',
+        });
+        setUserProfile(normalized);
+        writeCachedProfile(touchId, normalized);
+        void syncLeaderboard(true);
+      })
+      .catch((err) => {
+        dbgError('[FCDBG][App] upload player avatar failed', err);
+        showNotification('Upload failed', err instanceof Error ? err.message : 'Could not upload avatar', '⚠️');
+      });
   }
 
   function disconnectShopifyAccount() {
@@ -2274,10 +2382,8 @@ export default function App() {
 
     const prevCoins = points;
     const newCoins = points + pts;
-    const change = computeRankChange(prevCoins, newCoins);
     setLastGainAmount(pts);
     setCoinGainSignal((s) => s + 1);
-    setTodayRank((r) => Math.max(1, r - change));
 
     flyCoins(timing.count, () => {
       creditPoints(pts, timing.creditDuration);
@@ -2470,20 +2576,28 @@ export default function App() {
 
       if (pts > 0) {
         triggerLoginBonusAnimation(pts, balanceAfter);
-        window.setTimeout(showUnlockedReceipt, 1900);
+        window.setTimeout(() => {
+          refreshPlan();
+          void syncLeaderboard(true);
+        }, 1900);
       } else {
         showUnlockedReceipt();
+        void syncLeaderboard(true);
       }
       return;
     }
 
     if (pts > 0) {
       triggerLoginBonusAnimation(pts, balanceAfter);
-      window.setTimeout(refreshPlan, 1900);
+      window.setTimeout(() => {
+        refreshPlan();
+        void syncLeaderboard(true);
+      }, 1900);
       return;
     }
 
     refreshPlan();
+    void syncLeaderboard(true);
   }
 
   const handleUseWelcomeCoupon = useCallback(async () => {
@@ -2927,7 +3041,7 @@ export default function App() {
               unlockToastSignal={unlockToastSignal}
             />
 
-            <Challenges challenges={challenges} dailyCapReached={dailyCapReached} onOpen={openChallenge} onOpenLeaderboard={() => setLeaderboardOpen(true)} />
+            <Challenges challenges={challenges} dailyCapReached={dailyCapReached} onOpen={openChallenge} onOpenLeaderboard={() => { void syncLeaderboard(true); setLeaderboardOpen(true); }} />
             <RulesFooter rulesOpen={rulesOpen} onToggle={() => setRulesOpen((value) => !value)} />
           </>
         )}
@@ -2942,7 +3056,7 @@ export default function App() {
       />
       <LeaderboardSheet
         open={leaderboardOpen}
-        currentUserCoins={points}
+        leaderboard={leaderboardData}
         profile={displayProfile}
         onClose={() => setLeaderboardOpen(false)}
       />
@@ -2956,6 +3070,7 @@ export default function App() {
         brand={brand}
         progressView={gameProgressView}
         loadingMessage={gameLoadingMessage}
+        leaderboard={leaderboardData}
         onClose={() => {
           activeGameRequestRef.current += 1;
           clearGameSessionCache();
@@ -3010,6 +3125,7 @@ export default function App() {
           binding={shopifyBinding}
           shopifyStatus={shopifyAuthStatus}
           onSave={saveUserProfile}
+          onUploadAvatar={uploadUserAvatar}
           onClose={() => setShopifyAccountOpen(false)}
           onConnect={() => showShopifyAuth('profile')}
           onDisconnect={disconnectShopifyAccount}
@@ -4409,12 +4525,17 @@ function ZoomFlipCard({ coupon, colors, rect, phase, copyState, onClose, onCopy 
   );
 }
 
-function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onClose, onConnect, onDisconnect }) {
-  const [draft, setDraft] = useState(() => normalizeProfile(profile));
+function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onUploadAvatar, onClose, onConnect, onDisconnect }) {
+  const [draft, setDraft] = useState(() => normalizeProfile({ ...profile, brandName: brand?.name }));
+  const avatarInputRef = useRef(null);
   const brandName = brand?.name || 'Your brand';
   const connected = binding?.connected || shopifyStatus === 'connected';
   const accountLabel = connected ? shopifyAccountLabel(binding?.connected ? binding : { connected: true }) : 'Not connected';
   const draftInitial = profileInitial(draft);
+
+  useEffect(() => {
+    setDraft(normalizeProfile({ ...profile, brandName: brand?.name }));
+  }, [profile, brand?.name]);
 
   function handleSubmit(event) {
     event.preventDefault();
@@ -4443,9 +4564,32 @@ function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onClose, 
 
       <form className="shopify-account-body profile-body" onSubmit={handleSubmit}>
         <div className="profile-hero">
-          <div className="profile-avatar-preview" style={{ background: draft.avatarColor }} aria-hidden="true">
+          <button
+            className="profile-avatar-preview"
+            type="button"
+            style={{ background: draft.avatarColor }}
+            aria-label="Upload profile photo"
+            onClick={() => avatarInputRef.current?.click()}
+          >
             {draft.avatarImageUrl ? <img src={draft.avatarImageUrl} alt="" /> : draftInitial}
-          </div>
+          </button>
+          <input
+            ref={avatarInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (!file) return;
+              if (file.size > 2 * 1024 * 1024) {
+                return;
+              }
+              const previewUrl = URL.createObjectURL(file);
+              setDraft((value) => ({ ...value, avatarImageUrl: previewUrl }));
+              onUploadAvatar?.(file);
+            }}
+          />
           <h1>Profile</h1>
         </div>
 
@@ -4456,8 +4600,25 @@ function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onClose, 
 
           <div className="profile-field">
             <span>Leaderboard ID</span>
-            <output className="profile-readonly-id" aria-readonly="true">{draft.nickname}</output>
-            <small className="profile-field-hint">Auto-assigned and fixed for this brand.</small>
+            <input
+              className="profile-leaderboard-id-input"
+              value={draft.nickname}
+              maxLength={32}
+              autoComplete="off"
+              spellCheck={false}
+              aria-describedby="leaderboard-id-hint"
+              onChange={(event) => {
+                const code = parseDisplayCodeFromLeaderboardId(brandName, event.target.value);
+                setDraft((value) => ({
+                  ...value,
+                  displayCode: code,
+                  nickname: formatLeaderboardId(brandName, code),
+                }));
+              }}
+            />
+            <small className="profile-field-hint" id="leaderboard-id-hint">
+              Ends with a unique 4-character code for this brand.
+            </small>
           </div>
 
           <div className="profile-field">
@@ -4562,22 +4723,31 @@ function ShopifyAuthorizationPage({ brand, source, onContinue, onSkip }) {
   );
 }
 
-function LeaderboardSheet({ open, currentUserCoins, profile, onClose }) {
-  if (!open) return null;
-
+function LeaderboardSheet({ open, leaderboard, profile, onClose }) {
   const displayProfile = normalizeProfile(profile);
-  const { players, currentUserRank } = getLeaderboard(displayProfile.nickname, currentUserCoins);
-  const topPlayers = players.slice(0, 3);
-  const aroundPlayers = (() => {
-    const start = Math.max(0, currentUserRank - 3);
-    const end = Math.min(players.length, currentUserRank + 2);
-    return players.slice(start, end);
-  })();
+  const view = normalizeLeaderboardView(leaderboard, displayProfile.nickname, leaderboard?.currentUserCoins ?? 0);
+  const { topPlayers, aroundYou, currentUserRank } = view;
+  const topPodium = topPlayers.length ? topPlayers : view.players.slice(0, 3);
+  const aroundPlayers = aroundYou.length ? aroundYou : view.players.slice(
+    Math.max(0, currentUserRank - 3),
+    Math.min(view.players.length, currentUserRank + 2),
+  );
 
   const avatarColors = ['#5c6e58', '#b89855', '#a08447', '#6b7e65', '#7a8c75', '#8b6b3d'];
-  const getAvatarColor = (name) => avatarColors[name.charCodeAt(0) % avatarColors.length];
-  const playerAvatarColor = (player) => player.isCurrentUser ? displayProfile.avatarColor : getAvatarColor(player.name);
-  const playerInitial = (player) => player.isCurrentUser ? profileInitial(displayProfile) : player.name.charAt(0);
+  const getAvatarColor = (player) => {
+    if (player.isCurrentUser) return displayProfile.avatarColor;
+    if (player.avatarColor) return player.avatarColor;
+    return avatarColors[player.name.charCodeAt(0) % avatarColors.length];
+  };
+  const playerAvatarImage = (player) => {
+    if (player.isCurrentUser && displayProfile.avatarImageUrl) return displayProfile.avatarImageUrl;
+    return player.avatarImageUrl || '';
+  };
+  const playerInitial = (player) => (
+    player.isCurrentUser ? profileInitial(displayProfile) : player.name.charAt(0)
+  );
+
+  if (!open) return null;
 
   return (
     <div className="leaderboard-overlay" onClick={onClose}>
@@ -4594,10 +4764,14 @@ function LeaderboardSheet({ open, currentUserCoins, profile, onClose }) {
         <div className="lb-section-title lb-podium-title">Top Players</div>
         <div className="lb-podium-section">
           <div className="lb-podium">
-            {[topPlayers[1], topPlayers[0], topPlayers[2]].filter(Boolean).map((player, idx) => (
-              <div className="lb-podium-player" key={player.rank}>
-                <div className="lb-podium-avatar" style={{ background: playerAvatarColor(player) }}>
-                  {playerInitial(player)}
+            {[topPodium[1], topPodium[0], topPodium[2]].filter(Boolean).map((player, idx) => (
+              <div className="lb-podium-player" key={`${player.rank}-${player.name}`}>
+                <div className="lb-podium-avatar" style={{ background: getAvatarColor(player) }}>
+                  {playerAvatarImage(player) ? (
+                    <img src={playerAvatarImage(player)} alt="" />
+                  ) : (
+                    playerInitial(player)
+                  )}
                 </div>
                 <span className="lb-podium-rank">#{player.rank}</span>
                 <span className="lb-podium-name">{player.name}</span>
@@ -4612,10 +4786,14 @@ function LeaderboardSheet({ open, currentUserCoins, profile, onClose }) {
           <div className="lb-section-title">Around You</div>
           <div className="lb-around-list">
             {aroundPlayers.map((player) => (
-              <div className={`lb-row ${player.isCurrentUser ? 'is-current-user' : ''}`} key={player.rank}>
+              <div className={`lb-row ${player.isCurrentUser ? 'is-current-user' : ''}`} key={`${player.rank}-${player.name}`}>
                 <span className="lb-row-rank">#{player.rank}</span>
-                <div className="lb-row-avatar" style={{ background: playerAvatarColor(player) }}>
-                  {playerInitial(player)}
+                <div className="lb-row-avatar" style={{ background: getAvatarColor(player) }}>
+                  {playerAvatarImage(player) ? (
+                    <img src={playerAvatarImage(player)} alt="" />
+                  ) : (
+                    playerInitial(player)
+                  )}
                 </div>
                 <div className="lb-row-info">
                   <div className="lb-row-name">{player.name}</div>

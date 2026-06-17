@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import GameHost from './GameHost.jsx';
 import ProgressRail from './ProgressRail.jsx';
-import CouponUnlockedModal from './CouponUnlockedModal.jsx';
 import { useGameProgress, MOCK_INITIAL_COINS } from '../lib/gameProgress.js';
+import { useLiveLeaderboardRank } from '../lib/useLiveLeaderboardRank.js';
+import { bindVisibleViewportLock } from '../lib/visibleViewport.js';
 
 function parseProgressCoinEvent(event, expectedSessionId, prevTotalCoinsInSession = 0) {
   if (!event || typeof event !== 'object') return null;
@@ -36,12 +37,12 @@ export default function PlatformGameModal({
   brand,
   progressView,
   loadingMessage,
+  leaderboard,
   onClose,
   onDone,
   onError,
   onRuntimeEvent,
 }) {
-  // Progress Rail 状态:用真实 points 播种,优先使用后端阶梯(无则回退 mock)。
   const initialCoins = Number(progressView?.currentPoints ?? MOCK_INITIAL_COINS);
   const ladder = useMemo(
     () => (Array.isArray(progressView?.ladder) && progressView.ladder.length ? progressView.ladder : undefined),
@@ -51,20 +52,29 @@ export default function PlatformGameModal({
     displayCoins,
     displayRail,
     lastGain,
-    upgrade,
-    todayRank,
-    rankChange,
+    tierUnlock,
     awardCoins,
-    clearUpgrade,
     resetTo,
   } = useGameProgress({ initialCoins, ladder });
+
+  const { todayRank, rankChange, noteGameCoinsAwarded } = useLiveLeaderboardRank(
+    leaderboard,
+    open ? gameStart?.sessionId : null,
+  );
+
+  const awardCoinsWithRank = useCallback((amount) => {
+    const delta = Math.max(0, Math.round(Number(amount) || 0));
+    if (delta <= 0) return;
+    awardCoins(delta);
+    noteGameCoinsAwarded(delta);
+  }, [awardCoins, noteGameCoinsAwarded]);
+
   const seenEventSeqRef = useRef(0);
   const seenSessionTotalRef = useRef(0);
   const runtimeAwardedCoinsRef = useRef(0);
   const activeSessionRef = useRef('');
   const seedCoinsRef = useRef(initialCoins);
 
-  // 进入新一局时用最新真实金币重新播种 Rail。
   useEffect(() => {
     if (!open) return;
     resetTo(initialCoins);
@@ -96,7 +106,12 @@ export default function PlatformGameModal({
       viewport.style.overflow = 'hidden';
     }
 
+    const releaseViewportLock = viewport instanceof HTMLElement
+      ? bindVisibleViewportLock(viewport)
+      : () => {};
+
     return () => {
+      releaseViewportLock();
       html.style.overflow = prev.htmlOverflow;
       body.style.overflow = prev.bodyOverflow;
       body.style.overscrollBehavior = prev.bodyOverscroll;
@@ -106,7 +121,6 @@ export default function PlatformGameModal({
     };
   }, [open]);
 
-  // 实时进度:游戏运行时若发出含金币的事件,立即推进 Rail。
   const handleRuntimeEvent = useCallback((event) => {
     const parsed = parseProgressCoinEvent(event, activeSessionRef.current, seenSessionTotalRef.current);
     if (parsed) {
@@ -120,31 +134,29 @@ export default function PlatformGameModal({
         seenSessionTotalRef.current = parsed.totalCoinsInSession;
       }
       runtimeAwardedCoinsRef.current += parsed.deltaCoins;
-      awardCoins(parsed.deltaCoins);
+      awardCoinsWithRank(parsed.deltaCoins);
     }
     onRuntimeEvent?.(event);
-  }, [awardCoins, onRuntimeEvent]);
+  }, [awardCoinsWithRank, onRuntimeEvent]);
 
-  // 游戏结束:仅补齐“结算金币 - 已实时发放金币”,避免重复累计。
   const handleDone = useCallback((settlement) => {
     const totalAwarded = Math.max(
       0,
       Math.round(Number(settlement?.pointsAwarded ?? settlement?.coinsAwarded ?? 0)),
     );
     const remaining = Math.max(0, totalAwarded - runtimeAwardedCoinsRef.current);
-    if (remaining > 0) awardCoins(remaining);
+    if (remaining > 0) awardCoinsWithRank(remaining);
     const authoritativeTotal = Number.isFinite(Number(settlement?.pointsBalance))
       ? Math.max(0, Math.round(Number(settlement.pointsBalance)))
       : seedCoinsRef.current + totalAwarded;
 
-    // 结算前强制对齐到后端权威积分,避免用户感知“游戏内与首页不一致”。
     resetTo(authoritativeTotal);
     runtimeAwardedCoinsRef.current = totalAwarded;
 
     window.setTimeout(() => {
       onDone?.(settlement);
     }, 80);
-  }, [awardCoins, onDone]);
+  }, [awardCoinsWithRank, onDone, resetTo]);
 
   if (!open) return null;
 
@@ -155,7 +167,14 @@ export default function PlatformGameModal({
       aria-label={title}
     >
       <div className="platform-game-topbar">
-        <ProgressRail rail={displayRail} displayCoins={displayCoins} lastGain={lastGain} todayRank={todayRank} rankChange={rankChange} />
+        <ProgressRail
+          rail={displayRail}
+          displayCoins={displayCoins}
+          lastGain={lastGain}
+          tierUnlock={tierUnlock}
+          todayRank={todayRank}
+          rankChange={rankChange}
+        />
 
         <button type="button" className="platform-game-close" onClick={onClose} aria-label="Close game">
           Exit
@@ -173,11 +192,6 @@ export default function PlatformGameModal({
         </div>
       )}
 
-      <CouponUnlockedModal
-        open={!!upgrade}
-        percent={upgrade?.percent}
-        onContinue={clearUpgrade}
-      />
     </div>
   );
 }

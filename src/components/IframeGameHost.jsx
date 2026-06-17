@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { attachIframeHost } from '@fc/game-bridge';
-import { completeGameSession } from '../api/client.js';
 import { dbg, dbgError } from '../lib/debug.js';
+import { bindIframeHostViewport } from '../lib/iframeHostViewport.js';
+import { useGameOverSettlement } from '../lib/gameOverSettlement.js';
+import GameOverOverlay from './GameOverOverlay.jsx';
 
 export default function IframeGameHost({
   start,
@@ -15,12 +17,16 @@ export default function IframeGameHost({
   const [status, setStatus] = useState('loading');
   const [errorMessage, setErrorMessage] = useState('');
   const [bootAttempt, setBootAttempt] = useState(0);
-  const onDoneRef = useRef(onDone);
   const onErrorRef = useRef(onError);
   const startRef = useRef(start);
-  onDoneRef.current = onDone;
   onErrorRef.current = onError;
   startRef.current = start;
+
+  const { gameOverVisible, settleGameResultSafe } = useGameOverSettlement({
+    onDone,
+    onError,
+    sessionId: start.sessionId,
+  });
 
   const iframeSrc = useMemo(() => {
     const url = new URL(iframeUrl, window.location.href);
@@ -71,14 +77,11 @@ export default function IframeGameHost({
           },
           onComplete: async (result) => {
             try {
-              const view = await completeGameSession(result);
-              onDoneRef.current?.(view);
+              await settleGameResultSafe(result);
             } catch (err) {
-              const message = err instanceof Error ? err.message : 'Complete failed';
               dbgError('[FCDBG][IframeGameHost] complete failed', err);
               setStatus('error');
-              setErrorMessage(message);
-              onErrorRef.current?.(message);
+              setErrorMessage(err instanceof Error ? err.message : 'Complete failed');
             }
           },
           onEvent: (event) => {
@@ -105,7 +108,30 @@ export default function IframeGameHost({
       iframe.removeEventListener('load', attach);
       session?.cancel();
     };
-  }, [bootAttempt, iframeSrc, resolvedAllowedOrigin, start.sessionId]);
+  }, [bootAttempt, iframeSrc, resolvedAllowedOrigin, settleGameResultSafe, start.sessionId]);
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return undefined;
+
+    let cleanup = () => {};
+
+    const attachViewport = () => {
+      cleanup();
+      cleanup = bindIframeHostViewport(iframe, resolvedAllowedOrigin);
+    };
+
+    if (iframe.contentDocument?.readyState === 'complete') {
+      attachViewport();
+    } else {
+      iframe.addEventListener('load', attachViewport);
+    }
+
+    return () => {
+      iframe.removeEventListener('load', attachViewport);
+      cleanup();
+    };
+  }, [iframeSrc, resolvedAllowedOrigin, start.sessionId]);
 
   useEffect(() => {
     if (status !== 'loading') return undefined;
@@ -159,6 +185,7 @@ export default function IframeGameHost({
           <p>Loading game…</p>
         </div>
       ) : null}
+      <GameOverOverlay visible={gameOverVisible} />
     </div>
   );
 }
