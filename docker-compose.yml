@@ -96,6 +96,8 @@ services:
         VITE_MANIFEST_PUBLIC_KEY_PEM: ${VITE_MANIFEST_PUBLIC_KEY_PEM-}
         VITE_MANIFEST_REQUIRE_SIGNATURE: ${VITE_MANIFEST_REQUIRE_SIGNATURE-false}
     container_name: fc-web
+    volumes:
+      - platform_uploaded_games:/var/www/uploaded-games:ro
     ports:
       - "${PUBLIC_PORT:-8080}:80"
     depends_on:
