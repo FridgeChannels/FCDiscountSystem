@@ -22,8 +22,8 @@ COPY --from=build /workspace/fc-platform /workspace/fc-platform
 WORKDIR /workspace/fc-platform/apps/web
 ENV NODE_ENV=production
 ENV PORT=8789
-RUN mkdir -p public/uploaded-games \
-  && cp -a public/uploaded-games /seed/uploaded-games
+RUN mkdir -p public/uploaded-games /seed/uploaded-games \
+  && cp -a public/uploaded-games/. /seed/uploaded-games/
 
 COPY FCDiscountSystem/docker/platform-web-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
