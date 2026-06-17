@@ -12,6 +12,7 @@
  *  - The identity is stable across challenge rounds for the same brand,
  *    so it is persisted per brand and never regenerated once assigned.
  *  - The 4-char code suffix is editable in Profile (avatar color too).
+ *  - The full leaderboard display name is also editable in Profile.
  *
  * NOTE: true cross-user uniqueness ("unique under the same brand_id, never
  * reassigned") must be enforced by the backend. This client module owns the

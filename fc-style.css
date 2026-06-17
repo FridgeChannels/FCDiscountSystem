@@ -2318,6 +2318,29 @@ body {
   box-shadow: 0 0 0 2px rgba(241, 217, 138, 0.3);
 }
 
+.progress-rail-node-wrap.is-next .progress-rail-node {
+  background: #8fd58a;
+  box-shadow: 0 0 0 2px rgba(143, 213, 138, 0.35);
+}
+
+.progress-rail-node-wrap.is-next .progress-rail-node-status {
+  color: #8fd58a;
+}
+
+.progress-rail-node-wrap.is-past .progress-rail-node {
+  background: rgba(241, 217, 138, 0.55);
+  box-shadow: 0 0 0 2px rgba(241, 217, 138, 0.2);
+}
+
+.progress-rail-node-wrap.is-past .progress-rail-node-status,
+.progress-rail-node-wrap.is-future .progress-rail-node-status {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.progress-rail-node-wrap.is-future .progress-rail-node-copy strong {
+  color: rgba(255, 255, 255, 0.72);
+}
+
 .progress-rail-line {
   flex: 1;
   height: 3px;
@@ -2533,6 +2556,9 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .inline-game-host > * {
@@ -3255,8 +3281,7 @@ body {
 }
 
 .profile-leaderboard-id-input {
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.01em;
 }
 
 .profile-readonly-id {

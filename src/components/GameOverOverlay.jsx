@@ -1,5 +1,5 @@
 /** Host shell overlay shown when a game session ends, before complete API returns. */
-export default function GameOverOverlay({ visible, title = 'Game Over' }) {
+export default function GameOverOverlay({ visible, title = 'Reward Incoming...' }) {
   if (!visible) return null;
 
   return (

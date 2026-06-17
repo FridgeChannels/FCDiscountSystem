@@ -159,9 +159,9 @@ function normalizeProfile(profile) {
   const displayCode = sanitizeDisplayCodeInput(
     profile?.displayCode ?? parseDisplayCodeFromLeaderboardId(brandName, profile?.nickname),
   );
-  const nickname = displayCode
-    ? formatLeaderboardId(brandName || 'Player', displayCode)
-    : String(profile?.nickname ?? '').trim().slice(0, 18) || DEFAULT_PROFILE.nickname;
+  const rawNickname = String(profile?.nickname ?? '').trim();
+  const nickname = rawNickname.slice(0, 32)
+    || (displayCode ? formatLeaderboardId(brandName || 'Player', displayCode) : DEFAULT_PROFILE.nickname);
   const avatarColor = PROFILE_AVATAR_OPTIONS.includes(profile?.avatarColor)
     ? profile.avatarColor
     : DEFAULT_PROFILE.avatarColor;
@@ -1949,38 +1949,6 @@ export default function App() {
     };
   }, []);
 
-  // Welcome Ritual 激活(step 1)时与券卡弹出同步撒彩带:首登开箱、Renew 后欢迎流
-  const welcomeConfettiPlayedRef = useRef(false);
-  useEffect(() => {
-    if (welcomeStep === 0) {
-      welcomeConfettiPlayedRef.current = false;
-      return;
-    }
-    if (welcomeStep !== 1 || introActive) return;
-    if (welcomeConfettiPlayedRef.current) return;
-    welcomeConfettiPlayedRef.current = true;
-    if (!prefersReducedMotion()) {
-      requestAnimationFrame(() => startConfetti());
-    }
-  }, [welcomeStep, introActive]);
-
-  // Best offer 页面每次被访问(由隐藏切换为展示)时播放一遍撒彩带动效
-  const bestOfferConfettiPlayedRef = useRef(false);
-  useEffect(() => {
-    if (welcomeStep < 3 && !introActive) return;
-    if (showBestOffer) {
-      if (!bestOfferConfettiPlayedRef.current) {
-        bestOfferConfettiPlayedRef.current = true;
-        if (!prefersReducedMotion()) {
-          // 推迟一帧,确保 canvas 已随 best offer 页面布局完成尺寸
-          requestAnimationFrame(() => startConfetti());
-        }
-      }
-    } else {
-      bestOfferConfettiPlayedRef.current = false;
-    }
-  }, [introActive, showBestOffer, welcomeStep]);
-
   useEffect(() => {
     if (!tapGame.active) return undefined;
 
@@ -2091,7 +2059,14 @@ export default function App() {
       ...nextProfile,
       brandName: brand?.name,
     });
-    if (!isValidDisplayCode(normalized.displayCode)) {
+    const displayName = normalized.nickname.trim();
+    if (!displayName) {
+      showNotification('Invalid name', 'Enter a display name (1–32 characters).', '⚠️');
+      return;
+    }
+    const codeFromName = parseDisplayCodeFromLeaderboardId(brand?.name, displayName);
+    const displayCode = isValidDisplayCode(codeFromName) ? codeFromName : normalized.displayCode;
+    if (!isValidDisplayCode(displayCode)) {
       showNotification(
         'Invalid Leaderboard ID',
         'Use 4 characters (A–Z, 2–9). Avoid 0, O, 1, I, and L.',
@@ -2101,7 +2076,8 @@ export default function App() {
     }
     setUserProfile(normalized);
     void updatePlayerProfile(touchId, {
-      displayCode: normalized.displayCode,
+      displayName,
+      displayCode,
       avatarColor: normalized.avatarColor,
       clearAvatarImage: !normalized.avatarImageUrl,
     })
@@ -2502,7 +2478,6 @@ export default function App() {
     }
     setUnlockToastSignal((s) => s + 1);
     setTargetPulse('ready unlocking');
-    startConfetti();
     setReceiptCoupon(unlocked);
     setReceiptColors(readCouponTokens(targetCouponRef.current));
     setPendingPoints(updatedPoints);
@@ -2638,7 +2613,6 @@ export default function App() {
         setReceiptColors(readCouponTokens(targetCouponRef.current));
         setPendingPoints(balanceAfter);
         setShowReceipt(true);
-        startConfetti();
         refreshPlan();
       };
 
@@ -4683,16 +4657,14 @@ function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onUploadA
               spellCheck={false}
               aria-describedby="leaderboard-id-hint"
               onChange={(event) => {
-                const code = parseDisplayCodeFromLeaderboardId(brandName, event.target.value);
                 setDraft((value) => ({
                   ...value,
-                  displayCode: code,
-                  nickname: formatLeaderboardId(brandName, code),
+                  nickname: event.target.value.slice(0, 32),
                 }));
               }}
             />
             <small className="profile-field-hint" id="leaderboard-id-hint">
-              Ends with a unique 4-character code for this brand.
+              Shown on the leaderboard. Up to 32 characters.
             </small>
           </div>
 

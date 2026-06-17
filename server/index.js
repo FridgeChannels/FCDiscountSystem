@@ -359,6 +359,7 @@ const server = http.createServer(async (req, res) => {
       const data = await callEnginePatch('/identity/player-profile', {
         touchId: body.touchId,
         displayCode: body.displayCode,
+        displayName: body.displayName,
         avatarColor: body.avatarColor,
         clearAvatarImage: body.clearAvatarImage,
       });

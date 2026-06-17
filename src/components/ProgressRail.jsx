@@ -1,6 +1,6 @@
 /**
  * Progress Rail — 游戏顶部固定的进度轨道。
- * 展示:当前金币(🪙 N) + 全路径折扣(current / next / future)与剩余距离。
+ * 展示:当前金币(🪙 N) + ladder 全部折扣档位与剩余距离。
  * 金币增长与路径推进由父级通过 displayCoins/rail 驱动(见 useGameProgress)。
  */
 export default function ProgressRail({
@@ -13,7 +13,7 @@ export default function ProgressRail({
 }) {
   if (!rail) return null;
 
-  const { nodes, segmentPct, isMaxTier } = rail;
+  const { nodes, isMaxTier } = rail;
   const unlockPercent = tierUnlock?.percent;
 
   return (
@@ -31,13 +31,13 @@ export default function ProgressRail({
       <ol className="progress-rail-track" role="list">
         {nodes.map((node, index) => {
           const isLast = index === nodes.length - 1;
-          const fillPct = index === 0 ? segmentPct : 0;
-          const visibleFillPct = fillPct > 0 ? Math.max(fillPct, 1.5) : 0;
+          const rawFill = node.segmentFillPct ?? 0;
+          const visibleFillPct = rawFill > 0 ? Math.max(rawFill, rawFill >= 100 ? 100 : 1.5) : 0;
           const isUnlockPulse = unlockPercent === node.percent;
           return (
             <li
               className={`progress-rail-node-wrap is-${node.role}${isUnlockPulse ? ' is-unlock-pulse' : ''}`}
-              key={`${node.percent}-${node.role}`}
+              key={`${node.percent}-${node.threshold}-${index}`}
             >
               <div className="progress-rail-node-row">
                 <span className="progress-rail-node" aria-hidden="true" />

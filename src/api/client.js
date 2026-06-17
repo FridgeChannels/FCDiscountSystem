@@ -101,10 +101,10 @@ export function fetchPlayerProfile(touchId, { refresh = false } = {}) {
   return request(`/api/fc/player-profile?touchId=${encodeURIComponent(touchId)}${refreshQs}`);
 }
 
-export function updatePlayerProfile(touchId, { displayCode, avatarColor, clearAvatarImage } = {}) {
+export function updatePlayerProfile(touchId, { displayCode, displayName, avatarColor, clearAvatarImage } = {}) {
   return request('/api/fc/player-profile', {
     method: 'PATCH',
-    body: JSON.stringify({ touchId, displayCode, avatarColor, clearAvatarImage }),
+    body: JSON.stringify({ touchId, displayCode, displayName, avatarColor, clearAvatarImage }),
   });
 }
 
