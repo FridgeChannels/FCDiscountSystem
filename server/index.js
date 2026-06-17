@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { getRuntimeManifest, validateManifestEntry } from './runtime-manifest.js';
 
-const ENGINE_BASE_URL = process.env.ENGINE_BASE_URL ?? 'http://192.168.8.30:8787';
+const ENGINE_BASE_URL = process.env.ENGINE_BASE_URL ?? 'http://localhost:8787';
 const PORT = Number(process.env.BFF_PORT ?? 3001);
 const ENGINE_SERVICE_TOKEN = process.env.ENGINE_SERVICE_TOKEN ?? '';
 const ENGINE_TIMEOUT_MS = Number(process.env.ENGINE_TIMEOUT_MS ?? 30000);

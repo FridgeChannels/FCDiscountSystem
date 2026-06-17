@@ -4,17 +4,48 @@ function runtimeBaseUrl() {
   return import.meta.env.VITE_RUNTIME_SHELL_BASE_URL || 'http://localhost:8789';
 }
 
+function isBrandAssetProxyUrl(url) {
+  try {
+    const parsed = new URL(url.trim());
+    return parsed.pathname.endsWith('/api/brand-asset') && parsed.searchParams.has('url');
+  } catch {
+    return false;
+  }
+}
+
+function unwrapBrandAssetProxyUrl(url) {
+  let current = url.trim();
+  for (let i = 0; i < 4; i += 1) {
+    if (!isBrandAssetProxyUrl(current)) return current;
+    try {
+      const inner = new URL(current).searchParams.get('url')?.trim();
+      if (!inner) return current;
+      current = inner;
+    } catch {
+      return current;
+    }
+  }
+  return current;
+}
+
 export function normalizeLogoUrl(url, baseUrl = runtimeBaseUrl()) {
   if (!url || typeof url !== 'string') return null;
   const trimmed = url.trim();
+  if (trimmed.startsWith('data:')) return trimmed;
+  const base = String(baseUrl || '').replace(/\/$/, '');
   if (
     trimmed.startsWith('http://')
     || trimmed.startsWith('https://')
-    || trimmed.startsWith('data:')
   ) {
-    return trimmed;
+    const remote = unwrapBrandAssetProxyUrl(trimmed);
+    try {
+      const parsed = new URL(remote);
+      if (parsed.origin === new URL(`${base}/`).origin) return remote;
+      return `${base}/api/brand-asset?url=${encodeURIComponent(remote)}`;
+    } catch {
+      return trimmed;
+    }
   }
-  const base = String(baseUrl || '').replace(/\/$/, '');
   if (trimmed.startsWith('/')) return `${base}${trimmed}`;
   const file = trimmed === 'clovia_logo.png' ? 'clovia-logo.svg' : trimmed;
   return `${base}/brand-assets/${file}`;

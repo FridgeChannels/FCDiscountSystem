@@ -79,6 +79,7 @@ export default defineConfig(({ mode }) => {
     },
     proxy: {
       '/api/fc': resolveProxyTarget(env, 'api'),
+      '/api/brand-asset': resolveProxyTarget(env, 'web'),
       '/runtime-shell': resolveProxyTarget(env, 'web'),
       '/_next': resolveProxyTarget(env, 'web'),
       '/brand-assets': resolveProxyTarget(env, 'web'),
