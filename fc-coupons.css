@@ -3377,16 +3377,13 @@
   box-sizing: border-box;
 }
 
-/* Custom scrollbar for premium feel */
+/* Hide scrollbar handle entirely while keeping scroll functionality */
+.nc-settlement-coupons-list {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
 .nc-settlement-coupons-list::-webkit-scrollbar {
-  width: 4px;
-}
-.nc-settlement-coupons-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-.nc-settlement-coupons-list::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.12);
-  border-radius: 99px;
+  display: none;
 }
 
 /* Adjust inactive tickets when displayed inside settlement list to look perfectly aligned */
