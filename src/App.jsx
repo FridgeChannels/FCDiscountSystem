@@ -28,6 +28,7 @@ import {
   writeCachedProfile,
   readCouponWallet,
   upsertCouponsToWallet,
+  setWalletCouponStatus,
   clearCouponWallet,
 } from './api/cache.js';
 import {
@@ -53,6 +54,9 @@ import {
   MOCK_TARGET_PACK,
   mockPackWalletEntries,
   walletHasPack,
+  MOCK_DEV_ACTIVE_COUPONS,
+  MOCK_USED_COUPONS,
+  MOCK_EXPIRED_COUPONS,
 } from './dev/couponPacks.js';
 import { dbg, dbgError } from './lib/debug.js';
 import { applyBrandTheme, brandFromMagnetParam } from './lib/brandTheme.js';
@@ -858,11 +862,26 @@ export default function App() {
       status: 'active',
       source: (d.target ?? 0) > 0 ? 'target' : 'start',
       couponId: d.couponId ?? d.campaignId,
+      cycleId: rewardPlanId,
     }));
     setCouponWallet(upsertCouponsToWallet(touchId, entries));
     // countdownSeconds 仅用于推导过期时间,不入依赖以免每秒重跑。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [discounts, touchId]);
+
+  // 过期标记:expiresAt 已过的活跃券标记为 'expired'(随 tick 每秒复查)。
+  useEffect(() => {
+    if (!touchId) return;
+    const now = Date.now();
+    const stale = couponWallet.filter(
+      (coupon) => coupon.status === 'active' && coupon.expiresAt && new Date(coupon.expiresAt).getTime() <= now,
+    );
+    if (!stale.length) return;
+    let next = couponWallet;
+    for (const coupon of stale) next = setWalletCouponStatus(touchId, coupon.code, 'expired');
+    setCouponWallet(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [couponWallet, touchId, tick]);
 
   const walletAvailableCount = useMemo(
     () => couponWallet.filter((coupon) => coupon.status === 'active').length,
@@ -1632,8 +1651,15 @@ export default function App() {
           ...mockPackWalletEntries(targetPack),
         ]
       : [];
+    const devMockCoupons = import.meta.env.DEV
+      ? [
+          ...MOCK_DEV_ACTIVE_COUPONS,
+          ...MOCK_USED_COUPONS,
+          ...MOCK_EXPIRED_COUPONS,
+        ]
+      : [];
     const walletByCode = new Map(
-      [...couponWallet, ...completedPreviewWallet]
+      [...couponWallet, ...completedPreviewWallet, ...devMockCoupons]
         .filter((coupon) => coupon?.code)
         .map((coupon) => [coupon.code, coupon]),
     );
@@ -1876,6 +1902,11 @@ export default function App() {
             claimRecord: readClaimRecord(touchId),
           });
           settlementCouponRef.current = settlementCoupon ?? settlementCouponRef.current;
+          // 券系统判定已核销/过期 → 同步「我的券包」里这张券的状态。
+          const closedCode = settlementCoupon?.code ?? readClaimRecord(touchId)?.code;
+          if (closedCode) {
+            setCouponWallet(setWalletCouponStatus(touchId, closedCode, reason === 'expired' ? 'expired' : 'used'));
+          }
           clearCachedRewardPlan(touchId);
           setNewChallenge({ reason, coupon: settlementCoupon });
           clearClaimedCode(touchId);
@@ -1886,6 +1917,11 @@ export default function App() {
           const record = readClaimRecord(touchId);
           if (record?.code) {
             writeClaimRecord(touchId, { ...record, observedStatus: result.couponStatus });
+            if (result.couponStatus === 'redeemed') {
+              setCouponWallet(setWalletCouponStatus(touchId, record.code, 'used'));
+            } else if (result.couponStatus === 'expired') {
+              setCouponWallet(setWalletCouponStatus(touchId, record.code, 'expired'));
+            }
           }
         }
       } catch (err) {
@@ -2776,6 +2812,7 @@ export default function App() {
         source: 'target',
         packId: targetPack?.id,
         couponId: c.couponId ?? c.campaignId,
+        cycleId: rewardPlanId,
       }));
     if (issued?.coupon?.code && !entries.some((e) => e.code === issued.coupon.code)) {
       entries.push({
@@ -2787,6 +2824,7 @@ export default function App() {
         source: 'target',
         packId: targetPack?.id,
         couponId: issued.coupon.couponId,
+        cycleId: rewardPlanId,
       });
     }
     if (entries.length) setCouponWallet(upsertCouponsToWallet(touchId, entries));
@@ -3271,6 +3309,7 @@ export default function App() {
           onCopy={handleWalletCopy}
           onClaim={handleShopNowDirect}
           completed={completedMode}
+          currentCycleId={rewardPlanId}
           time={time}
           isExpired={isExpired}
           urgent={urgent}
@@ -4610,13 +4649,29 @@ function WalletTicket({ coupon, copiedCode, onCopy, onClaim }) {
 function InactiveTicket({ coupon, label }) {
   const num = couponDiscountNum(coupon);
   const conditions = coupon.conditions || 'Sitewide · No minimum';
+  const labelLower = (label || '').toLowerCase();
+  const displayCode = coupon.code || coupon.mockCode || 'DEVCODE';
+
   return (
-    <div className="cwticket is-inactive is-colored" {...couponPaletteProps(coupon)}>
+    <div className={`cwticket is-inactive is-${labelLower}`} {...couponPaletteProps(coupon)}>
       <div className="cwticket-main">
         <div className="cwticket-value">
-          {num ? (<><b>{num}%</b><span>OFF</span></>) : (<b>{coupon.value || 'Reward'}</b>)}
+          {num ? (
+            <>
+              <b>{num}%</b>
+              <span>OFF</span>
+            </>
+          ) : (
+            <b>{coupon.value || 'Reward'}</b>
+          )}
         </div>
-        <div className="cwticket-meta">{coupon.code} · {conditions}</div>
+        <div className="cwticket-details">
+          <div className="cwticket-code-lbl">CODE: {displayCode}</div>
+          <div className="cwticket-cond-lbl">{conditions}</div>
+        </div>
+        <div className="cwticket-stamp-wrapper">
+          <div className={`cwticket-stamp is-${labelLower}`}>{label}</div>
+        </div>
       </div>
       <div className="cwticket-stub is-inactive">
         <span className="cwticket-stub-text">{label}</span>
@@ -4755,14 +4810,18 @@ function CouponWalletPage({
   onCopy,
   onClaim,
   completed = false,
+  currentCycleId = null,
   time,
   isExpired = false,
   urgent = false,
 }) {
   const list = coupons ?? [];
   const active = list.filter((c) => c.status === 'active');
-  const used = list.filter((c) => c.status === 'used');
-  const expired = list.filter((c) => c.status === 'expired');
+  // 已使用 / 已过期只展示「当前活动」内的券(按 cycleId 匹配,无 cycleId 的旧券放行)。
+  // completed 状态下只展示未使用的券,不展示已使用 / 已过期。
+  const inCurrentCycle = (c) => !currentCycleId || !c.cycleId || c.cycleId === currentCycleId;
+  const used = completed ? [] : list.filter((c) => c.status === 'used' && inCurrentCycle(c));
+  const expired = completed ? [] : list.filter((c) => c.status === 'expired' && inCurrentCycle(c));
 
   return (
     <main className={`content-area cwallet-page ${completed ? 'is-completed' : ''}`} data-screen-label={completed ? '全部奖励' : '我的优惠券'}>

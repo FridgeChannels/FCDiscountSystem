@@ -228,11 +228,11 @@
 }
 
 .cwallet-section-label {
-  font-size: 0.72rem;
+  font-size: 0.95rem;
   font-weight: 800;
-  letter-spacing: 0.4px;
-  color: var(--text-secondary);
-  margin: 16px 4px 10px;
+  letter-spacing: 0.2px;
+  color: var(--text-primary);
+  margin: 24px 4px 12px;
 }
 
 .cwallet-empty {
@@ -464,34 +464,142 @@
 .cwticket::after { right: -7px; }
 
 /* Used / expired — compact, dimmed, no actions */
-.cwticket.is-inactive { filter: none; opacity: 0.62; margin-bottom: 0; }
+.cwticket.is-inactive {
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.03));
+  opacity: 0.65;
+  pointer-events: none;
+  margin-bottom: 0;
+}
 
-.cwticket.is-inactive:not(.is-colored) .cwticket-main {
-  background: var(--bg-color);
+.cwticket.is-inactive .cwticket-main {
+  background: #f7f7f5 !important;
+  border: 1px solid #e2e2dc !important;
+  border-right: 2px dashed #dcdcd5 !important;
   border-radius: 14px 0 0 14px;
-  padding: 9px 11px;
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  position: relative;
+  overflow: hidden;
+  height: 72px;
+  box-sizing: border-box;
 }
 
-.cwticket.is-inactive.is-colored .cwticket-main {
-  background: var(--coupon-main);
-  padding: 9px 11px;
+.cwticket.is-inactive .cwticket-value {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  color: #8a8a82 !important;
+  min-width: 76px;
 }
 
-.cwticket.is-inactive .cwticket-value b { font-size: 1.5rem; color: var(--text-secondary); }
+.cwticket.is-inactive .cwticket-value b {
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #7b7b75 !important;
+}
 
-.cwticket-meta {
-  font-size: 0.72rem;
-  color: var(--text-secondary);
-  margin-top: 7px;
+.cwticket.is-expired .cwticket-value b {
+  text-decoration: line-through;
+  text-decoration-color: #c8a2a2;
+  text-decoration-thickness: 2px;
+  color: #9d9d95 !important;
+}
+
+.cwticket.is-inactive .cwticket-value span {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #9d9d95 !important;
+}
+
+.cwticket-details {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  flex-grow: 1;
+  margin-left: 12px;
+  z-index: 2;
+  text-align: left;
+}
+
+.cwticket-code-lbl {
+  font-family: 'SF Mono', 'DM Mono', ui-monospace, monospace;
+  font-size: 0.64rem;
+  font-weight: 700;
+  color: #7b7b75;
+  letter-spacing: 0.3px;
+}
+
+.cwticket-cond-lbl {
+  font-size: 0.6rem;
+  color: #9d9d95;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.cwticket-stamp-wrapper {
+  position: absolute;
+  top: 50%;
+  left: 60%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.12;
+}
+
+.cwticket-stamp {
+  font-family: 'Outfit', 'Inter', sans-serif;
+  font-weight: 900;
+  font-size: 1.3rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border: 2px double currentColor;
+  border-radius: 4px;
+  transform: rotate(-14deg);
+  white-space: nowrap;
+}
+
+.cwticket-stamp.is-used {
+  color: #2b5c3f;
+  border-color: #2b5c3f;
+}
+
+.cwticket-stamp.is-expired {
+  color: #8b3a3a;
+  border-color: #8b3a3a;
 }
 
 .cwticket-stub.is-inactive {
-  background: #d9d3c6;
-  color: var(--text-secondary);
+  background: #ebebe6 !important;
+  color: #94948d !important;
+  border: 1px solid #e2e2dc !important;
+  border-left: none !important;
+  border-radius: 0 14px 14px 0;
+  width: 80px;
+  min-height: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
   cursor: default;
 }
 
 .cwticket-stub.is-inactive:hover { filter: none; }
+
+.cwticket-stub.is-inactive .cwticket-stub-text {
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
 
 /* Welcome and unlock settlement keep the full coupon presentation.
    Wallet / Completed use the compact horizontal list above. */
