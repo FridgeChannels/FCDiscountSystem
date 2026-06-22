@@ -3364,6 +3364,36 @@
   margin-top: 32px;
 }
 
+/* Container for multiple settlement coupons */
+.nc-settlement-coupons-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(100%, 320px);
+  margin: 28px auto 0;
+  max-height: 252px;
+  overflow-y: auto;
+  padding: 4px;
+  box-sizing: border-box;
+}
+
+/* Custom scrollbar for premium feel */
+.nc-settlement-coupons-list::-webkit-scrollbar {
+  width: 4px;
+}
+.nc-settlement-coupons-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.nc-settlement-coupons-list::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 99px;
+}
+
+/* Adjust inactive tickets when displayed inside settlement list to look perfectly aligned */
+.nc-settlement-coupons-list .cwticket.is-inactive {
+  opacity: 0.9;
+}
+
 .nc-settlement-wallet-coupon {
   grid-template-rows: 1fr;
   min-height: 268px;

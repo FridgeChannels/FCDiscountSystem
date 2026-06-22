@@ -1712,6 +1712,32 @@ export default function App() {
     ? (discounts.find((d) => d.code === claimedCode) || current)
     : current;
   const settlementDisplayCoupon = newChallenge?.coupon ?? settlementCouponRef.current ?? (newChallenge?.reason === 'redeemed' ? lockedCoupon : current);
+  const settlementDisplayCoupons = useMemo(() => {
+    if (rewardPlanId) {
+      const targetStatus = newChallenge?.reason === 'redeemed' ? 'used' : 'expired';
+      const cycleCoupons = couponWallet.filter(
+        (c) => c.cycleId === rewardPlanId && c.status === targetStatus
+      );
+      if (cycleCoupons.length > 0) return cycleCoupons;
+    }
+
+    if (devScene === 'redeemed') {
+      return [
+        { num: '30', value: '30% OFF', code: 'FC30RITUAL', status: 'used', paletteTier: 3 },
+        { num: '15', value: '15% OFF', code: 'WELCOME15', status: 'used', paletteTier: 1 },
+        { value: 'Free Shipping', code: 'SHIPFREE', status: 'used', paletteTier: 2 },
+      ];
+    }
+    if (devScene === 'expired') {
+      return [
+        { num: '15', value: '15% OFF', code: 'WELCOME15', status: 'expired', paletteTier: 1 },
+        { value: 'Free Shipping', code: 'SHIPFREE', status: 'expired', paletteTier: 2 },
+      ];
+    }
+
+    const single = newChallenge?.coupon ?? settlementCouponRef.current;
+    return single ? [single] : [];
+  }, [newChallenge, couponWallet, rewardPlanId, devScene]);
   const isCurrentCouponClaimed = showClaimedScreen;
   const isExpired = countdownSeconds <= 0;
   const time = useMemo(() => formatCountdown(countdownSeconds), [countdownSeconds]);
@@ -3402,6 +3428,7 @@ export default function App() {
         <NewChallengeUnlocked
           reason={newChallenge.reason}
           coupon={settlementDisplayCoupon}
+          coupons={settlementDisplayCoupons}
           onStart={handleStartNewChallenge}
           onDismiss={() => setNewChallenge(null)}
         />
@@ -3742,15 +3769,15 @@ function HeaderBase({
   );
 }
 
-function NewChallengeUnlocked({ reason, onStart, onDismiss, coupon }) {
+function NewChallengeUnlocked({ reason, onStart, onDismiss, coupon, coupons }) {
   const redeemed = reason === 'redeemed';
   const expired = reason === 'expired';
-  const settlementCoupon = coupon ?? null;
-  const discountNum = settlementCoupon?.num ? String(settlementCoupon.num).replace(/%/g, '') : '';
-  const stamp = redeemed ? 'USED' : 'EARNED';
-  const couponSubtitle = settlementCoupon?.code
-    ? `Code: ${settlementCoupon.code}`
-    : (settlementCoupon?.value || 'Sitewide · No minimum');
+  
+  const settlementCoupons = Array.isArray(coupons)
+    ? coupons.filter(Boolean)
+    : coupon
+    ? [coupon]
+    : [];
 
   return (
     <div className={`new-challenge-overlay nc-settlement ${redeemed ? 'is-redeemed' : 'is-expired'}`} role="dialog" aria-label={redeemed ? 'Reward used' : 'Round complete'} data-screen-label={redeemed ? '奖励已使用' : '回合已结束'}>
@@ -3781,28 +3808,17 @@ function NewChallengeUnlocked({ reason, onStart, onDismiss, coupon }) {
           </p>
         </section>
 
-        {settlementCoupon ? (
-          <div className="nc-settlement-coupon-wrap coupon-wrap current" data-coupon-theme={COUPON_THEME}>
-            <div
-              className={`coupon coupon-current nc-settlement-wallet-coupon ${redeemed ? 'is-used' : 'is-earned'}`}
-              data-tier={tierForDiscount(discountNum || settlementCoupon.num)}
-            >
-              <div className="coupon-face">
-                <span className="coupon-kicker">Your Reward</span>
-                {discountNum ? (
-                  <>
-                    <span className="stub-value">{discountNum}<small>%</small></span>
-                    <span className="stub-off">OFF</span>
-                  </>
-                ) : (
-                  <span className="stub-value stub-value--text">{settlementCoupon.value || 'Reward'}</span>
-                )}
-                <span className="coupon-title">{couponSubtitle}</span>
-              </div>
-              <div className="nc-settlement-coupon-stamp">{stamp}</div>
-            </div>
+        {settlementCoupons.length > 0 && (
+          <div className="nc-settlement-coupons-list">
+            {settlementCoupons.map((c) => (
+              <InactiveTicket
+                key={c.code || c.mockCode || c.couponId || c.value}
+                coupon={c}
+                label={redeemed ? 'Used' : 'Expired'}
+              />
+            ))}
           </div>
-        ) : null}
+        )}
 
         <div className="nc-footer">
           <button className="nc-btn-start" type="button" onClick={onStart}>
