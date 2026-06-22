@@ -464,14 +464,16 @@
 .cwticket::after { right: -7px; }
 
 /* Used / expired — compact, dimmed, no actions */
-.cwticket.is-inactive {
+.cwticket.is-inactive,
+.cwticket.is-settlement-used {
   filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.03));
   opacity: 0.65;
   pointer-events: none;
   margin-bottom: 0;
 }
 
-.cwticket.is-inactive .cwticket-main {
+.cwticket.is-inactive .cwticket-main,
+.cwticket.is-settlement-used .cwticket-main {
   background: #f7f7f5 !important;
   border: 1px solid #e2e2dc !important;
   border-right: 2px dashed #dcdcd5 !important;
@@ -486,7 +488,8 @@
   box-sizing: border-box;
 }
 
-.cwticket.is-inactive .cwticket-value {
+.cwticket.is-inactive .cwticket-value,
+.cwticket.is-settlement-used .cwticket-value {
   display: flex;
   align-items: baseline;
   gap: 3px;
@@ -494,7 +497,8 @@
   min-width: 76px;
 }
 
-.cwticket.is-inactive .cwticket-value b {
+.cwticket.is-inactive .cwticket-value b,
+.cwticket.is-settlement-used .cwticket-value b {
   font-family: var(--font-serif);
   font-size: 1.35rem;
   font-weight: 800;
@@ -509,7 +513,8 @@
   color: #9d9d95 !important;
 }
 
-.cwticket.is-inactive .cwticket-value span {
+.cwticket.is-inactive .cwticket-value span,
+.cwticket.is-settlement-used .cwticket-value span {
   font-size: 0.68rem;
   font-weight: 700;
   color: #9d9d95 !important;
@@ -576,7 +581,8 @@
   border-color: #8b3a3a;
 }
 
-.cwticket-stub.is-inactive {
+.cwticket-stub.is-inactive,
+.cwticket.is-settlement-used .cwticket-stub {
   background: #ebebe6 !important;
   color: #94948d !important;
   border: 1px solid #e2e2dc !important;
@@ -594,11 +600,114 @@
 
 .cwticket-stub.is-inactive:hover { filter: none; }
 
-.cwticket-stub.is-inactive .cwticket-stub-text {
+.cwticket-stub.is-inactive .cwticket-stub-text,
+.cwticket.is-settlement-used .cwticket-stub .cwticket-stub-text {
   font-size: 0.64rem;
   font-weight: 800;
   letter-spacing: 0.8px;
   text-transform: uppercase;
+}
+
+/* --- Earned/Active coupon in settlement screen --- */
+.cwticket.is-settlement-earned {
+  filter: drop-shadow(0 6px 16px rgba(45, 51, 43, 0.08));
+  opacity: 1;
+  pointer-events: none;
+  margin-bottom: 0;
+}
+
+.cwticket.is-settlement-earned .cwticket-main {
+  background: var(--coupon-main);
+  border: 1px solid color-mix(in srgb, var(--coupon-accent) 42%, transparent);
+  border-right: 2px dashed color-mix(in srgb, var(--coupon-ink) 34%, transparent);
+  border-radius: 14px 0 0 14px;
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  position: relative;
+  overflow: hidden;
+  height: 72px;
+  box-sizing: border-box;
+}
+
+.cwticket.is-settlement-earned .cwticket-value {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  color: var(--coupon-ink) !important;
+  min-width: 76px;
+}
+
+.cwticket.is-settlement-earned .cwticket-value b {
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--coupon-ink) !important;
+}
+
+.cwticket.is-settlement-earned .cwticket-value span {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--coupon-ink) !important;
+  opacity: 0.85;
+}
+
+.cwticket.is-settlement-earned .cwticket-code-lbl {
+  font-family: 'SF Mono', 'DM Mono', ui-monospace, monospace;
+  font-size: 0.64rem;
+  font-weight: 700;
+  color: var(--coupon-ink);
+  letter-spacing: 0.3px;
+  opacity: 0.9;
+  text-align: left;
+}
+
+.cwticket.is-settlement-earned .cwticket-cond-lbl {
+  font-size: 0.6rem;
+  color: var(--coupon-ink);
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+  text-align: left;
+}
+
+.cwticket.is-settlement-earned .cwticket-stub {
+  background:
+    linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--coupon-accent) 88%, white 12%) 0%,
+      color-mix(in srgb, var(--coupon-accent) 82%, var(--coupon-main) 18%) 48%,
+      color-mix(in srgb, var(--coupon-accent) 72%, black 28%) 100%
+    );
+  color: var(--coupon-stub-ink, #fff);
+  border: 1px solid color-mix(in srgb, var(--coupon-accent) 42%, transparent);
+  border-left: none !important;
+  border-radius: 0 14px 14px 0;
+  width: 80px;
+  min-height: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.16);
+}
+
+.cwticket.is-settlement-earned .cwticket-stub .cwticket-stub-text {
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.cwticket.is-settlement-earned .cwticket-stamp.is-earned {
+  color: var(--coupon-ink);
+  border-color: var(--coupon-ink);
+  opacity: 0.15;
 }
 
 /* Welcome and unlock settlement keep the full coupon presentation.

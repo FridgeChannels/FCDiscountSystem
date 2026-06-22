@@ -3811,10 +3811,10 @@ function NewChallengeUnlocked({ reason, onStart, onDismiss, coupon, coupons }) {
         {settlementCoupons.length > 0 && (
           <div className="nc-settlement-coupons-list">
             {settlementCoupons.map((c) => (
-              <InactiveTicket
+              <SettlementTicket
                 key={c.code || c.mockCode || c.couponId || c.value}
                 coupon={c}
-                label={redeemed ? 'Used' : 'Expired'}
+                status={redeemed ? 'used' : 'earned'}
               />
             ))}
           </div>
@@ -4691,6 +4691,41 @@ function InactiveTicket({ coupon, label }) {
       </div>
       <div className="cwticket-stub is-inactive">
         <span className="cwticket-stub-text">{label}</span>
+      </div>
+      <span className="cwticket-logo" aria-hidden="true" />
+    </div>
+  );
+}
+
+function SettlementTicket({ coupon, status }) {
+  const num = couponDiscountNum(coupon);
+  const conditions = coupon.conditions || 'Sitewide · No minimum';
+  const displayCode = coupon.code || coupon.mockCode || 'DEVCODE';
+  const isUsed = status === 'used';
+
+  return (
+    <div className={`cwticket ${isUsed ? 'is-settlement-used' : 'is-settlement-earned is-colored'}`} {...couponPaletteProps(coupon)}>
+      <div className="cwticket-main">
+        <div className="cwticket-value">
+          {num ? (
+            <>
+              <b>{num}%</b>
+              <span>OFF</span>
+            </>
+          ) : (
+            <b>{coupon.value || 'Reward'}</b>
+          )}
+        </div>
+        <div className="cwticket-details">
+          <div className="cwticket-code-lbl">CODE: {displayCode}</div>
+          <div className="cwticket-cond-lbl">{conditions}</div>
+        </div>
+        <div className="cwticket-stamp-wrapper">
+          <div className={`cwticket-stamp is-${status}`}>{isUsed ? 'Used' : 'Earned'}</div>
+        </div>
+      </div>
+      <div className="cwticket-stub">
+        <span className="cwticket-stub-text">{isUsed ? 'Used' : 'Earned'}</span>
       </div>
       <span className="cwticket-logo" aria-hidden="true" />
     </div>
