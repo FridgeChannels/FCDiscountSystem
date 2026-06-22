@@ -14,15 +14,21 @@ export function isDevPreviewEnabled() {
 }
 
 export function shouldShowDevToolbar() {
-  if (!isDevPreviewEnabled()) return false;
-  const params = new URLSearchParams(window.location.search);
-  return params.get('toolbar') === '1';
+  return isDevPreviewEnabled();
 }
 
 export function getDevScene() {
   if (!isDevPreviewEnabled()) return '';
   const params = new URLSearchParams(window.location.search);
-  return params.get('scene')?.trim() ?? '';
+  const scene = params.get('scene')?.trim() ?? '';
+  if (scene === 'best' || scene === 'claimed' || scene === 'claim') {
+    params.set('scene', 'home');
+    const url = new URL(window.location.href);
+    url.search = params.toString();
+    window.history.replaceState({}, '', url);
+    return 'home';
+  }
+  return scene;
 }
 
 export function navigateToDevScene(sceneId) {
@@ -51,7 +57,6 @@ export function applyDevSceneUi(ui, ctx) {
     setActiveModal,
     setSurveyStep,
     setNotification,
-    setClaimConfirm,
     setShowReceipt,
     setReceiptCoupon,
     setPendingPoints,
@@ -94,7 +99,6 @@ export function applyDevSceneUi(ui, ctx) {
   setActiveModal(ui.activeModal ?? null);
   setSurveyStep(ui.surveyStep ?? 0);
   setNotification(ui.notification ?? null);
-  setClaimConfirm(ui.claimConfirm ?? null);
   setGameStart(null);
   setGameModalTitle('Play & Earn');
 

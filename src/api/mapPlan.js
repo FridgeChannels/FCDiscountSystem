@@ -73,6 +73,36 @@ export function couponWithCode(coupon, code) {
   return code ? { ...coupon, code } : coupon;
 }
 
+/** 折扣百分比（无法解析时为 0），用于过滤掉占位的 0% 券。 */
+function couponPercent(coupon) {
+  const raw = coupon?.num ?? coupon?.value;
+  const parsed = parseInt(String(raw ?? '').replace(/[^\d]/g, ''), 10);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+/**
+ * 把已映射的 discounts（每档一张券）适配成礼包模型（后端不动，前端适配）：
+ *  - startPack：pointsThreshold===0 且有有效折扣的券 —— 开局直接拥有，无需做任务。
+ *  - targetPack：pointsThreshold>0 的券打成「一个」礼包，解锁门槛取其中最大阈值
+ *    —— 做任务攒满金币后一次性拿到包内全部券。
+ * 任一礼包为空时返回 null。
+ */
+export function buildPacksFromDiscounts(discounts = []) {
+  const list = (discounts ?? []).filter((d) => couponPercent(d) > 0);
+  const startCoupons = list.filter((d) => (d.target ?? 0) === 0);
+  const targetCoupons = list.filter((d) => (d.target ?? 0) > 0);
+
+  const startPack = startCoupons.length ? { coupons: startCoupons } : null;
+  const targetPack = targetCoupons.length
+    ? {
+        threshold: Math.max(...targetCoupons.map((d) => d.target ?? 0)),
+        coupons: targetCoupons,
+      }
+    : null;
+
+  return { startPack, targetPack };
+}
+
 /** 结算页（Reward Used / Round Complete）展示用的券信息 */
 export function resolveSettlementCoupon({
   discounts = [],
@@ -246,6 +276,7 @@ export function mapPlanToViewModel(plan, claimRecord = null, magnetBrandParam = 
   }));
 
   const discounts = applyClaimToDiscounts(baseDiscounts, claimForCycle);
+  const { startPack, targetPack } = buildPacksFromDiscounts(discounts);
 
   const tierIndex = ladder.findIndex((step) => step.tier === plan.currentTier);
   const currentStepIndex =
@@ -265,6 +296,8 @@ export function mapPlanToViewModel(plan, claimRecord = null, magnetBrandParam = 
     touchId: null,
     points: plan.pointsBalance,
     discounts,
+    startPack,
+    targetPack,
     currentStepIndex,
     countdownSeconds,
     brand: mergeBrand(plan.customerBrand, magnetBrandParam),

@@ -16,7 +16,13 @@ const activeBtnStyle = {
   color: '#fff',
 };
 
-export default function DevToolbar({ activeScene, onSelectScene, onResetFirstLogin }) {
+export default function DevToolbar({
+  activeScene,
+  activeShortcut,
+  onSelectScene,
+  onOpenWalletPreview,
+  onResetFirstLogin,
+}) {
   function selectScene(sceneId) {
     navigateToDevScene(sceneId);
     onSelectScene(sceneId);
@@ -31,9 +37,10 @@ export default function DevToolbar({ activeScene, onSelectScene, onResetFirstLog
     <div
       style={{
         position: 'fixed',
-        left: 10,
-        right: 10,
+        left: '50%',
+        width: 'min(720px, calc(100vw - 20px))',
         bottom: 10,
+        transform: 'translateX(-50%)',
         zIndex: 9999,
         display: 'flex',
         flexDirection: 'column',
@@ -46,7 +53,7 @@ export default function DevToolbar({ activeScene, onSelectScene, onResetFirstLog
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ color: '#9fe1cb', letterSpacing: 1 }}>DEV</span>
+        <span style={{ color: '#9fe1cb', letterSpacing: 1 }}>页面状态</span>
         {activeScene ? (
           <span style={{ color: '#b8c7b8' }}>scene={activeScene}</span>
         ) : (
@@ -81,6 +88,14 @@ export default function DevToolbar({ activeScene, onSelectScene, onResetFirstLog
             {scene.label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={onOpenWalletPreview}
+          style={activeShortcut === 'wallet' ? activeBtnStyle : btnStyle}
+          title="Preview My coupons"
+        >
+          My Coupons
+        </button>
       </div>
     </div>
   );

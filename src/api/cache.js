@@ -5,6 +5,8 @@ const REWARD_PLAN_CACHE_VERSION = 3;
 const CLAIM_RECORD_VERSION = 1;
 const PROFILE_CACHE_PREFIX = 'fc.profile.';
 const PROFILE_CACHE_VERSION = 1;
+const COUPON_WALLET_PREFIX = 'fc.wallet.';
+const COUPON_WALLET_VERSION = 1;
 
 function canUseBrowserStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -82,6 +84,89 @@ function welcomeKey(touchId) {
 
 function claimedKey(touchId) {
   return `fc.claimed_code.${touchId}`;
+}
+
+function couponWalletKey(touchId) {
+  return `${COUPON_WALLET_PREFIX}${touchId}`;
+}
+
+/**
+ * 「我的券包」：用户跨轮次持有的全部券。每张券形如
+ * { packId, code, num, value, conditions, expiresAt, status, source, couponId, cycleId, addedAt }。
+ * status: 'active' | 'used' | 'expired'；source: 'start' | 'target'。
+ */
+function normalizeWalletCoupon(raw) {
+  if (!raw || typeof raw !== 'object' || !raw.code) return null;
+  return {
+    packId: raw.packId ? String(raw.packId) : undefined,
+    paletteTier: Number.isInteger(raw.paletteTier) ? Math.max(0, Math.min(5, raw.paletteTier)) : undefined,
+    code: String(raw.code),
+    num: raw.num != null ? String(raw.num) : undefined,
+    value: raw.value != null ? String(raw.value) : undefined,
+    conditions: raw.conditions != null ? String(raw.conditions) : undefined,
+    expiresAt: raw.expiresAt ? String(raw.expiresAt) : undefined,
+    status: raw.status === 'used' || raw.status === 'expired' ? raw.status : 'active',
+    source: raw.source === 'target' ? 'target' : 'start',
+    couponId: raw.couponId ? String(raw.couponId) : undefined,
+    cycleId: raw.cycleId ? String(raw.cycleId) : undefined,
+    addedAt: raw.addedAt ? String(raw.addedAt) : new Date().toISOString(),
+  };
+}
+
+export function readCouponWallet(touchId) {
+  if (!canUseBrowserStorage() || !touchId) return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(couponWalletKey(touchId)) ?? 'null');
+    if (parsed?.version !== COUPON_WALLET_VERSION || !Array.isArray(parsed.coupons)) return [];
+    return parsed.coupons.map(normalizeWalletCoupon).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+export function writeCouponWallet(touchId, coupons) {
+  if (!canUseBrowserStorage() || !touchId || !Array.isArray(coupons)) return;
+  try {
+    window.localStorage.setItem(
+      couponWalletKey(touchId),
+      JSON.stringify({
+        version: COUPON_WALLET_VERSION,
+        coupons: coupons.map(normalizeWalletCoupon).filter(Boolean),
+      }),
+    );
+  } catch {
+    // Wallet persistence is best-effort.
+  }
+}
+
+/** 合并一组券进券包，按 code 去重（已存在则更新非空字段，保留原 status）。返回合并后的列表。 */
+export function upsertCouponsToWallet(touchId, coupons) {
+  const incoming = (Array.isArray(coupons) ? coupons : []).map(normalizeWalletCoupon).filter(Boolean);
+  if (!incoming.length) return readCouponWallet(touchId);
+  const existing = readCouponWallet(touchId);
+  const byCode = new Map(existing.map((c) => [c.code, c]));
+  for (const coupon of incoming) {
+    const prev = byCode.get(coupon.code);
+    byCode.set(coupon.code, prev ? { ...prev, ...coupon, status: prev.status } : coupon);
+  }
+  const merged = Array.from(byCode.values());
+  writeCouponWallet(touchId, merged);
+  return merged;
+}
+
+/** 更新券包中某张券的状态（如核销 → 'used'）。返回更新后的列表。 */
+export function setWalletCouponStatus(touchId, code, status) {
+  if (!code) return readCouponWallet(touchId);
+  const next = readCouponWallet(touchId).map((c) =>
+    c.code === code ? { ...c, status } : c,
+  );
+  writeCouponWallet(touchId, next);
+  return next;
+}
+
+export function clearCouponWallet(touchId) {
+  if (!canUseBrowserStorage() || !touchId) return;
+  window.localStorage.removeItem(couponWalletKey(touchId));
 }
 
 /** 每个 magnet 独立的 Welcome 完成标记 */

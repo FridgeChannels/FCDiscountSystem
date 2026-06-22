@@ -1,10 +1,10 @@
 /** Dev-only RewardPlan fixtures. Shape matches engine RewardPlan for mapPlanToViewModel(). */
 
 const BRAND = {
-  name: 'Ritual',
-  logoUrl: 'http://localhost:8789/brand-assets/ritual-logo.svg',
-  primaryColor: '#4f8a4a',
-  shopUrl: 'https://ritual.com',
+  name: 'Aurelia Skin',
+  logoUrl: null,
+  primaryColor: '#6f3f49',
+  shopUrl: '#',
 };
 
 const GAMES = [
@@ -164,7 +164,7 @@ export const DEV_FIXTURES = {
       cycleExpiresAt: isoAfter(12 * 3600 * 1000),
     }),
 
-  best: () =>
+  unlocked: () =>
     basePlan({
       pointsBalance: 125,
       currentTier: 3,
@@ -172,19 +172,12 @@ export const DEV_FIXTURES = {
       targetCouponId: 'camp_t3',
     }),
 
-  claimed: () =>
+  completed: () =>
     basePlan({
       pointsBalance: 125,
       currentTier: 3,
       currentCouponId: 'camp_t3',
-      observedCoupon: observedCoupon({
-        couponCode: 'FC30RITUAL',
-        couponId: 'camp_t3',
-        tier: 3,
-        discountValue: '30',
-        status: 'assigned',
-        claimedAt: new Date().toISOString(),
-      }),
+      targetCouponId: 'camp_t3',
     }),
 
   receipt: () =>
@@ -209,8 +202,6 @@ export const DEV_FIXTURES = {
     }),
 
   survey: () => basePlan({ pointsBalance: 30, currentTier: 1, taskOptions: { includeSurvey: true, gameCount: 2 } }),
-
-  claim: () => basePlan({ pointsBalance: 125, currentTier: 3, currentCouponId: 'camp_t3' }),
 
   redeemed: () =>
     basePlan({

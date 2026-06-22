@@ -17,7 +17,6 @@ import { DEV_FIXTURES } from './fixtures.js';
  * @property {number} [surveyStep]
  * @property {{ reason: 'redeemed' | 'expired' }} [newChallenge]
  * @property {{ title: string, message: string, icon: string }} [notification]
- * @property {{ onConfirm: () => void, discount: string | number, hasNextTier?: boolean, nextDiscount?: string | number | null }} [claimConfirm]
  * @property {{ connected: boolean, shopifyCustomerId?: string, shopDomain?: string, shop?: string, email?: string }} [shopifyStatus]
  */
 
@@ -90,21 +89,16 @@ export const DEV_SCENES = [
     ui: { welcomeStep: 3, introActive: false, setWelcomeCompleted: true, clearClaimed: true },
   },
   {
-    id: 'best',
-    label: 'Best',
-    fixture: DEV_FIXTURES.best,
+    id: 'unlocked',
+    label: '礼包解锁',
+    fixture: DEV_FIXTURES.unlocked,
     ui: { welcomeStep: 3, introActive: false, setWelcomeCompleted: true, clearClaimed: true },
   },
   {
-    id: 'claimed',
-    label: 'Claimed',
-    fixture: DEV_FIXTURES.claimed,
-    ui: {
-      welcomeStep: 3,
-      introActive: false,
-      setWelcomeCompleted: true,
-      claimedCode: 'FC30RITUAL',
-    },
+    id: 'completed',
+    label: 'Completed',
+    fixture: DEV_FIXTURES.completed,
+    ui: { welcomeStep: 3, introActive: false, setWelcomeCompleted: true, clearClaimed: true },
   },
   {
     id: 'receipt',
@@ -142,18 +136,6 @@ export const DEV_SCENES = [
       clearClaimed: true,
       activeModal: 'survey',
       surveyStep: 0,
-    },
-  },
-  {
-    id: 'claim',
-    label: 'Confirm',
-    fixture: DEV_FIXTURES.claim,
-    ui: {
-      welcomeStep: 3,
-      introActive: false,
-      setWelcomeCompleted: true,
-      clearClaimed: true,
-      claimConfirm: { onConfirm: () => {}, discount: '30', hasNextTier: false, nextDiscount: null },
     },
   },
   {

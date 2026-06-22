@@ -26,9 +26,13 @@ import {
   clearLegacyMagnetStorage,
   readCachedProfile,
   writeCachedProfile,
+  readCouponWallet,
+  upsertCouponsToWallet,
+  clearCouponWallet,
 } from './api/cache.js';
 import {
   applyClaimToDiscounts,
+  buildPacksFromDiscounts,
   couponWithCode,
   mapPlanToViewModel,
   nextTierThresholdFromDiscounts,
@@ -44,6 +48,12 @@ import {
   resolveDevScene,
   shouldShowDevToolbar,
 } from './dev/index.js';
+import {
+  MOCK_CURRENT_PACK,
+  MOCK_TARGET_PACK,
+  mockPackWalletEntries,
+  walletHasPack,
+} from './dev/couponPacks.js';
 import { dbg, dbgError } from './lib/debug.js';
 import { applyBrandTheme, brandFromMagnetParam } from './lib/brandTheme.js';
 import { preloadRuntimeManifest } from './lib/runtimeRegistry.js';
@@ -62,7 +72,8 @@ const Challenges = memo(
   ChallengesBase,
   (prev, next) =>
     prev.challenges === next.challenges &&
-    prev.dailyCapReached === next.dailyCapReached,
+    prev.dailyCapReached === next.dailyCapReached &&
+    prev.pointsNeeded === next.pointsNeeded,
 );
 const RulesFooter = memo(
   RulesFooterBase,
@@ -221,9 +232,42 @@ const INITIAL_DISCOUNTS = [
 
 const REWARD_LADDER_PERCENTAGES = [5, 10, 15, 20, 25, 30];
 
-const COUPON_THEME = 'pop'; // Switch to 'dtc' to apply the premium coupon palette globally.
+const COUPON_THEME = 'dtc'; // Premium beauty / skincare coupon palette from fc-tiers.css.
 
-const FALLBACK_CHALLENGES = [];
+const LOCAL_PREVIEW_CHALLENGES = [
+  {
+    id: 'dev_memory_match',
+    type: 'game',
+    badge: 'Game 1',
+    icon: '🃏',
+    title: 'Card Match',
+    desc: '',
+    reward: '+pts',
+    difficultyLevel: 1,
+    rewardPotentialLevel: 1,
+    cta: 'Play Now',
+    gameInstanceId: 'dev_memory_match',
+    templateKey: 'memory_match',
+  },
+  {
+    id: 'dev_bridge_cross',
+    type: 'game',
+    badge: 'Game 2',
+    icon: '🌉',
+    title: 'Bridge Cross',
+    desc: '',
+    reward: '+pts',
+    difficultyLevel: 2,
+    rewardPotentialLevel: 2,
+    cta: 'Play Now',
+    gameInstanceId: 'dev_bridge_cross',
+    templateKey: 'bridge_cross',
+  },
+];
+
+// 本地设计预览不能因为远端活动尚未配置好就留下整块空白。
+// 生产环境仍以服务端任务为准；若为空，Challenges 会展示明确的空状态。
+const FALLBACK_CHALLENGES = import.meta.env.DEV ? LOCAL_PREVIEW_CHALLENGES : [];
 
 function copyText(text) {
   if (navigator.clipboard?.writeText) {
@@ -271,6 +315,42 @@ function tierForDiscount(num) {
   const n = parseInt(num, 10);
   if (Number.isNaN(n)) return 0;
   return Math.max(0, Math.min(5, Math.round((n - 15) / 5)));
+}
+
+function couponPaletteTier(coupon) {
+  if (Number.isInteger(coupon?.paletteTier)) {
+    return Math.max(0, Math.min(5, coupon.paletteTier));
+  }
+  const seed = String(
+    coupon?.couponId
+    ?? coupon?.campaignId
+    ?? coupon?.code
+    ?? coupon?.mockCode
+    ?? `${coupon?.value ?? ''}-${coupon?.num ?? ''}`,
+  );
+  let hash = 2166136261;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % 6;
+}
+
+function assignCouponPaletteTiers(coupons = []) {
+  const used = new Set();
+  return coupons.map((coupon) => {
+    let tier = couponPaletteTier(coupon);
+    while (used.has(tier) && used.size < 6) tier = (tier + 1) % 6;
+    used.add(tier);
+    return { ...coupon, paletteTier: tier };
+  });
+}
+
+function couponPaletteProps(coupon) {
+  return {
+    'data-coupon-theme': COUPON_THEME,
+    'data-tier': String(couponPaletteTier(coupon)),
+  };
 }
 
 function formatCountdown(totalSeconds) {
@@ -400,6 +480,8 @@ export default function App() {
   const zoomCenteredOpenRef = useRef(false);
   const zoomAfterCloseRef = useRef(null);
   const settlementCouponRef = useRef(null);
+  const autoIssuedPackRef = useRef(null);
+  const unlockedPreviewShownRef = useRef(false);
   const shopifyPendingRef = useRef(null);
   const devPreviewActiveRef = useRef(false);
   const devSceneRef = useRef('');
@@ -471,6 +553,11 @@ export default function App() {
 
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [leaderboardData, setLeaderboardData] = useState(null);
+  const [walletOpen, setWalletOpen] = useState(false);
+  const [couponWallet, setCouponWallet] = useState(() => readCouponWallet(getTouchId()));
+  const [walletCopiedCode, setWalletCopiedCode] = useState(null);
+  // 礼包领取结果:null | { pack, coupons }
+  const [giftReveal, setGiftReveal] = useState(null);
   const [coinGainSignal, setCoinGainSignal] = useState(0);
   const [lastGainAmount, setLastGainAmount] = useState(0);
   const [unlockToastSignal, setUnlockToastSignal] = useState(0);
@@ -481,6 +568,7 @@ export default function App() {
     setUserProfile(normalizeProfile(readCachedProfile(touchId)));
     setPlayerProfile(null);
     setLeaderboardData(null);
+    setCouponWallet(readCouponWallet(touchId));
   }, [touchId]);
 
   const displayProfile = useMemo(() => {
@@ -751,9 +839,35 @@ export default function App() {
   // 已领取但后端未核销的券码。存在时,每次登录都强制停留在最低折扣页,直到后端标记核销。
   const [claimedCode, setClaimedCode] = useState(null);
   // 确认领取弹窗:{ onConfirm } —— 点击「确认领取」后执行的领取动作。
-  const [claimConfirm, setClaimConfirm] = useState(null);
   // 状态D · 新挑战开启过渡页:null | { reason: 'redeemed' | 'expired', coupon?: object }
   const [newChallenge, setNewChallenge] = useState(null);
+
+  // 把已带券码(已领取/已签发)的券同步进「我的券包」。target 礼包券 source='target',否则 'start'。
+  useEffect(() => {
+    const coded = (discounts ?? []).filter((d) => d.code);
+    if (!coded.length) return;
+    const expiresAt = countdownSeconds > 0
+      ? new Date(Date.now() + countdownSeconds * 1000).toISOString()
+      : undefined;
+    const entries = coded.map((d) => ({
+      code: d.code,
+      num: d.num != null ? String(d.num) : undefined,
+      value: d.value,
+      conditions: d.conditions,
+      expiresAt,
+      status: 'active',
+      source: (d.target ?? 0) > 0 ? 'target' : 'start',
+      couponId: d.couponId ?? d.campaignId,
+    }));
+    setCouponWallet(upsertCouponsToWallet(touchId, entries));
+    // countdownSeconds 仅用于推导过期时间,不入依赖以免每秒重跑。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [discounts, touchId]);
+
+  const walletAvailableCount = useMemo(
+    () => couponWallet.filter((coupon) => coupon.status === 'active').length,
+    [couponWallet],
+  );
 
   const syncFromPlan = useCallback((plan, { fromCache = false, devPreview = false, fromNewChallengeRenew = false } = {}) => {
     const renewInProgress = Boolean(newChallengeRenewRef.current || renewFlowActiveRef.current);
@@ -1025,7 +1139,6 @@ export default function App() {
     setShowReceipt(false);
     setReceiptCoupon(null);
     setZoomActive(false);
-    setClaimConfirm(null);
     setNotification(null);
     setActiveModal(null);
 
@@ -1042,7 +1155,6 @@ export default function App() {
         setActiveModal,
         setSurveyStep,
         setNotification,
-        setClaimConfirm,
         setShowReceipt,
         setReceiptCoupon,
         setPendingPoints,
@@ -1471,6 +1583,89 @@ export default function App() {
     : (nextThreshold != null ? discounts.find((d) => d.tier === currentTier + 1) ?? null : null);
   const progressPct = nextThreshold != null && targetPoints > 0 ? Math.min((points / targetPoints) * 100, 100) : 100;
   const delta = nextThreshold != null ? Math.max(targetPoints - points, 0) : 0;
+
+  // ——— 礼包模型(新):首页只关心 target 礼包的解锁进度,所有券进券包 ———
+  const derivedPacks = useMemo(() => buildPacksFromDiscounts(discounts), [discounts]);
+  const currentPack = useMemo(() => {
+    if (devScene) return { ...MOCK_CURRENT_PACK, coupons: assignCouponPaletteTiers(MOCK_CURRENT_PACK.coupons) };
+    if (!derivedPacks.startPack) return null;
+    return {
+      id: `start-${rewardPlanId ?? 'local'}`,
+      type: 'start',
+      title: 'Your welcome gift',
+      subtitle: 'Your current discounts are ready to claim.',
+      coupons: assignCouponPaletteTiers(derivedPacks.startPack.coupons),
+    };
+  }, [derivedPacks.startPack, devScene, rewardPlanId]);
+  const targetPack = useMemo(() => {
+    if (devScene) return { ...MOCK_TARGET_PACK, coupons: assignCouponPaletteTiers(MOCK_TARGET_PACK.coupons) };
+    if (!derivedPacks.targetPack) return null;
+    return {
+      id: `target-${rewardPlanId ?? 'local'}`,
+      type: 'target',
+      title: 'Your target gift',
+      subtitle: 'Complete challenges to unlock the whole pack.',
+      ...derivedPacks.targetPack,
+      coupons: assignCouponPaletteTiers(derivedPacks.targetPack.coupons),
+    };
+  }, [derivedPacks.targetPack, devScene, rewardPlanId]);
+  const targetThreshold = targetPack?.threshold ?? null;
+  const targetCoupons = targetPack?.coupons ?? [];
+  const targetCouponCount = targetCoupons.length;
+  const targetUnlocked = targetThreshold != null && points >= targetThreshold;
+  const currentPackClaimed = walletHasPack(couponWallet, currentPack?.id);
+  const targetClaimed = walletHasPack(couponWallet, targetPack?.id);
+  const currentPackIssuedCoupons = useMemo(() => {
+    if (!currentPack) return [];
+    const issued = couponWallet.filter((coupon) => coupon.packId === currentPack.id);
+    return currentPack.coupons.map((coupon) => {
+      const matched = issued.find((entry) => entry.couponId === coupon.couponId);
+      return matched
+        ? { ...coupon, ...matched, paletteTier: matched.paletteTier ?? coupon.paletteTier }
+        : coupon;
+    });
+  }, [couponWallet, currentPack]);
+  const displayedCouponWallet = useMemo(() => {
+    const completedPreviewWallet = devScene === 'completed'
+      ? [
+          ...mockPackWalletEntries(currentPack),
+          ...mockPackWalletEntries(targetPack),
+        ]
+      : [];
+    const walletByCode = new Map(
+      [...couponWallet, ...completedPreviewWallet]
+        .filter((coupon) => coupon?.code)
+        .map((coupon) => [coupon.code, coupon]),
+    );
+    const paletteByCouponId = new Map(
+      [...(currentPack?.coupons ?? []), ...(targetPack?.coupons ?? [])]
+        .filter((coupon) => coupon.couponId)
+        .map((coupon) => [coupon.couponId, coupon.paletteTier]),
+    );
+    return [...walletByCode.values()].map((coupon) => ({
+      ...coupon,
+      paletteTier: coupon.paletteTier ?? paletteByCouponId.get(coupon.couponId),
+    }));
+  }, [couponWallet, currentPack, targetPack, devScene]);
+  const targetProgressPct = targetThreshold ? Math.min((points / targetThreshold) * 100, 100) : 100;
+  const targetDelta = targetThreshold ? Math.max(targetThreshold - points, 0) : 0;
+  const completedMode = devScene === 'completed' || (targetUnlocked && targetClaimed && !giftReveal);
+  const showRewardsPage = walletOpen || completedMode;
+
+  useEffect(() => {
+    if (devScene !== 'unlocked') {
+      unlockedPreviewShownRef.current = false;
+      return;
+    }
+    if (unlockedPreviewShownRef.current || !targetPack) return;
+    unlockedPreviewShownRef.current = true;
+    setWalletOpen(false);
+    setGiftReveal({
+      pack: targetPack,
+      coupons: mockPackWalletEntries(targetPack),
+    });
+  }, [devScene, targetPack]);
+
   // 最高档:后端 currentTier 已是顶级,或积分已达到阶梯最高门槛(currentTier 可能尚未刷新)
   const topTierStep = discounts[discounts.length - 1];
   const reachedTopByPoints = topTierStep != null && points >= (topTierStep.target ?? 0);
@@ -1548,13 +1743,14 @@ export default function App() {
     // 有效期归零:解除已领取锁定,从状态C回到状态A,开启新一轮挑战。
     clearClaimedCode(touchId);
     setClaimedCode(null);
-    setClaimConfirm(null);
   }
 
   // 完整重置回首登起点(开场礼盒 + 欢迎流)。
   function resetToFirstLogin() {
     clearWelcomeCompleted(touchId);
     clearClaimedCode(touchId);
+    clearCouponWallet(touchId);
+    setCouponWallet([]);
     setClaimedCode(null);
     resetRound();                       // 刷新折扣档位 / 倒计时 / 清各类卡片
     setPoints(0);                       // 首登从 0 金币开始累积
@@ -1612,7 +1808,6 @@ export default function App() {
     setNewChallenge(null);
     setShowReceipt(false);
     setZoomActive(false);
-    setClaimConfirm(null);
     clearClaimedCode(touchId);
     setClaimedCode(null);
 
@@ -2016,16 +2211,6 @@ export default function App() {
     }
   }
 
-  function openClaimConfirm(onConfirm, discount) {
-    setForceWalletView(false);
-    setClaimConfirm({
-      onConfirm,
-      discount,
-      hasNextTier: nextThreshold != null,
-      nextDiscount: next?.num ?? null,
-    });
-  }
-
   function scheduleShopifyResume(resume) {
     if (typeof resume !== 'function') return;
     window.requestAnimationFrame(() => {
@@ -2173,56 +2358,6 @@ export default function App() {
         scheduleShopifyResume(pending?.resume);
       }
     });
-  }
-
-  // 任意「Claim now」：未登录时每次 soft gate，Skip 后接上领取确认弹窗（PRD §13.3）
-  function requestClaim(onConfirm, discount) {
-    if (needsShopifyAuth()) {
-      showShopifyAuth('claim', () => openClaimConfirm(onConfirm, discount));
-      return;
-    }
-    openClaimConfirm(onConfirm, discount);
-  }
-
-  function cancelClaim() {
-    const hasNextTier = claimConfirm?.hasNextTier ?? false;
-    setClaimConfirm(null);
-
-    // 首次登录时如果用户取消领取，标记首登欢迎流程完成，进入真正的钱包首页
-    if (welcomeStep < 3) {
-      setWelcomeStep(3);
-      writeWelcomeCompleted(touchId);
-      setForceWalletView(true);
-      if (pendingTapRewardRef.current > 0) {
-        playPendingTapRewardRef.current();
-      } else {
-        tweenPointsTo(welcomeTargetPoints);
-      }
-    }
-
-    if (hasNextTier) {
-      if (showReceipt) {
-        handleAccumulateMore(true);
-      } else {
-        scrollToEarnSection();
-      }
-    } else if (showReceipt) {
-      closeReceipt();
-    }
-  }
-
-  async function confirmClaim() {
-    const onConfirm = claimConfirm?.onConfirm;
-    if (!onConfirm) {
-      setClaimConfirm(null);
-      return;
-    }
-    setClaimConfirm(null);
-    try {
-      await onConfirm();
-    } catch {
-      // onConfirm owns the user-facing error state.
-    }
   }
 
   function startConfetti() {
@@ -2579,6 +2714,97 @@ export default function App() {
     const shopUrl = (brand.shopUrl && brand.shopUrl !== '#') ? brand.shopUrl : 'https://ritual.com';
     openExternalLink(shopUrl);
   }
+
+  async function handleWalletCopy(code) {
+    if (!code) return;
+    try {
+      await copyText(code);
+    } catch {
+      // 复制失败时静默,用户仍可手动选择券码。
+    }
+    setWalletCopiedCode(code);
+    setTimeout(() => setWalletCopiedCode((prev) => (prev === code ? null : prev)), 2000);
+  }
+
+  function claimMockPack(pack, { reveal = true } = {}) {
+    if (!pack?.coupons?.length) return [];
+    const expiresAt = countdownSeconds > 0
+      ? new Date(Date.now() + countdownSeconds * 1000).toISOString()
+      : undefined;
+    const entries = mockPackWalletEntries(pack, expiresAt);
+    setCouponWallet(upsertCouponsToWallet(touchId, entries));
+    if (reveal) setGiftReveal({ pack, coupons: entries });
+    return entries;
+  }
+
+  function handleContinueWelcomePack() {
+    if (!currentPackClaimed) claimMockPack(currentPack, { reveal: false });
+    handleWelcomeRitualComplete();
+  }
+
+  // 领取 target 礼包:签发券码 → 把礼包内的券写进券包 → 弹"获得 N 张券"小结算。
+  // 注:当前后端为单券签发,整包发码需后端支持;此处已按"整包写入"组织,后端就绪后自动生效。
+  async function issueTargetPack() {
+    if (redeemingCoupon) return;
+    if (devScene && targetPack) {
+      claimMockPack(targetPack);
+      return true;
+    }
+    setRedeemingCoupon(true);
+    let issued;
+    try {
+      issued = await issueClaimedCoupon(current);
+    } catch (err) {
+      setRedeemingCoupon(false);
+      showNotification('Coupon unavailable', formatFcError(err, 'Could not issue coupon'), '⚠️');
+      return false;
+    }
+    setRedeemingCoupon(false);
+
+    const expiresAt = countdownSeconds > 0
+      ? new Date(Date.now() + countdownSeconds * 1000).toISOString()
+      : undefined;
+    const entries = targetCoupons
+      .filter((c) => c.code)
+      .map((c) => ({
+        code: c.code,
+        num: c.num,
+        value: c.value,
+        conditions: c.conditions,
+        expiresAt,
+        status: 'active',
+        source: 'target',
+        packId: targetPack?.id,
+        couponId: c.couponId ?? c.campaignId,
+      }));
+    if (issued?.coupon?.code && !entries.some((e) => e.code === issued.coupon.code)) {
+      entries.push({
+        code: issued.coupon.code,
+        num: issued.coupon.num,
+        value: issued.coupon.value,
+        expiresAt,
+        status: 'active',
+        source: 'target',
+        packId: targetPack?.id,
+        couponId: issued.coupon.couponId,
+      });
+    }
+    if (entries.length) setCouponWallet(upsertCouponsToWallet(touchId, entries));
+    setGiftReveal({ pack: targetPack, coupons: entries });
+    return true;
+  }
+
+  useEffect(() => {
+    if (devScene === 'completed') return;
+    if (!targetUnlocked || targetClaimed || !targetPack?.id) return;
+    if (autoIssuedPackRef.current === targetPack.id) return;
+    autoIssuedPackRef.current = targetPack.id;
+    void issueTargetPack().then((issued) => {
+      if (!issued) autoIssuedPackRef.current = null;
+    });
+    // issueTargetPack intentionally runs once per newly unlocked pack.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetUnlocked, targetClaimed, targetPack?.id, devScene]);
 
   async function handleSettlementComplete(settlement) {
     dbg('[FCDBG][App] settlement received', settlement);
@@ -3030,85 +3256,101 @@ export default function App() {
         profile={displayProfile}
         shopifyStatus={shopifyAuthStatus}
         onOpenShopifyAccount={openShopifyAccountEntry}
+        onOpenWallet={() => setWalletOpen(true)}
+        onBackFromWallet={() => setWalletOpen(false)}
+        walletOpen={walletOpen}
+        rewardsCompleted={completedMode}
+        walletCount={walletAvailableCount}
       />
 
-      <main className="content-area">
-        {showBestOffer ? (
-          <BestCouponLockedPage
-            coupon={lockedCoupon}
-            time={time}
-            expiryDate={expiryDate}
-            tick={tick}
-            countdownSeconds={countdownSeconds}
-            isExpired={isExpired}
-            couponFaceRef={couponFaceRef}
-            claimed={showClaimedScreen}
-            copyState={copyState}
-            onClaim={() => requestClaim(handleUseCoupon, lockedCoupon.num)}
-            onShop={handleShopNowDirect}
-            onCopy={handleCopyCode}
-            points={points}
-            targetPoints={targetPoints}
-            challenges={challenges}
-            dailyCapReached={dailyCapReached}
-            onOpenChallenge={openChallenge}
-          />
-        ) : (
-          <>
-            <UrgencyBanner
-              isExpired={isExpired}
-              time={time}
-              tick={tick}
-              urgent={urgent}
-              isBestOffer={isBestOffer}
-            />
+      {showRewardsPage ? (
+        <CouponWalletPage
+          coupons={displayedCouponWallet}
+          copiedCode={walletCopiedCode}
+          onCopy={handleWalletCopy}
+          onClaim={handleShopNowDirect}
+          completed={completedMode}
+          time={time}
+          isExpired={isExpired}
+          urgent={urgent}
+        />
+      ) : (
+        <>
+          <main className="content-area">
+            <div className={`reward-journey ${urgent ? 'is-urgent' : ''}`}>
+              <img
+                className="reward-journey-gift"
+                src="/rewards/target-gift.png"
+                alt=""
+                aria-hidden="true"
+              />
+              <TargetProgress
+                points={points}
+                threshold={targetThreshold}
+                progressPct={targetProgressPct}
+                delta={targetDelta}
+                couponCount={targetCouponCount}
+                coupons={targetCoupons}
+                unlocked={targetUnlocked}
+                claimed={targetClaimed}
+                time={time}
+                tick={tick}
+                urgent={urgent}
+                isExpired={isExpired}
+                coinGainSignal={coinGainSignal}
+                lastGainAmount={lastGainAmount}
+                onOpenWallet={() => setWalletOpen(true)}
+              />
 
-            <CouponWallet
-              current={current}
-              next={next}
-              delta={delta}
-              progressPct={progressPct}
-              points={points}
-              targetPoints={targetPoints}
-              crediting={crediting}
-              time={time}
-              isBestOffer={isBestOffer}
-              isExpired={isExpired}
-              targetPulse={targetPulse}
-              currentSwap={currentSwap}
-              targetCouponRef={targetCouponRef}
-              couponFaceRef={couponFaceRef}
-              isClaimed={isCurrentCouponClaimed}
-              onUse={isCurrentCouponClaimed ? handleShopNowDirect : () => requestClaim(handleUseCoupon, current.num)}
-              countdownSeconds={countdownSeconds}
-              confirmOpen={!!claimConfirm}
-              onTargetClick={handleTargetClick}
-              onOpenRewardLadder={() => setRewardLadderOpen(true)}
-              singleTargetMode={singleTargetMode}
-              coinGainSignal={coinGainSignal}
-              lastGainAmount={lastGainAmount}
-              unlockToastSignal={unlockToastSignal}
-            />
+              <div className="reward-flow">
+                <span className="reward-flow-conn" aria-hidden="true">
+                  <span className="reward-flow-dash" />
+                  <svg className="reward-flow-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </span>
 
-            <Challenges challenges={challenges} dailyCapReached={dailyCapReached} onOpen={openChallenge} onOpenLeaderboard={() => { void syncLeaderboard(true); setLeaderboardOpen(true); }} />
+                <div className="reward-flow-card">
+                  <span className="reward-flow-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="11" cy="13" r="8" />
+                      <circle cx="11" cy="13" r="4" />
+                      <path d="M11 13 19 5" />
+                      <path d="M15.5 5H19v3.5" />
+                    </svg>
+                  </span>
+                  <div className="reward-flow-text">
+                    <p className="reward-flow-title">Play challenges to fill your gift meter</p>
+                    <p className="reward-flow-sub">Every point gets you closer to unlocking more coupons.</p>
+                  </div>
+                </div>
+
+                <span className="reward-flow-conn" aria-hidden="true">
+                  <span className="reward-flow-dash" />
+                  <svg className="reward-flow-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </span>
+              </div>
+
+              <Challenges
+                challenges={challenges}
+                dailyCapReached={dailyCapReached}
+                pointsNeeded={targetUnlocked ? 0 : targetDelta}
+                onOpen={openChallenge}
+                onOpenLeaderboard={() => { void syncLeaderboard(true); setLeaderboardOpen(true); }}
+              />
+            </div>
             <RulesFooter rulesOpen={rulesOpen} onToggle={() => setRulesOpen((value) => !value)} />
-          </>
-        )}
-      </main>
-      <RewardLadderSheet
-        open={rewardLadderOpen}
-        current={current}
-        next={next}
-        discounts={discounts}
-        points={points}
-        onClose={() => setRewardLadderOpen(false)}
-      />
-      <LeaderboardSheet
-        open={leaderboardOpen}
-        leaderboard={leaderboardData}
-        profile={displayProfile}
-        onClose={() => setLeaderboardOpen(false)}
-      />
+          </main>
+          <LeaderboardSheet
+            open={leaderboardOpen}
+            leaderboard={leaderboardData}
+            profile={displayProfile}
+            onClose={() => setLeaderboardOpen(false)}
+          />
+        </>
+      )}
       </>
       )}
 
@@ -3146,8 +3388,6 @@ export default function App() {
       />
 
       <NotificationModal notification={notification} onConfirm={confirmNotification} />
-
-      <ClaimConfirmModal claim={claimConfirm} onConfirm={confirmClaim} onCancel={cancelClaim} />
 
       {newChallenge && (
         <NewChallengeUnlocked
@@ -3198,11 +3438,24 @@ export default function App() {
       {shouldShowDevToolbar() && (
         <DevToolbar
           activeScene={devScene}
+          activeShortcut={walletOpen ? 'wallet' : ''}
           onSelectScene={(sceneId) => {
+            setGiftReveal(null);
+            setWalletOpen(false);
             navigateToDevScene(sceneId);
             setDevScene(sceneId);
           }}
+          onOpenWalletPreview={() => {
+            navigateToDevScene('home');
+            setDevScene('home');
+            setGiftReveal(null);
+            setWalletOpen(true);
+          }}
           onResetFirstLogin={() => {
+            setGiftReveal(null);
+            setWalletOpen(false);
+            clearCouponWallet(touchId);
+            setCouponWallet([]);
             if (devScene) {
               navigateToDevScene('intro');
               setDevScene('intro');
@@ -3213,43 +3466,29 @@ export default function App() {
         />
       )}
 
-      {showReceipt && (
-        <ReceiptPrinter
-          unlockedCoupon={receiptCoupon ?? resolveUnlockedCoupon(discounts, currentStepIndex)}
-          colors={receiptColors}
+      {giftReveal && (
+        <GiftRevealModal
+          pack={giftReveal.pack}
+          coupons={giftReveal.coupons}
           brand={brand}
-          expiryDate={expiryDate}
-          hasNextTier={!isBestOffer}
-          onUse={() => requestClaim(handleUseReceiptCoupon, (receiptCoupon ?? resolveUnlockedCoupon(discounts, currentStepIndex))?.num)}
-          onAccumulate={handleAccumulateMore}
-        />
-      )}
-
-      {zoomActive && (
-        <ZoomFlipCard
-          coupon={zoomCoupon || current}
-          colors={zoomColors}
-          rect={zoomRect}
-          phase={zoomPhase}
-          isBestOffer={isBestOffer}
-          copyState={zoomCopyState}
-          onClose={handleZoomClose}
-          onCopy={handleZoomCopy}
+          copiedCode={walletCopiedCode}
+          onCopy={handleWalletCopy}
+          onShop={handleShopNowDirect}
+          onOpenWallet={() => { setGiftReveal(null); setWalletOpen(true); }}
+          onClose={() => setGiftReveal(null)}
         />
       )}
 
       {showWelcomeRitual && (
         <WelcomeRitual
-          step={welcomeStep}
-          coupon={welcomeCoupon ?? current}
+          pack={currentPack}
+          coupons={currentPackIssuedCoupons}
           brand={brand}
-          couponFaceRef={couponFaceRef}
-          hasNextTier={!isBestOffer}
-          autoAdvance={renewIssueAutoAdvance}
-          onAutoAdvance={handleRenewIssueAutoAdvance}
-          onAdvanceToSettle={handleWelcomeEarnMore}
-          onUse={() => requestClaim(handleUseWelcomeCoupon, (welcomeCoupon ?? current).num)}
-          onComplete={handleWelcomeRitualComplete}
+          claimed={currentPackClaimed}
+          copiedCode={walletCopiedCode}
+          onCopy={handleWalletCopy}
+          onContinue={handleContinueWelcomePack}
+          onShop={handleShopNowDirect}
         />
       )}
     </div>
@@ -3258,181 +3497,149 @@ export default function App() {
 
 function BrandMark({ className = 'brand-logo' }) {
   return (
-    <svg className={className} viewBox="0 0 40 40" role="img" aria-label="Ritual logo">
+    <svg className={className} viewBox="0 0 40 40" role="img" aria-label="Aurelia Skin logo">
       <defs>
-        <linearGradient id="ritualMark" x1="7" y1="5" x2="33" y2="36" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#72866b" />
-          <stop offset="0.52" stopColor="#32422d" />
-          <stop offset="1" stopColor="#182316" />
+        <linearGradient id="aureliaMark" x1="7" y1="5" x2="33" y2="36" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#8f5962" />
+          <stop offset="0.52" stopColor="#663740" />
+          <stop offset="1" stopColor="#3f2027" />
         </linearGradient>
-        <linearGradient id="ritualLeaf" x1="13" y1="10" x2="29" y2="28" gradientUnits="userSpaceOnUse">
+        <linearGradient id="aureliaLeaf" x1="13" y1="10" x2="29" y2="28" gradientUnits="userSpaceOnUse">
           <stop offset="0" stopColor="#f4df9f" />
-          <stop offset="1" stopColor="#b98b3e" />
+          <stop offset="1" stopColor="#c59b58" />
         </linearGradient>
       </defs>
-      <circle cx="20" cy="20" r="18" fill="url(#ritualMark)" />
+      <circle cx="20" cy="20" r="18" fill="url(#aureliaMark)" />
       <circle cx="20" cy="20" r="16" fill="none" stroke="#f1e2b4" strokeOpacity="0.38" strokeWidth="1.2" />
-      <path d="M15.3 12.4c8.1.2 13.2 5.4 13.4 13.5-8-.2-13.2-5.4-13.4-13.5Z" fill="url(#ritualLeaf)" />
+      <path d="M15.3 12.4c8.1.2 13.2 5.4 13.4 13.5-8-.2-13.2-5.4-13.4-13.5Z" fill="url(#aureliaLeaf)" />
       <path d="M25.6 15.2c-3.6 2.6-6.1 6-7.6 10.3" fill="none" stroke="#fff4ce" strokeWidth="1.35" strokeLinecap="round" />
-      <path d="M13.2 28.4h13.6" stroke="#f1e2b4" strokeWidth="1.45" strokeLinecap="round" />
-      <text x="20" y="24.8" textAnchor="middle" className="brand-logo-letter">R</text>
+      <text x="20" y="25.2" textAnchor="middle" className="brand-logo-letter">A</text>
     </svg>
   );
 }
 
-function WelcomeRitual({ step, coupon, brand, couponFaceRef, hasNextTier, autoAdvance = false, onAutoAdvance, onAdvanceToSettle, onUse, onComplete }) {
-  const [rect, setRect] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const wWidth = window.innerWidth;
-      const wHeight = window.innerHeight;
-      const startW = 40;
-      const startH = startW * 1.58;
-      return {
-        left: wWidth / 2 - startW / 2,
-        top: wHeight / 2 - startH / 2,
-        width: startW,
-        height: startH
-      };
-    }
-    return null;
-  });
-  const [phase, setPhase] = useState('activation');
-  const [colors, setColors] = useState({
-    main: '#F6E7C8',
-    accent: '#A8783B',
-    ink: '#6E4E23',
-    gradient: 'linear-gradient(160deg, #FAF4E8 0%, #F6E7C8 52%, #CABCA0 100%)'
-  });
-
-  useEffect(() => {
-    const wWidth = window.innerWidth;
-    const wHeight = window.innerHeight;
-    const cardW = Math.min(wWidth * 0.82, 320);
-    const cardH = cardW * 1.58;
-
-    // Small delay to let browser paint the initial small rect at the box's position
-    const timer = setTimeout(() => {
-      setRect({
-        left: (wWidth - cardW) / 2,
-        top: (wHeight - cardH) / 2 - 20,
-        width: cardW,
-        height: cardH
-      });
-    }, 50);
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    const faceEl = couponFaceRef.current;
-    if (faceEl) {
-      const tokens = readCouponTokens(faceEl.closest('.coupon'));
-      if (tokens && tokens.gradient) {
-        setColors(tokens);
-      }
-    }
-  }, [couponFaceRef, coupon]);
-
-  useEffect(() => {
-    if (step === 2) {
-      setPhase('settling');
-      const faceEl = couponFaceRef.current;
-      if (faceEl) {
-        const faceRect = faceEl.getBoundingClientRect();
-        setRect({
-          left: faceRect.left,
-          top: faceRect.top,
-          width: faceRect.width,
-          height: faceRect.height
-        });
-      }
-      
-      const timer = setTimeout(onComplete, 800);
-      return () => clearTimeout(timer);
-    }
-  }, [step, couponFaceRef, onComplete]);
-
-  useEffect(() => {
-    if (!autoAdvance || step !== 1) return undefined;
-    const timer = setTimeout(() => {
-      onAutoAdvance?.();
-    }, 1400);
-    return () => clearTimeout(timer);
-  }, [autoAdvance, step, onAutoAdvance]);
-
+function PackCouponSummary({ coupon, compact = false, showCondition = true, showCode = false, copied = false, onCopy }) {
+  const num = couponDiscountNum(coupon);
+  const title = num ? `${num}% OFF` : (coupon.value || 'Reward');
   return (
-    <>
-      <div className={`welcome-backdrop ${phase}`} />
-      <div 
-        className={`welcome-coupon-container zoom-card-container ${phase}`}
-        style={{
-          left: rect ? `${rect.left}px` : '50%',
-          top: rect ? `${rect.top}px` : '50%',
-          width: rect ? `${rect.width}px` : '320px',
-          height: rect ? `${rect.height}px` : '505px',
-          ...couponColorVars(colors)
-        }}
-      >
-        <div className="zoom-card-inner">
-          <div className="zoom-card-front welcome-card-variant">
-            {brand?.name && (
-              <div className="welcome-card-brand">
-                {brand?.logoUrl ? (
-                  <img className="welcome-card-brand-logo" src={brand.logoUrl} alt={`${brand.name} logo`} />
-                ) : null}
-                <span className="welcome-card-brand-name">{brand.name}</span>
-              </div>
-            )}
-            <span className="welcome-card-emoji">🎉</span>
-            <h2 className="welcome-card-title">Exclusive Discount Activated!</h2>
-            <div className="welcome-card-value">
-              {coupon.num}<small>%</small> <span className="welcome-card-off">OFF</span>
-            </div>
-            <span className="welcome-card-claimed">Claimed & Ready!</span>
-          </div>
+    <div
+      className={`pack-ticket ${compact ? 'is-compact' : ''} ${compact && !showCode ? 'is-unclaimed-preview' : ''}`}
+      {...couponPaletteProps(coupon)}
+    >
+      <div className="pack-ticket-main">
+        <div className="pack-coupon-copy">
+          <span className="pack-coupon-value">{title}</span>
+          {showCondition && (
+            <span className="pack-coupon-condition">{coupon.conditions || 'Sitewide · No minimum'}</span>
+          )}
         </div>
-      </div>
-      
-      {phase === 'activation' && (
-        <div className="welcome-activation-content">
-          <div 
-            className="welcome-activation-footer" 
-            style={{ 
-              position: 'absolute',
-              top: rect ? `${rect.top + rect.height + 20}px` : 'auto',
-              left: 0,
-              width: '100%',
-              display: 'flex',
-              justifyContent: 'center',
-              pointerEvents: 'auto'
-            }}
-          >
-            <div className="welcome-buttons" style={{ pointerEvents: 'auto' }}>
-              <button 
-                className="btn-printer-primary" 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onUse();
-                }}
-              >
-                Claim Now
-              </button>
-              {hasNextTier && (
-                <button 
-                  className="btn-printer-secondary" 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAdvanceToSettle();
-                  }}
-                >
-                  Get More OFF
-                </button>
+        {showCode && coupon.code && (
+          <div className="pack-coupon-code">
+            <span>{coupon.code}</span>
+            <button
+              type="button"
+              className={copied ? 'is-copied' : ''}
+              onClick={() => onCopy?.(coupon.code)}
+              aria-label={copied ? `${coupon.code} copied` : `Copy ${coupon.code}`}
+              title={copied ? 'Copied' : 'Copy code'}
+            >
+              {copied ? (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="9" y="9" width="11" height="11" rx="2" />
+                  <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" />
+                </svg>
               )}
-            </div>
+            </button>
           </div>
+        )}
+      </div>
+      <div className="pack-ticket-stub" aria-hidden="true">
+        <span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a2 2 0 0 0 0-4V9Z" />
+            <path d="M15 7v10" strokeDasharray="2 2" />
+          </svg>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function TargetBundleTicket({ coupons }) {
+  const list = (coupons ?? []).slice(0, 3);
+  if (!list.length) return null;
+  return (
+    <div
+      className="target-coupon-row"
+      style={{ '--bundle-coupon-count': list.length }}
+      data-coupon-count={list.length}
+      aria-label={`${list.length} coupons in target gift`}
+    >
+      {list.map((coupon) => (
+        <CouponTicket
+          key={coupon.couponId ?? coupon.value}
+          coupon={coupon}
+          className="is-target-preview"
+          showDetails={false}
+          showCode={false}
+          showShop={false}
+        />
+      ))}
+    </div>
+  );
+}
+
+function WelcomeRitual({ pack, coupons, brand, claimed, copiedCode, onCopy, onContinue, onShop }) {
+  const list = coupons?.length ? coupons : (pack?.coupons ?? []);
+  const brandName = brand?.name || 'FridgeChannel';
+  return (
+    <div className="welcome-pack-overlay" role="dialog" aria-label="Welcome gift">
+      <section className="welcome-pack-card">
+        <div className="welcome-rewards-hero">
+          <div className="welcome-pack-brand">
+            {brand?.logoUrl ? <img src={brand.logoUrl} alt={`${brandName} logo`} /> : <BrandMark className="welcome-pack-logo" />}
+            <span>{brandName}</span>
+          </div>
+          <img
+            className="welcome-rewards-gift"
+            src="/rewards/welcome-rewards-hero-final-small.png"
+            alt=""
+            aria-hidden="true"
+          />
+          <p className="welcome-pack-eyebrow">Rewards unlocked</p>
+          <h1>Your rewards are ready!</h1>
+          <p className="welcome-pack-subtitle">
+            You’ve unlocked {list.length} exclusive offer{list.length === 1 ? '' : 's'}.<br />
+            They’re saved to your account and ready to use.
+          </p>
         </div>
-      )}
-    </>
+
+        <div className="welcome-pack-list">
+          {list.map((coupon) => (
+            <CouponTicket
+              key={coupon.couponId ?? coupon.value}
+              coupon={coupon}
+              className="is-welcome-ticket"
+              showDetails
+              showCode
+              copied={copiedCode === coupon.code}
+              onCopy={onCopy}
+              showShop
+              onShop={onShop}
+            />
+          ))}
+        </div>
+
+        <div className="welcome-pack-actions">
+          <button className="welcome-pack-claim" type="button" onClick={onContinue}>Continue to rewards</button>
+        </div>
+        {claimed && <p className="welcome-pack-saved">Already saved in My coupons</p>}
+      </section>
+    </div>
   );
 }
 
@@ -3440,11 +3647,45 @@ function BrandIntro() {
   return null;
 }
 
-function HeaderBase({ brand, profile, shopifyStatus, onOpenShopifyAccount }) {
+function HeaderBase({
+  brand,
+  profile,
+  shopifyStatus,
+  onOpenShopifyAccount,
+  onOpenWallet,
+  onBackFromWallet,
+  walletOpen = false,
+  rewardsCompleted = false,
+  walletCount = 0,
+}) {
   const connected = shopifyStatus === 'connected';
   const brandName = brand?.name?.trim() || 'FridgeChannel';
   const brandInitial = brandName.charAt(0).toUpperCase();
   const userInitial = profileInitial(profile);
+
+  if (walletOpen) {
+    return (
+      <header className={`brand-header is-wallet-header ${rewardsCompleted ? 'is-completed' : ''}`}>
+        {!rewardsCompleted && (
+          <button className="cwallet-back" type="button" onClick={onBackFromWallet} aria-label="Back to rewards">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+          </button>
+        )}
+        <div className="cwallet-head-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a2 2 0 0 0 0-4V9Z" />
+            <path d="M15 7v10" strokeDasharray="2 2" />
+          </svg>
+          <div>
+            <h1>{rewardsCompleted ? 'Your rewards' : 'My coupons'}</h1>
+          </div>
+        </div>
+      </header>
+    );
+  }
+
   return (
     <header className="brand-header">
       <div className="brand-info">
@@ -3456,6 +3697,19 @@ function HeaderBase({ brand, profile, shopifyStatus, onOpenShopifyAccount }) {
         <span className="brand-name">{brandName}</span>
       </div>
       <div className="header-actions">
+        <button
+          className="wallet-entry-btn"
+          type="button"
+          aria-label={`My coupons${walletCount ? ` (${walletCount} available)` : ''}`}
+          title="My coupons"
+          onClick={onOpenWallet}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a2 2 0 0 0 0-4V9Z" />
+            <path d="M15 7v10" strokeDasharray="2 2" />
+          </svg>
+          {walletCount > 0 && <span className="wallet-entry-badge">{walletCount}</span>}
+        </button>
         <button
           className={`account-entry-btn ${connected ? 'is-connected' : ''}`}
           type="button"
@@ -3474,146 +3728,6 @@ function HeaderBase({ brand, profile, shopifyStatus, onOpenShopifyAccount }) {
         </button>
       </div>
     </header>
-  );
-}
-
-function UrgencyBanner({ isExpired, time, tick, urgent, isBestOffer }) {
-  return (
-    <section className={`urgency-banner ${urgent ? 'urgent' : ''}`} data-screen-label="倒计时">
-      <div className="ub-label">
-        <span className="live-pulse" />
-        <span>{isExpired ? 'This round has ended' : urgent ? "Ends today - don't lose it" : 'LIMITED CHALLENGE ENDS IN'}</span>
-      </div>
-      <div className="clock">
-        {['Days', 'Hours', 'Min', 'Sec'].map((label, index) => (
-          <ClockUnit key={label} label={label} value={time.digits[index]} tick={index === 3 && tick} isLast={index === 3} />
-        ))}
-      </div>
-      {isBestOffer && (
-        <p className="ub-round-note">A new discount challenge starts when the countdown ends.</p>
-      )}
-    </section>
-  );
-}
-
-function ClockUnit({ label, value, tick, isLast }) {
-  return (
-    <>
-      <div className="clock-unit">
-        <span className={`digit ${tick ? 'tick' : ''}`}>{value}</span>
-        <span className="unit-label">{label}</span>
-      </div>
-      {!isLast && <span className="clock-colon">:</span>}
-    </>
-  );
-}
-
-function CompactChallengeTimer({ time }) {
-  return (
-    <div className="compact-challenge-timer" aria-label={`Challenge ends in ${time.days} days ${time.hours} hours ${time.mins} minutes ${time.secs} seconds`}>
-      <span className="compact-challenge-timer-label">Challenge ends in</span>
-      <span className="compact-challenge-timer-value">{time.digits[0]}d {time.digits[1]}h {time.digits[2]}m {time.digits[3]}s</span>
-    </div>
-  );
-}
-
-function LargeCouponTicket({
-  coupon,
-  expiryDate,
-  isExpired,
-  claimed = false,
-  variant = 'best',
-  copyState,
-  onCopy,
-  onAction,
-}) {
-  return (
-    <div className="coupon-wrap current voucher-large-coupon-wrap" data-coupon-theme={COUPON_THEME}>
-      <div className={`coupon coupon-current voucher-large-coupon is-${variant} ${claimed ? 'is-claimed' : ''} ${isExpired ? 'expired' : ''}`} data-tier={tierForDiscount(coupon.num)}>
-        <div className="coupon-face">
-          <span className="coupon-kicker">{claimed ? 'Your Coupon' : 'Best offer this round'}</span>
-          <span className="stub-value">{coupon.num}<small>%</small></span>
-          <span className="stub-off">OFF</span>
-          <span className="coupon-title">Sitewide · No minimum</span>
-          {claimed ? (
-            <button className="voucher-large-code-chip" type="button" onClick={onCopy}>
-              <span className="voucher-large-code-copy-text">
-                <span className="voucher-large-code-label">Your Code</span>
-                <span className="voucher-large-code-value">{copyState === 'Copied!' ? 'Copied!' : coupon.code}</span>
-              </span>
-              <span className="voucher-large-code-copy-icon" aria-hidden="true">
-                {copyState === 'Copied!' ? (
-                  <span className="voucher-large-code-copy-check">✓</span>
-                ) : (
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                  </svg>
-                )}
-              </span>
-            </button>
-          ) : null}
-          <span className="coupon-expire">Expires on <b>{expiryDate}</b></span>
-        </div>
-        <button className="btn-use" id="use-now-btn" aria-label={claimed ? 'Redeem coupon' : 'Claim coupon'} disabled={isExpired} onClick={onAction}>
-          <span>{isExpired ? 'Expired' : (claimed ? 'Redeem' : 'Claim Now')}</span>
-          <svg className="use-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M12 4.5V19" />
-            <path d="M6 13l6 6 6-6" />
-          </svg>
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function BestCouponLockedPage({ 
-  coupon, time, expiryDate, tick, isExpired, couponFaceRef, claimed, copyState, onClaim, onShop, onCopy,
-  points, targetPoints, challenges, dailyCapReached, onOpenChallenge 
-}) {
-  if (claimed) {
-    return (
-      <section className="best-locked-page voucher-ready" data-screen-label="券已领取">
-        <div className="voucher-coupon-card-container">
-          <LargeCouponTicket
-            coupon={coupon}
-            expiryDate={expiryDate}
-            isExpired={isExpired}
-            claimed
-            copyState={copyState}
-            onCopy={onCopy}
-            onAction={onShop}
-          />
-        </div>
-
-        <CompactChallengeTimer time={time} />
-
-        <p className="voucher-footnote">
-          Use this code at checkout. We&apos;ll check whether it&apos;s been used or expired — then unlock your next challenge.
-        </p>
-
-      </section>
-    );
-  }
-
-  return (
-    <section className="best-locked-page voucher-ready" data-screen-label="最佳优惠券">
-      <div className="voucher-coupon-card-container">
-        <LargeCouponTicket
-          coupon={coupon}
-          expiryDate={expiryDate}
-          isExpired={isExpired}
-          onAction={onClaim}
-        />
-      </div>
-
-      <CompactChallengeTimer time={time} />
-
-      <p className="voucher-footnote">
-        Use this coupon to finish this round and unlock the next challenge.<br />
-        Not ready yet? You can keep playing until the countdown ends — the next round will start automatically.
-      </p>
-    </section>
   );
 }
 
@@ -3693,126 +3807,79 @@ function NewChallengeUnlocked({ reason, onStart, onDismiss, coupon }) {
   );
 }
 
-function CouponWallet({
-  current,
-  next,
-  delta,
-  progressPct,
+function TargetProgress({
   points,
-  targetPoints,
-  crediting,
+  threshold,
+  progressPct,
+  delta,
+  couponCount,
+  coupons,
+  unlocked,
+  claimed,
   time,
-  isBestOffer,
+  tick,
+  urgent,
   isExpired,
-  targetPulse,
-  currentSwap,
-  targetCouponRef,
-  couponFaceRef,
-  onUse,
-  countdownSeconds,
-  confirmOpen,
-  onTargetClick,
-  onOpenRewardLadder,
-  isClaimed = false,
-  singleTargetMode = false,
   coinGainSignal,
   lastGainAmount,
-  unlockToastSignal
+  onOpenWallet,
 }) {
+  const hasTarget = threshold != null;
+  const couponLabel = `${couponCount} coupon${couponCount === 1 ? '' : 's'}`;
+
   return (
-    <section className={`wallet ${isBestOffer ? 'best-offer' : ''} ${singleTargetMode ? 'single-target' : ''}`} data-screen-label="优惠券">
+    <section className="wallet target-progress" data-screen-label="奖励进度">
       <div className="section-head">
-        <span className="section-tag">{isBestOffer ? 'Best offer unlocked' : 'Your coupon'}</span>
-        {!isBestOffer && <RewardLadderEntry onOpen={onOpenRewardLadder} />}
+        <div>
+          <span className="section-tag">{unlocked ? 'Gift unlocked' : 'Target gift challenge'}</span>
+          <div className={`tg-countdown ${urgent ? 'is-urgent' : ''}`}>
+            <span className="tg-countdown-label">{isExpired ? 'Challenge ended' : 'Time left'}</span>
+            {!isExpired && (
+              <span className={`tg-countdown-value ${tick ? 'is-ticking' : ''}`}>
+                {time.digits[0]}d&nbsp; {time.digits[1]}h&nbsp; {time.digits[2]}m&nbsp; {time.digits[3]}s
+              </span>
+            )}
+          </div>
+        </div>
       </div>
 
-      {isBestOffer && (
-        <div className="best-offer-note">
-          <span>Exclusive reward unlocked</span>
-          <p>Congratulations, you unlocked the best offer this round. Your exclusive reward is reserved, so start shopping.</p>
-        </div>
-      )}
-
-      {!isBestOffer && (
-        <div className={`coupon-route ${singleTargetMode ? 'single-target-route' : ''}`} aria-hidden="true">
-          <div className="route-arc-container">
-            <svg className="route-arc" viewBox="0 0 178 70" preserveAspectRatio="none">
-              <path className="route-arc-shadow" d="M8 58 C52 2 124 2 170 58" />
-              <path className="route-arc-line" d="M8 58 C52 2 124 2 170 58" />
+      {!hasTarget ? (
+        <p className="tg-note">Your coupons are saved in your wallet — open them anytime.</p>
+      ) : (
+        <div className={`tg-card ${unlocked ? 'is-unlocked' : ''}`}>
+          <div className="tg-gift-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 12v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-8" />
+              <path d="M2 7h20v5H2z" />
+              <path d="M12 22V7" />
+              <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
+              <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
             </svg>
-            <span className="route-coin" id="route-coin" style={getArcPoint(progressPct / 100)}>¢</span>
           </div>
-          <span className={`route-progress ${crediting ? 'crediting' : ''}`}>{points} / {targetPoints}</span>
+
+          <p className="tg-card-title">
+            {!unlocked
+              ? 'Unlock more rewards'
+              : `Unlocked · ${couponLabel} saved to My coupons`}
+          </p>
+
+          <div className="tg-coupon-list">
+            <TargetBundleTicket coupons={coupons} />
+          </div>
+
+          <div className="tg-bar">
+            <div className="tg-bar-fill" style={{ width: `${progressPct}%` }} />
+          </div>
+          <div className="tg-bar-meta">
+            <span className="tg-points">{points} / {threshold} pts</span>
+            {!unlocked && <span className="tg-remain">Need {delta} more</span>}
+          </div>
+
+          {unlocked && claimed && (
+            <button className="tg-claim-btn is-secondary" type="button" onClick={onOpenWallet}>Open my coupons</button>
+          )}
         </div>
       )}
-
-      <CouponFeedbackToasts
-        coinGainSignal={coinGainSignal}
-        lastGainAmount={lastGainAmount}
-        unlockToastSignal={unlockToastSignal}
-        next={next}
-      />
-
-      <div className={`coupon-pair ${singleTargetMode ? 'single-target-pair' : ''}`} data-coupon-theme={COUPON_THEME}>
-        {!singleTargetMode && (
-          <div className={`coupon-wrap current ${currentSwap ? 'swap' : ''}`}>
-            <div className={`coupon coupon-current ${isExpired ? 'expired' : ''} ${confirmOpen ? 'confirm-open-zoom' : ''}`} data-tier={tierForDiscount(current.num)}>
-              <div className="coupon-face" ref={couponFaceRef}>
-                {isClaimed && (
-                  <div className="wallet-coupon-claimed-badge">• CLAIMED ✓</div>
-                )}
-                <span className="coupon-kicker">{isBestOffer ? 'Current Coupon' : 'Unlocked Offer'}</span>
-                <span className="stub-value">{current.num}<small>%</small></span>
-                {isBestOffer ? (
-                  <>
-                    <span className="max-discount-label">Best offer this round</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="stub-off">OFF</span>
-                    <span className="coupon-title">Sitewide · No minimum</span>
-                  </>
-                )}
-              </div>
-              <button className="btn-use" id="use-now-btn" aria-label="Use current coupon" disabled={isExpired} onClick={onUse}>
-                <span>{isExpired ? 'Expired' : (isClaimed ? 'Redeem' : 'Claim')}</span>
-                <svg className="use-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M12 4.5V19" />
-                  <path d="M6 13l6 6 6-6" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {next && (
-          <div 
-            className={`coupon-wrap target ${singleTargetMode ? 'single-target-coupon' : ''} ${delta <= 0 ? 'ready' : ''} ${targetPulse} ${currentSwap ? 'swap' : ''}`}
-            onClick={delta <= 0 ? onTargetClick : undefined}
-            style={delta <= 0 ? { cursor: 'pointer' } : undefined}
-          >
-            <div className="coupon coupon-target" data-tier={tierForDiscount(next.num)} ref={targetCouponRef}>
-              <div className="coupon-face">
-                <span className="coupon-kicker">{singleTargetMode ? 'Target Offer' : 'Next Offer'}</span>
-                <span className="stub-value">{next.num}<small>%</small></span>
-                <span className="stub-off">OFF</span>
-                <span className="coupon-title">Orders $75+</span>
-              </div>
-              <div className="locked-floor">
-                <div className="coupon-fill" style={{ width: `${progressPct}%` }} />
-                <span>{delta <= 0 ? 'Unlocked' : 'Locked'}</span>
-                <span>{delta <= 0 ? 'Claim' : <>Need <b>{delta}</b> pts</>}</span>
-              </div>
-            </div>
-            <div className="lock-badge">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                <rect x="3" y="7" width="10" height="7" rx="1.5" fill="currentColor" stroke="none" />
-                <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
-              </svg>
-            </div>
-          </div>
-        )}
-      </div>
     </section>
   );
 }
@@ -3821,106 +3888,6 @@ function rewardPercent(coupon) {
   const value = coupon?.num ?? coupon?.value;
   const parsed = parseInt(String(value ?? '').replace(/[^\d]/g, ''), 10);
   return Number.isNaN(parsed) ? null : parsed;
-}
-
-function RewardLadderEntry({ onOpen }) {
-  return (
-    <section className="reward-ladder-entry" aria-label="Reward ladder">
-      <button className="reward-ladder-entry-btn" type="button" onClick={onOpen}>
-        <span>View Reward Ladder</span>
-        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M7 4l6 6-6 6" />
-        </svg>
-      </button>
-    </section>
-  );
-}
-
-function RewardLadderSheet({ open, current, next, discounts, points, onClose }) {
-  if (!open) return null;
-
-  const currentTier = current?.tier ?? null;
-  const nextTier = next?.tier ?? null;
-
-  // 用该用户 plan 的真实档位构建升级路径;无真实数据时回退到通用百分比阶梯。
-  const realSteps = (discounts ?? [])
-    .filter((step) => rewardPercent(step) != null)
-    .slice()
-    .sort((a, b) => (a.tier ?? 0) - (b.tier ?? 0));
-
-  const ladder = realSteps.length
-    ? realSteps.map((step) => {
-        const tier = step.tier;
-        const target = step.target ?? 0;
-        return {
-          percent: rewardPercent(step),
-          target,
-          isCurrent: currentTier != null && tier === currentTier,
-          isNext: nextTier != null && tier === nextTier,
-          // 已达到该档位的积分门槛即视为解锁
-          isUnlocked: typeof points === 'number' ? points >= target : false,
-        };
-      })
-    : REWARD_LADDER_PERCENTAGES.map((percent) => ({
-        percent,
-        target: null,
-        isCurrent: percent === rewardPercent(current),
-        isNext: percent === rewardPercent(next),
-        isUnlocked: false,
-      }));
-
-  const safetyNetPercent = ladder[0]?.percent ?? 5;
-
-  return (
-    <div
-      className={`reward-ladder-overlay ${open ? 'open' : ''}`}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Your Reward Journey"
-      onClick={onClose}
-    >
-      <div className="reward-ladder-sheet" onClick={(event) => event.stopPropagation()}>
-        <div className="reward-ladder-handle" aria-hidden="true" />
-        <div className="reward-ladder-head">
-          <div>
-            <h3>Your Reward Journey</h3>
-            <p>Earn points to unlock bigger discounts.</p>
-          </div>
-          <button className="reward-ladder-close" type="button" aria-label="Close reward ladder" onClick={onClose}>
-            &times;
-          </button>
-        </div>
-
-        <ol className="reward-ladder-list">
-          {ladder.map((step, index) => (
-            <li
-              className={`reward-ladder-step ${step.isCurrent ? 'is-current' : ''} ${step.isNext ? 'is-next' : ''} ${step.isUnlocked ? 'is-unlocked' : ''}`}
-              key={`${step.percent}-${step.target ?? index}`}
-            >
-              <span className="reward-ladder-node" aria-hidden="true" />
-              <div className="reward-ladder-copy">
-                <strong>{step.percent}% OFF</strong>
-                {step.isCurrent ? (
-                  <span>Current</span>
-                ) : step.isNext ? (
-                  <span>{step.target != null ? `Next · ${step.target} pts` : 'Next'}</span>
-                ) : step.isUnlocked ? (
-                  <span>Unlocked</span>
-                ) : step.target != null ? (
-                  <span>{step.target} pts</span>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ol>
-
-        <div className="reward-ladder-safety">
-          <strong>Safety Net</strong>
-          <p>No matter how your challenge ends,<br />you will always keep at least a {safetyNetPercent}% OFF coupon.</p>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function RatingIcons({ count, type }) {
@@ -3936,12 +3903,12 @@ function RatingIcons({ count, type }) {
   );
 }
 
-function ChallengesBase({ challenges, dailyCapReached, onOpen, onOpenLeaderboard }) {
+function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, onOpen, onOpenLeaderboard }) {
   return (
     <section className="earn-progress-section" data-screen-label="挑战任务">
       <div className="section-head stacked">
         <div className="section-head-with-lb">
-          <span className="section-tag">Play &amp; Earn</span>
+          <span className="section-tag">{pointsNeeded > 0 ? 'Choose a challenge' : 'Keep playing & earning'}</span>
           <button className="leaderboard-entry-btn" type="button" onClick={onOpenLeaderboard}>
             <span className="leaderboard-entry-icon" aria-hidden="true" />
             <span>Leaderboard</span>
@@ -3950,10 +3917,22 @@ function ChallengesBase({ challenges, dailyCapReached, onOpen, onOpenLeaderboard
             </svg>
           </button>
         </div>
-        <span className="section-note">Updated daily · New challenges every day</span>
+        <span className="section-note">
+          {pointsNeeded > 0
+            ? `Every challenge moves you closer to your gift · ${pointsNeeded} pts left`
+            : 'Updated daily · New challenges every day'}
+        </span>
       </div>
       <div className="challenges-swiper">
-        {challenges.map((challenge) => {
+        {challenges.length === 0 ? (
+          <div className="challenges-empty" role="status">
+            <span className="challenges-empty-icon" aria-hidden="true">🎮</span>
+            <div>
+              <strong>New challenges are on the way</strong>
+              <p>Check back shortly for the next games and rewards.</p>
+            </div>
+          </div>
+        ) : challenges.map((challenge) => {
           const pts = challenge.reward.replace(/[^0-9]/g, '');
           const isShopifyConnect = challenge.type === 'shopify_connect';
           const isGame = challenge.type === 'game';
@@ -4020,9 +3999,9 @@ function RulesFooterBase({ rulesOpen, onToggle }) {
         <div className={`accordion-content ${rulesOpen ? 'open' : ''}`}>
           <ol className="rules-list">
             <li>Complete the quick games or surveys to earn points.</li>
-            <li>Once the locked coupon fills up, it unlocks automatically.</li>
-            <li>Copy your coupon code and shop before the countdown expires.</li>
-            <li>Your progression resets once you place an order, starting a new cycle.</li>
+            <li>Reach the single target to unlock the complete coupon gift.</li>
+            <li>When you reach the target, every coupon is automatically saved to My coupons.</li>
+            <li>Your coupons stay organized in My coupons until used or expired.</li>
           </ol>
         </div>
       </div>
@@ -4197,89 +4176,6 @@ function NotificationModal({ notification, onConfirm }) {
   );
 }
 
-function ClaimConfirmModal({ claim, onConfirm, onCancel }) {
-  const discount = claim?.discount || '15';
-  const [isClaiming, setIsClaiming] = useState(false);
-
-  useEffect(() => {
-    if (claim) {
-      setIsClaiming(false);
-    }
-  }, [claim]);
-
-  if (!claim) return null;
-
-  const handleConfirm = async () => {
-    if (isClaiming) return;
-    setIsClaiming(true);
-    try {
-      await onConfirm();
-    } finally {
-      setIsClaiming(false);
-    }
-  };
-
-  const hasNextTier = claim?.hasNextTier ?? false;
-  const nextDiscount = claim?.nextDiscount;
-
-  return (
-    <div className="modal-overlay open" id="claim-confirm-modal">
-      <div className={`claim-confirm-content ${isClaiming ? 'modal-claiming' : ''}`}>
-        <button className="claim-confirm-close-btn" onClick={onCancel} disabled={isClaiming}>&times;</button>
-        
-        {/* Title */}
-        <h3 className="claim-confirm-title">Ready to lock it in?</h3>
-
-        {/* Current Reward Display */}
-        <div className="claim-confirm-reward-display">
-          <div className="claim-confirm-reward-value">
-            <span>{discount}%</span>
-            <span className="claim-confirm-reward-off">OFF</span>
-          </div>
-          <div className="claim-confirm-reward-subtitle">You’ve unlocked this reward.</div>
-        </div>
-
-        {/* Decision Description Text */}
-        <div className="claim-confirm-body">
-          {hasNextTier && nextDiscount && (
-            <p>Or keep earning points<br />for a chance at <strong>{nextDiscount}% OFF</strong>.</p>
-          )}
-          <p className="claim-confirm-round-complete">Once claimed,<br />this round is complete.</p>
-        </div>
-
-        <div className="claim-confirm-actions">
-          <button 
-            className={`btn-claim-confirm-yes ${isClaiming ? 'claiming' : ''}`} 
-            id="claim-confirm-btn"
-            onClick={handleConfirm}
-            disabled={isClaiming}
-          >
-            {isClaiming ? (
-              <>
-                <span className="claiming-spinner"></span>
-                Locking In...
-              </>
-            ) : (
-              `Lock In ${discount}% OFF`
-            )}
-          </button>
-          <button 
-            className="btn-claim-confirm-cancel" 
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              onCancel();
-            }}
-            disabled={isClaiming}
-          >
-            {hasNextTier ? 'Go for More OFF' : 'Go Back'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function Modal({ id, open, title, onClose, textCenter = false, children }) {
   return (
     <div className={`modal-overlay ${open ? 'open' : ''}`} id={id}>
@@ -4296,283 +4192,6 @@ function Modal({ id, open, title, onClose, textCenter = false, children }) {
   );
 }
 
-
-const ReceiptPrinter = memo(function ReceiptPrinter({ unlockedCoupon, colors, brand, expiryDate, hasNextTier, onUse, onAccumulate }) {
-  const discountNum =
-    unlockedCoupon?.num ??
-    ((unlockedCoupon?.value ? String(unlockedCoupon.value).replace(/\D/g, '') : '') || '—');
-
-  return (
-    <div className="printer-overlay" data-coupon-theme={COUPON_THEME} style={couponColorVars(colors)}>
-      <div className="printer-machine">
-        <div className="printer-slot" />
-        <div className="receipt-paper-wrap">
-          {/* 小票 1:1 复用首页 coupon 结构：CLAIM 按钮直接长在券底部 */}
-          <div className="coupon coupon-current receipt-coupon" data-tier={tierForDiscount(discountNum)}>
-            <div className="coupon-face">
-              <div className="receipt-brand">
-                {brand?.logoUrl ? (
-                  <img className="receipt-brand-logo" src={brand.logoUrl} alt={`${brand.name || 'Brand'} logo`} />
-                ) : null}
-                <span className="receipt-brand-name">{brand?.name || 'Ritual'}</span>
-              </div>
-              <span className="coupon-kicker">Unlocked Offer</span>
-              <span className="stub-value">{discountNum}<small>%</small></span>
-              <span className="stub-off">OFF</span>
-              <span className="coupon-title">Sitewide · No minimum</span>
-              <span className="coupon-expire">Expires on <b>{expiryDate}</b></span>
-            </div>
-            <button className="btn-use" aria-label="Claim coupon" onClick={onUse}>
-              <span>Claim Now</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {hasNextTier && (
-        <div className="printer-buttons">
-          <button className="btn-printer-secondary" id="btn-receipt-accumulate" onClick={onAccumulate}>
-            Get More OFF
-          </button>
-        </div>
-      )}
-    </div>
-  );
-});
-
-function ZoomFlipCard({ coupon, colors, rect, phase, copyState, onClose, onCopy }) {
-  const canvasRef = useRef(null);
-  const [scratched, setScratched] = useState(false);
-
-  const containerStyle = {
-    ...(rect ? {
-      left: `${rect.left}px`,
-      top: `${rect.top}px`,
-      width: `${rect.width}px`,
-      height: `${rect.height}px`
-    } : {}),
-    ...couponColorVars(colors)
-  };
-
-  const isZoomed = phase === 'zoomed' || phase === 'flipped';
-  const isFlipped = phase === 'flipped';
-
-  useEffect(() => {
-    if (phase !== 'flipped') {
-      setScratched(false);
-    }
-  }, [phase]);
-
-  useEffect(() => {
-    if (phase !== 'flipped' || !canvasRef.current) return;
-
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    
-    // Set display size based on container bounding rect
-    const width = canvas.parentElement.clientWidth || 260;
-    const height = canvas.parentElement.clientHeight || 76;
-    canvas.width = width;
-    canvas.height = height;
-
-    // 灰色金属待刮材质（与 confirm 弹窗的刮刮卡遮罩同色同质感）
-    const grad = ctx.createLinearGradient(0, 0, width, height);
-    grad.addColorStop(0, '#a3a3a3');
-    grad.addColorStop(0.35, '#e0e0e0');
-    grad.addColorStop(0.65, '#b8b8b8');
-    grad.addColorStop(1, '#858585');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, width, height);
-
-    // 45° 斜纹高光，呼应 confirm 弹窗待刮表面的纹理
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
-    ctx.lineWidth = 4;
-    for (let i = -height; i < width; i += 8) {
-      ctx.beginPath();
-      ctx.moveTo(i, 0);
-      ctx.lineTo(i + height, height);
-      ctx.stroke();
-    }
-
-    // 手动刮开：监听指针事件，用 destination-out 擦除金箔；
-    // 刮开面积超过阈值后自动揭示完整 code。
-    let drawing = false;
-    let revealed = false;
-    let lastPos = null;
-
-    const getPos = (e) => {
-      const r = canvas.getBoundingClientRect();
-      return {
-        x: (e.clientX - r.left) * (canvas.width / r.width),
-        y: (e.clientY - r.top) * (canvas.height / r.height),
-      };
-    };
-
-    const scratch = (x, y) => {
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.lineWidth = 38;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      if (lastPos) {
-        ctx.beginPath();
-        ctx.moveTo(lastPos.x, lastPos.y);
-        ctx.lineTo(x, y);
-        ctx.stroke();
-      }
-      ctx.beginPath();
-      ctx.arc(x, y, 19, 0, Math.PI * 2);
-      ctx.fill();
-      lastPos = { x, y };
-    };
-
-    // 采样 alpha 通道，估算已刮开比例（步长大一点以省开销）。
-    const clearedRatio = () => {
-      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      let cleared = 0;
-      let total = 0;
-      for (let i = 3; i < data.length; i += 4 * 20) {
-        total++;
-        if (data[i] === 0) cleared++;
-      }
-      return total ? cleared / total : 0;
-    };
-
-    const maybeReveal = () => {
-      if (revealed) return;
-      if (clearedRatio() > 0.5) {
-        revealed = true;
-        setScratched(true);
-      }
-    };
-
-    const onDown = (e) => {
-      drawing = true;
-      lastPos = null;
-      const p = getPos(e);
-      scratch(p.x, p.y);
-      canvas.setPointerCapture?.(e.pointerId);
-      e.preventDefault();
-    };
-    const onMove = (e) => {
-      if (!drawing) return;
-      const p = getPos(e);
-      scratch(p.x, p.y);
-      maybeReveal();
-      e.preventDefault();
-    };
-    const onUp = () => {
-      if (!drawing) return;
-      drawing = false;
-      lastPos = null;
-      maybeReveal();
-    };
-
-    canvas.addEventListener('pointerdown', onDown);
-    canvas.addEventListener('pointermove', onMove);
-    canvas.addEventListener('pointerup', onUp);
-    canvas.addEventListener('pointerleave', onUp);
-
-    return () => {
-      canvas.removeEventListener('pointerdown', onDown);
-      canvas.removeEventListener('pointermove', onMove);
-      canvas.removeEventListener('pointerup', onUp);
-      canvas.removeEventListener('pointerleave', onUp);
-    };
-  }, [phase]);
-
-  return (
-    <>
-      <div className={`zoom-overlay ${phase === 'init' ? 'closing' : ''}`} onClick={onClose} />
-      
-      {/* Outside close button positioned relative to the card's bounding rect */}
-      {isZoomed && (
-        <button 
-          className="zoom-outside-close-btn" 
-          onClick={onClose} 
-          aria-label="Close"
-          style={{
-            position: 'fixed',
-            left: rect ? `${rect.left + rect.width - 14}px` : '50%',
-            top: rect ? `${rect.top - 14}px` : '50%',
-            transform: rect ? 'none' : 'translate(146px, -236px)',
-            zIndex: 105
-          }}
-        >
-          &times;
-        </button>
-      )}
-
-      <div
-        className={`zoom-card-container ${isZoomed ? 'zoomed' : ''}`}
-        style={containerStyle}
-      >
-        <div className={`zoom-card-inner ${isFlipped ? 'flipped' : ''}`}>
-          {/* Front: coupon face clone */}
-          <div className="zoom-card-front">
-            <span className="front-kicker">Unlocked Offer</span>
-            <span className="front-value">{coupon.num}<small>%</small></span>
-            <span className="front-label">COUPON</span>
-            <span className="front-subtitle">Sitewide · No minimum</span>
-          </div>
-
-          {/* Back: Scratch Card Ticket */}
-          <div className="zoom-card-back scratch-ticket-back">
-            <div className="scratch-ticket-container">
-              <div className="scratch-header">UNLOCKED OFFER</div>
-              <div className="scratch-value">{coupon.num}% OFF</div>
-              <div className="scratch-subtitle">Sitewide · No minimum</div>
-              <div className="scratch-dotted-divider"></div>
-              
-              <div className="scratch-instruction">Scratch to reveal your code</div>
-              
-              <div className="scratch-area">
-                <div className="scratch-code-container">
-                  <span className="scratch-code">{coupon.code}</span>
-                  <button className="scratch-code-copy-btn" onClick={onCopy} type="button" title="Copy code">
-                    {copyState === 'Copied!' ? (
-                      <span className="scratch-copied-badge">Copied ✓</span>
-                    ) : (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                      </svg>
-                    )}
-                  </button>
-                </div>
-                <canvas 
-                  className="scratch-canvas" 
-                  ref={canvasRef}
-                  style={{ display: scratched ? 'none' : 'block' }}
-                ></canvas>
-              </div>
-
-              <div className="scratch-actions">
-                <button 
-                  className="scratch-btn-use" 
-                  onClick={() => {
-                    openExternalLink('https://ritual.com');
-                    onClose();
-                  }}
-                  type="button"
-                >
-                  <span className="coin-icon">¢</span>
-                  <span>Use This Code</span>
-                </button>
-              </div>
-
-              <div className="scratch-lock-footer">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
-                </svg>
-                <span>Your coupon is already locked in.</span>
-              </div>
-            </div>
-</div>
-          </div>
-        </div>
-      </>
-  );
-}
 
 function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onUploadAvatar, onClose, onConnect, onDisconnect }) {
   const [draft, setDraft] = useState(() => normalizeProfile({ ...profile, brandName: brand?.name }));
@@ -4852,6 +4471,293 @@ function LeaderboardSheet({ open, leaderboard, profile, onClose }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function formatWalletExpiry(iso) {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function couponDiscountNum(coupon) {
+  if (coupon?.num != null && coupon.num !== '') return String(coupon.num);
+  const value = coupon?.value ? String(coupon.value) : '';
+  const fromValue = value.includes('%') ? value.replace(/[^\d]/g, '') : '';
+  return fromValue || '';
+}
+
+function CouponTicket({
+  coupon,
+  copied = false,
+  onCopy,
+  onShop,
+  className = '',
+  showDetails = true,
+  showCode = true,
+  showShop = true,
+}) {
+  const num = couponDiscountNum(coupon);
+  const expiry = formatWalletExpiry(coupon.expiresAt);
+  const conditions = coupon.conditions || 'Sitewide · No minimum';
+  const displayCode = coupon.code || coupon.mockCode;
+  return (
+    <div className={`cwticket is-colored ${className}`.trim()} {...couponPaletteProps(coupon)}>
+      <div className="cwticket-main">
+        <div className="cwticket-value">
+          {num ? (<><b>{num}%</b><span>OFF</span></>) : (<b>{coupon.value || 'Reward'}</b>)}
+        </div>
+        {showDetails && <div className="cwticket-cond">{conditions}</div>}
+        {showDetails && expiry && <div className="cwticket-expire">Expires {expiry}</div>}
+        {showCode && displayCode && (
+          <div className="cwticket-code">
+            <span className="cwticket-code-label">CODE</span>
+            <span className="cwticket-code-value">{displayCode}</span>
+            <button
+              className={`cwticket-copy ${copied ? 'is-copied' : ''}`}
+              type="button"
+              onClick={() => onCopy?.(displayCode)}
+              aria-label={copied ? `${displayCode} copied` : `Copy ${displayCode}`}
+              title={copied ? 'Copied' : 'Copy code'}
+            >
+              {copied ? (
+                <>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                  Copied
+                </>
+              ) : (
+                <>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                  Copy
+                </>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+      {showShop && (
+        <button className="cwticket-stub" type="button" aria-label="Shop with coupon" onClick={onShop}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m13 5 7 7-7 7" /></svg>
+          <span className="cwticket-stub-text">Shop now</span>
+        </button>
+      )}
+    </div>
+  );
+}
+
+function WalletTicket({ coupon, copiedCode, onCopy, onClaim }) {
+  return (
+    <CouponTicket
+      coupon={coupon}
+      copied={copiedCode === coupon.code}
+      onCopy={onCopy}
+      onShop={onClaim}
+    />
+  );
+}
+
+function InactiveTicket({ coupon, label }) {
+  const num = couponDiscountNum(coupon);
+  const conditions = coupon.conditions || 'Sitewide · No minimum';
+  return (
+    <div className="cwticket is-inactive is-colored" {...couponPaletteProps(coupon)}>
+      <div className="cwticket-main">
+        <div className="cwticket-value">
+          {num ? (<><b>{num}%</b><span>OFF</span></>) : (<b>{coupon.value || 'Reward'}</b>)}
+        </div>
+        <div className="cwticket-meta">{coupon.code} · {conditions}</div>
+      </div>
+      <div className="cwticket-stub is-inactive">
+        <span className="cwticket-stub-text">{label}</span>
+      </div>
+    </div>
+  );
+}
+
+function GiftOpeningHero({ brand, coupons }) {
+  const brandName = brand?.name || 'FridgeChannel';
+  const previewCoupons = (coupons ?? []).slice(0, 3);
+  return (
+    <div className="gift-opening-hero" aria-hidden="true">
+      <div className="gift-opening-brand">
+        {brand?.logoUrl ? <img src={brand.logoUrl} alt="" /> : <BrandMark className="gift-opening-logo" />}
+        <span>{brandName}</span>
+      </div>
+      <div className="gift-opening-stage">
+        <div className="gift-opening-glow" />
+        <img
+          className="gift-opening-box"
+          src="/rewards/welcome-rewards-hero-final-small.png"
+          alt=""
+        />
+        <div className="gift-opening-coupons">
+          {previewCoupons.map((coupon, index) => {
+            const num = couponDiscountNum(coupon);
+            return (
+              <div
+                className="gift-opening-ticket"
+                key={coupon.code ?? coupon.couponId ?? coupon.value}
+                data-ticket-index={index}
+                {...couponPaletteProps(coupon)}
+              >
+                <span>{num ? `${num}% OFF` : (coupon.value || 'Reward')}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GiftRevealModal({ pack, coupons, brand, copiedCode, onCopy, onShop, onOpenWallet, onClose }) {
+  const list = coupons ?? [];
+  const count = list.length;
+  const label = `${count} coupon${count === 1 ? '' : 's'}`;
+  const confetti = Array.from({ length: 42 }, (_, index) => ({
+    id: index,
+    left: `${4 + ((index * 37) % 92)}%`,
+    delay: `${(index % 9) * 0.055}s`,
+    duration: `${1.8 + (index % 7) * 0.12}s`,
+    drift: `${-42 + ((index * 29) % 84)}px`,
+    rotation: `${180 + ((index * 73) % 420)}deg`,
+    color: ['#7b3f4b', '#b9964d', '#ead9a0', '#9d3445', '#d4af62'][index % 5],
+  }));
+  return (
+    <div className="gift-reveal-overlay">
+      <div className="gift-reveal-confetti" aria-hidden="true">
+        {confetti.map((piece) => (
+          <i
+            key={piece.id}
+            style={{
+              '--confetti-left': piece.left,
+              '--confetti-delay': piece.delay,
+              '--confetti-duration': piece.duration,
+              '--confetti-drift': piece.drift,
+              '--confetti-rotation': piece.rotation,
+              '--confetti-color': piece.color,
+            }}
+          />
+        ))}
+      </div>
+      <main className="gift-reveal-card" role="dialog" aria-label="Gift unlocked">
+        <GiftOpeningHero brand={brand} coupons={list} />
+        <h2 className="gift-reveal-title">Gift unlocked!</h2>
+        <p className="gift-reveal-desc">
+          <b>{pack?.title || 'Your gift'}</b> added {label} to My coupons.
+        </p>
+        <div className="gift-reveal-coupons">
+          {list.map((coupon) => {
+            const copied = copiedCode === coupon.code;
+            return (
+              <CouponTicket
+                key={coupon.code ?? coupon.couponId ?? coupon.value}
+                coupon={coupon}
+                copied={copied}
+                onCopy={onCopy}
+                onShop={onShop}
+              />
+            );
+          })}
+        </div>
+        <button className="gift-reveal-btn" type="button" onClick={onOpenWallet}>View my coupons</button>
+        <button className="gift-reveal-close" type="button" onClick={onClose}>Continue</button>
+      </main>
+    </div>
+  );
+}
+
+function CompletedRewardsIntro({ couponCount, time, isExpired, urgent }) {
+  return (
+    <section className={`completed-rewards-intro ${urgent ? 'is-urgent' : ''}`}>
+      <img
+        className="completed-rewards-gift"
+        src="/rewards/target-gift.png"
+        alt=""
+        aria-hidden="true"
+      />
+      <div className="completed-rewards-copy-block">
+        <p className="completed-rewards-eyebrow">All rewards unlocked</p>
+        <h2>You earned the full reward set.</h2>
+        <p className="completed-rewards-copy">
+          All {couponCount} coupons are ready to use. Pick your favorites before the event ends.
+        </p>
+      </div>
+      <div className="completed-rewards-timer">
+        <span>{isExpired ? 'Event ended' : 'Time left to use'}</span>
+        {!isExpired && (
+          <strong>
+            {time.digits[0]}d&nbsp; {time.digits[1]}h&nbsp; {time.digits[2]}m&nbsp; {time.digits[3]}s
+          </strong>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function CouponWalletPage({
+  coupons,
+  copiedCode,
+  onCopy,
+  onClaim,
+  completed = false,
+  time,
+  isExpired = false,
+  urgent = false,
+}) {
+  const list = coupons ?? [];
+  const active = list.filter((c) => c.status === 'active');
+  const used = list.filter((c) => c.status === 'used');
+  const expired = list.filter((c) => c.status === 'expired');
+
+  return (
+    <main className={`content-area cwallet-page ${completed ? 'is-completed' : ''}`} data-screen-label={completed ? '全部奖励' : '我的优惠券'}>
+      {completed && (
+        <CompletedRewardsIntro
+          couponCount={active.length}
+          time={time}
+          isExpired={isExpired}
+          urgent={urgent}
+        />
+      )}
+      {list.length === 0 ? (
+        <div className="cwallet-empty">No coupons yet.<br />Claim a reward to add it here.</div>
+      ) : (
+        <>
+          {active.length > 0 && (
+            <>
+              {!completed && <div className="cwallet-section-label">Available · {active.length}</div>}
+              <div className="cwallet-ticket-grid">
+                {active.map((coupon) => (
+                  <WalletTicket key={coupon.code} coupon={coupon} copiedCode={copiedCode} onCopy={onCopy} onClaim={onClaim} />
+                ))}
+              </div>
+            </>
+          )}
+          {used.length > 0 && (
+            <>
+              <div className="cwallet-section-label">Used · {used.length}</div>
+              <div className="cwallet-ticket-grid">
+                {used.map((coupon) => (
+                  <InactiveTicket key={coupon.code} coupon={coupon} label="Used" />
+                ))}
+              </div>
+            </>
+          )}
+          {expired.length > 0 && (
+            <>
+              <div className="cwallet-section-label">Expired · {expired.length}</div>
+              <div className="cwallet-ticket-grid">
+                {expired.map((coupon) => (
+                  <InactiveTicket key={coupon.code} coupon={coupon} label="Expired" />
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </main>
   );
 }
 

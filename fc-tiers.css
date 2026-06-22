@@ -37,36 +37,42 @@
   --coupon-main:   #F6E7C8;   /* 奶油金 */
   --coupon-accent: #A8783B;   /* 浅棕 */
   --coupon-ink:    #6E4E23;
+  --coupon-stub-ink: #FFF8E8;
 }
 [data-coupon-theme="dtc"][data-tier="1"],
 [data-coupon-theme="dtc"] [data-tier="1"] {        /* 一级 · 轻会员感 */
   --coupon-main:   #EFD39A;   /* 香槟金 */
   --coupon-accent: #9B6A2E;   /* 古铜金 */
   --coupon-ink:    #6B4A1F;
+  --coupon-stub-ink: #FFF8E8;
 }
 [data-coupon-theme="dtc"][data-tier="2"],
 [data-coupon-theme="dtc"] [data-tier="2"] {        /* 二级 · 温暖、开始有吸引力 */
   --coupon-main:   #F6B98E;   /* 蜜桃金 */
   --coupon-accent: #8A4E2A;   /* 焦糖棕 */
   --coupon-ink:    #7A3F1E;
+  --coupon-stub-ink: #FFF8E8;
 }
 [data-coupon-theme="dtc"][data-tier="3"],
 [data-coupon-theme="dtc"] [data-tier="3"] {        /* 三级 · 明显优惠 */
   --coupon-main:   #D98B7D;   /* 玫瑰金 */
   --coupon-accent: #7C3A35;   /* 深玫瑰 */
   --coupon-ink:    #4E211D;
+  --coupon-stub-ink: #FFF8E8;
 }
 [data-coupon-theme="dtc"][data-tier="4"],
 [data-coupon-theme="dtc"] [data-tier="4"] {        /* 四级 · 稀有、高价值 */
   --coupon-main:   #8E2F3C;   /* 酒红金 */
   --coupon-accent: #F7DFA3;   /* 香槟金 */
   --coupon-ink:    #F7E9C8;   /* 深底用浅金字 */
+  --coupon-stub-ink: #4E211D;
 }
 [data-coupon-theme="dtc"][data-tier="5"],
 [data-coupon-theme="dtc"] [data-tier="5"] {        /* 最高级 · 顶级奖励 */
   --coupon-main:   #211A16;   /* 黑金 */
   --coupon-accent: #D8A84F;   /* 金色 */
   --coupon-ink:    #D8A84F;
+  --coupon-stub-ink: #211A16;
   --coupon-gradient: linear-gradient(
     160deg,
     #2c241d 0%,
@@ -85,35 +91,41 @@
   --coupon-main:   #FFF0B8;   /* 奶油黄 */
   --coupon-accent: #DFA900;   /* 蜂蜜黄 */
   --coupon-ink:    #7A5A00;
+  --coupon-stub-ink: #3F2D00;
 }
 [data-coupon-theme="pop"][data-tier="1"],
 [data-coupon-theme="pop"] [data-tier="1"] {        /* 一级 · 清新 */
   --coupon-main:   #BDEFD8;   /* 薄荷绿 */
   --coupon-accent: #1EA66A;   /* 绿色 */
   --coupon-ink:    #0E6B43;
+  --coupon-stub-ink: #FFFFFF;
 }
 [data-coupon-theme="pop"][data-tier="2"],
 [data-coupon-theme="pop"] [data-tier="2"] {        /* 二级 · 明亮 */
   --coupon-main:   #BFE4FF;   /* 天空蓝 */
   --coupon-accent: #318AD8;   /* 蓝色 */
   --coupon-ink:    #1C5C92;
+  --coupon-stub-ink: #FFFFFF;
 }
 [data-coupon-theme="pop"][data-tier="3"],
 [data-coupon-theme="pop"] [data-tier="3"] {        /* 三级 · 兴奋 */
   --coupon-main:   #FF8A65;   /* 珊瑚橙 */
   --coupon-accent: #E94F37;   /* 橘红 */
   --coupon-ink:    #6E2410;
+  --coupon-stub-ink: #FFFFFF;
 }
 [data-coupon-theme="pop"][data-tier="4"],
 [data-coupon-theme="pop"] [data-tier="4"] {        /* 四级 · 强刺激 */
   --coupon-main:   #FF5F8F;   /* 桃粉红 */
   --coupon-accent: #C8245B;   /* 洋红 */
   --coupon-ink:    #5C0E29;
+  --coupon-stub-ink: #FFFFFF;
 }
 [data-coupon-theme="pop"][data-tier="5"],
 [data-coupon-theme="pop"] [data-tier="5"] {        /* 最高级 · 大奖感 */
   --coupon-main:   #6C4DFF;   /* 紫蓝 */
   --coupon-accent: #FFFFFF;   /* 白色 */
   --coupon-ink:    #FFFFFF;
+  --coupon-stub-ink: #18142F;
   --coupon-gradient: linear-gradient(135deg, #6C4DFF 0%, #18E0C8 100%);
 }
