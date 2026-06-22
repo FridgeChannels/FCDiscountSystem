@@ -3196,6 +3196,7 @@ export default function App() {
           ? { '--brand-primary': brand.buttonColor || brand.primaryColor }
           : {}),
         ...(brand.backgroundColor ? { '--bg-color': brand.backgroundColor } : {}),
+        ...(brand.logoUrl ? { '--brand-logo-url': `url("${brand.logoUrl}")` } : {}),
       }}
     >
       <canvas id="confetti-canvas" ref={canvasRef} />
@@ -3301,37 +3302,6 @@ export default function App() {
                 lastGainAmount={lastGainAmount}
                 onOpenWallet={() => setWalletOpen(true)}
               />
-
-              <div className="reward-flow">
-                <span className="reward-flow-conn" aria-hidden="true">
-                  <span className="reward-flow-dash" />
-                  <svg className="reward-flow-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="m6 9 6 6 6-6" />
-                  </svg>
-                </span>
-
-                <div className="reward-flow-card">
-                  <span className="reward-flow-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="11" cy="13" r="8" />
-                      <circle cx="11" cy="13" r="4" />
-                      <path d="M11 13 19 5" />
-                      <path d="M15.5 5H19v3.5" />
-                    </svg>
-                  </span>
-                  <div className="reward-flow-text">
-                    <p className="reward-flow-title">Play challenges to fill your gift meter</p>
-                    <p className="reward-flow-sub">Every point gets you closer to unlocking more coupons.</p>
-                  </div>
-                </div>
-
-                <span className="reward-flow-conn" aria-hidden="true">
-                  <span className="reward-flow-dash" />
-                  <svg className="reward-flow-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="m6 9 6 6 6-6" />
-                  </svg>
-                </span>
-              </div>
 
               <Challenges
                 challenges={challenges}
@@ -3624,6 +3594,8 @@ function WelcomeRitual({ pack, coupons, brand, claimed, copiedCode, onCopy, onCo
               key={coupon.couponId ?? coupon.value}
               coupon={coupon}
               className="is-welcome-ticket"
+              featured
+              brand={brand}
               showDetails
               showCode
               copied={copiedCode === coupon.code}
@@ -3923,7 +3895,7 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, onOpen, onO
             : 'Updated daily · New challenges every day'}
         </span>
       </div>
-      <div className="challenges-swiper">
+      <div className="challenges-list">
         {challenges.length === 0 ? (
           <div className="challenges-empty" role="status">
             <span className="challenges-empty-icon" aria-hidden="true">🎮</span>
@@ -3938,7 +3910,6 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, onOpen, onO
           const isGame = challenge.type === 'game';
           return (
             <div className={`challenge-card ${isGame ? 'is-game-card' : ''}`} key={challenge.id} style={isShopifyConnect ? { background: 'linear-gradient(135deg, #f6f9f4 0%, #eaf0e6 100%)', borderColor: 'rgba(94, 128, 62, 0.18)' } : undefined}>
-              <span className="challenge-badge">{challenge.badge}</span>
               <div className="challenge-icon-wrapper">
                 {isShopifyConnect ? (
                   <img className="challenge-card-icon" src="/gift-opening/shopify-icon.png" alt="" aria-hidden="true" />
@@ -3948,21 +3919,24 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, onOpen, onO
                   challenge.icon
                 )}
               </div>
-              <h4 className="challenge-title">{challenge.title}</h4>
-              {isGame ? (
-                <div className="challenge-game-meta">
-                  <div className="challenge-rating-row" aria-label={`Difficulty ${challenge.difficultyLevel} of 3`}>
-                    <span>Difficulty</span>
-                    <RatingIcons count={challenge.difficultyLevel} type="difficulty" />
+              <div className="challenge-card-body">
+                <span className="challenge-badge">{challenge.badge}</span>
+                <h4 className="challenge-title">{challenge.title}</h4>
+                {isGame ? (
+                  <div className="challenge-game-meta">
+                    <div className="challenge-rating-row" aria-label={`Difficulty ${challenge.difficultyLevel} of 3`}>
+                      <span>Difficulty</span>
+                      <RatingIcons count={challenge.difficultyLevel} type="difficulty" />
+                    </div>
+                    <div className="challenge-rating-row" aria-label={`Reward potential ${challenge.rewardPotentialLevel} of 3`}>
+                      <span>Reward</span>
+                      <RatingIcons count={challenge.rewardPotentialLevel} type="reward" />
+                    </div>
                   </div>
-                  <div className="challenge-rating-row" aria-label={`Reward potential ${challenge.rewardPotentialLevel} of 3`}>
-                    <span>Reward</span>
-                    <RatingIcons count={challenge.rewardPotentialLevel} type="reward" />
-                  </div>
-                </div>
-              ) : (
-                <p className="challenge-desc">{challenge.desc}</p>
-              )}
+                ) : (
+                  <p className="challenge-desc">{challenge.desc}</p>
+                )}
+              </div>
               <button
                 className={isShopifyConnect ? 'btn btn-play shopify-connect-btn' : 'btn btn-outline btn-play'}
                 id={challenge.type === 'survey' ? 'take-survey-btn' : `play-${challenge.id}-btn`}
@@ -4497,11 +4471,86 @@ function CouponTicket({
   showDetails = true,
   showCode = true,
   showShop = true,
+  featured = false,
+  brand = null,
 }) {
   const num = couponDiscountNum(coupon);
   const expiry = formatWalletExpiry(coupon.expiresAt);
   const conditions = coupon.conditions || 'Sitewide · No minimum';
   const displayCode = coupon.code || coupon.mockCode;
+
+  if (featured) {
+    const isFreeShip = !num;
+    const brandInitial = (brand?.name || 'A').trim().charAt(0).toUpperCase() || 'A';
+    return (
+      <div className={`cwticket is-colored is-featured ${className}`.trim()} {...couponPaletteProps(coupon)}>
+        <div className="cwticket-main">
+          <div className="cwticket-disc">
+            {isFreeShip ? (
+              <span className="cwticket-disc-text">{coupon.value || 'Reward'}</span>
+            ) : (
+              <>
+                <b>{num}</b>
+                <span className="cwticket-disc-unit">
+                  <span className="cwticket-disc-pct">%</span>
+                  <span className="cwticket-disc-off">OFF</span>
+                </span>
+              </>
+            )}
+          </div>
+          <div className="cwticket-info">
+            <div className="cwticket-cond">{conditions}</div>
+            {expiry && <div className="cwticket-expire">Expires {expiry}</div>}
+            {showCode && displayCode && (
+              <div className="cwticket-code">
+                <span className="cwticket-code-label">CODE</span>
+                <span className="cwticket-code-value">{displayCode}</span>
+                <button
+                  className={`cwticket-copy ${copied ? 'is-copied' : ''}`}
+                  type="button"
+                  onClick={() => onCopy?.(displayCode)}
+                  aria-label={copied ? `${displayCode} copied` : `Copy ${displayCode}`}
+                  title={copied ? 'Copied' : 'Copy code'}
+                >
+                  {copied ? (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+          <span className="cwticket-art" aria-hidden="true">
+            {isFreeShip ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2.5 7.5h11v8h-11z" />
+                <path d="M13.5 10h4l3 3v2.5h-7z" />
+                <circle cx="7" cy="17.5" r="1.7" />
+                <circle cx="17.5" cy="17.5" r="1.7" />
+                <path d="M21 5.5l.6-1.4.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6z" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 8h12l-1.1 11.2a1 1 0 0 1-1 .8H8.1a1 1 0 0 1-1-.8L6 8z" />
+                <path d="M9 8V6.5a3 3 0 0 1 6 0V8" />
+                <path d="M20 6l.6-1.4.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6z" />
+              </svg>
+            )}
+          </span>
+        </div>
+        {showShop && (
+          <button className="cwticket-stub" type="button" aria-label="Shop with coupon" onClick={onShop}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m13 5 7 7-7 7" /></svg>
+            <span className="cwticket-stub-text">Shop now</span>
+          </button>
+        )}
+        <span className="cwticket-badge" aria-hidden="true">
+          {brand?.logoUrl ? <img src={brand.logoUrl} alt="" /> : <span>{brandInitial}</span>}
+        </span>
+      </div>
+    );
+  }
   return (
     <div className={`cwticket is-colored ${className}`.trim()} {...couponPaletteProps(coupon)}>
       <div className="cwticket-main">
@@ -4542,6 +4591,7 @@ function CouponTicket({
           <span className="cwticket-stub-text">Shop now</span>
         </button>
       )}
+      <span className="cwticket-logo" aria-hidden="true" />
     </div>
   );
 }
@@ -4571,6 +4621,7 @@ function InactiveTicket({ coupon, label }) {
       <div className="cwticket-stub is-inactive">
         <span className="cwticket-stub-text">{label}</span>
       </div>
+      <span className="cwticket-logo" aria-hidden="true" />
     </div>
   );
 }
@@ -4654,6 +4705,8 @@ function GiftRevealModal({ pack, coupons, brand, copiedCode, onCopy, onShop, onO
               <CouponTicket
                 key={coupon.code ?? coupon.couponId ?? coupon.value}
                 coupon={coupon}
+                featured
+                brand={brand}
                 copied={copied}
                 onCopy={onCopy}
                 onShop={onShop}

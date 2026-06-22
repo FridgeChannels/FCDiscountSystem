@@ -531,16 +531,18 @@
 
 .welcome-pack-list .cwticket-code,
 .gift-reveal-coupons .cwticket-code {
-  width: max-content;
+  width: 100%;
   max-width: 100%;
-  margin: 0 auto;
-  justify-content: center;
+  margin: 0;
+  padding: 7px 11px;
+  justify-content: space-between;
 }
 
 .welcome-pack-list .cwticket-code-value,
 .gift-reveal-coupons .cwticket-code-value {
-  flex: 0 1 auto;
-  text-align: center;
+  flex: 1 1 auto;
+  font-size: 0.82rem;
+  text-align: left;
 }
 
 .welcome-pack-list .cwticket-copy,
@@ -670,85 +672,79 @@
   margin-bottom: 10px;
 }
 
-.reward-journey .challenges-swiper {
-  margin-right: -14px;
-  margin-left: -4px;
+.reward-journey .challenges-list {
+  margin: 0;
 }
 
-/* Connector between the reward meter and the games below it */
-.reward-flow {
+/* Bottom challenges as a vertical list (full-width row cards, page scroll) */
+.challenges-list {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 4px 4px 2px;
+  gap: 10px;
+  padding: 4px 2px 6px;
 }
 
-.reward-flow-conn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  color: var(--brand-secondary, #b89855);
-}
-
-.reward-flow-dash {
-  width: 0;
-  height: 14px;
-  border-left: 2px dashed color-mix(in srgb, var(--brand-secondary, #b89855) 70%, transparent);
-}
-
-.reward-flow-chevron {
-  width: 16px;
-  height: 16px;
-  margin-top: -3px;
-}
-
-.reward-flow-card {
-  display: flex;
-  align-items: center;
-  gap: 13px;
+.challenges-list .challenge-card {
+  flex: none;
   width: 100%;
-  margin: 5px 0;
-  padding: 13px 16px;
-  background: var(--card-bg, #fff);
-  border: 1px solid var(--border-color);
-  border-radius: 16px;
-  box-shadow: 0 6px 18px rgba(45, 51, 43, 0.06);
-}
-
-.reward-flow-icon {
-  flex: 0 0 44px;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--brand-secondary, #b89855) 14%, #fff);
-  color: var(--brand-secondary, #b89855);
-  display: grid;
-  place-items: center;
-}
-
-.reward-flow-icon svg {
-  width: 24px;
-  height: 24px;
-}
-
-.reward-flow-text {
-  min-width: 0;
+  min-height: 0;
+  flex-direction: row;
+  align-items: center;
   text-align: left;
+  gap: 13px;
+  padding: 12px 14px;
 }
 
-.reward-flow-title {
-  font-size: 0.9rem;
-  font-weight: 800;
-  color: var(--text-primary);
-  line-height: 1.3;
+.challenges-list .challenge-card:hover {
+  transform: none;
 }
 
-.reward-flow-sub {
-  margin-top: 3px;
-  font-size: 0.72rem;
-  font-weight: 600;
+.challenges-list .challenge-icon-wrapper {
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+}
+
+.challenge-card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.challenges-list .challenge-title {
+  font-size: 0.92rem;
+  line-height: 1.25;
+}
+
+.challenges-list .challenge-game-meta {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+  margin-top: 1px;
+}
+
+.challenges-list .challenge-desc {
+  margin: 0;
+  font-size: 0.74rem;
   color: var(--text-secondary);
-  line-height: 1.45;
+  line-height: 1.35;
+}
+
+.challenges-list .challenge-card .btn {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 92px;
+  margin: 0;
+  align-self: center;
+}
+
+.challenges-list .challenge-card .btn-play:not(.shopify-connect-btn) {
+  background-color: transparent;
+  color: var(--brand-primary);
+  border: 1.5px solid var(--brand-primary);
 }
 
 .tg-card.is-unlocked {
@@ -1650,8 +1646,19 @@
   padding: 11px 13px 10px;
 }
 
-.welcome-pack-list .cwticket-value b {
-  font-size: 1.5rem;
+.welcome-pack-list .cwticket-value b,
+.gift-reveal-coupons .cwticket-value b {
+  font-size: 1.95rem;
+}
+
+.welcome-pack-list .cwticket-value span,
+.gift-reveal-coupons .cwticket-value span {
+  font-size: 0.86rem;
+}
+
+.welcome-pack-list .cwticket-cond,
+.gift-reveal-coupons .cwticket-cond {
+  font-size: 0.72rem;
 }
 
 .welcome-pack-count {
@@ -1718,3 +1725,247 @@
   outline: 2px solid color-mix(in srgb, var(--brand-primary) 72%, white);
   outline-offset: 2px;
 }
+
+/* Brand logo printed in the bottom-left corner of every coupon ticket. */
+.cwticket-main {
+  padding-bottom: 26px;
+}
+
+.cwticket-logo {
+  position: absolute;
+  left: 12px;
+  bottom: 8px;
+  z-index: 3;
+  width: 52px;
+  height: 15px;
+  background: var(--brand-logo-url) left center / contain no-repeat;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* ============================================================
+   Featured coupon ticket (welcome + gift-unlock pages):
+   discount | divider | info | art, full-width Shop-now bar,
+   side notches and a brand badge on the seam.
+   ============================================================ */
+.welcome-pack-list,
+.gift-reveal-coupons {
+  width: 100%;
+  max-width: 360px;
+  margin-inline: auto;
+}
+
+.cwticket.is-featured {
+  position: relative;
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(0, 1fr) auto;
+  overflow: visible;
+  border-radius: 16px;
+  filter: drop-shadow(0 10px 22px color-mix(in srgb, var(--coupon-main) 34%, transparent));
+}
+
+.cwticket.is-featured .cwticket-main {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  column-gap: 13px;
+  padding: 15px 16px 16px;
+  border: none;
+  border-radius: 16px 16px 0 0;
+  background: var(--coupon-main);
+  text-align: left;
+  overflow: hidden;
+}
+
+.cwticket.is-featured .cwticket-disc {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 3px;
+  padding-right: 14px;
+  color: var(--coupon-ink);
+}
+
+.cwticket.is-featured .cwticket-disc::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: color-mix(in srgb, var(--coupon-ink) 22%, transparent);
+}
+
+.cwticket.is-featured .cwticket-disc b {
+  font-family: var(--font-serif);
+  font-size: 2.7rem;
+  font-weight: 850;
+  line-height: 0.85;
+  color: var(--coupon-ink);
+}
+
+.cwticket-disc-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1;
+  padding-top: 3px;
+}
+
+.cwticket-disc-pct {
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.cwticket-disc-off {
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+}
+
+.cwticket-disc-text {
+  font-family: var(--font-serif);
+  font-size: 1.55rem;
+  font-weight: 800;
+  line-height: 1.04;
+  max-width: 98px;
+}
+
+.cwticket.is-featured .cwticket-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cwticket.is-featured .cwticket-cond {
+  margin: 0;
+  min-height: 0;
+  font-size: 0.8rem;
+  font-weight: 650;
+  color: var(--coupon-ink);
+  text-align: left;
+  white-space: normal;
+}
+
+.cwticket.is-featured .cwticket-expire {
+  margin: 0 0 7px;
+  font-size: 0.74rem;
+  color: color-mix(in srgb, var(--coupon-ink) 78%, transparent);
+}
+
+.cwticket.is-featured .cwticket-code {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 6px 10px;
+  gap: 8px;
+  justify-content: flex-start;
+  background: color-mix(in srgb, var(--coupon-main) 64%, white 36%);
+  border: 1px solid color-mix(in srgb, var(--coupon-ink) 16%, transparent);
+  border-radius: 9px;
+}
+
+.cwticket.is-featured .cwticket-code-label {
+  flex: 0 0 auto;
+  font-size: 0.54rem;
+  font-weight: 900;
+  letter-spacing: 1px;
+  opacity: 0.6;
+  color: var(--coupon-ink);
+}
+
+.cwticket.is-featured .cwticket-code-value {
+  flex: 1 1 auto;
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-align: left;
+  color: var(--coupon-ink);
+}
+
+.cwticket.is-featured .cwticket-copy {
+  flex: 0 0 auto;
+  margin-left: 0;
+  color: var(--coupon-ink);
+}
+
+.cwticket.is-featured .cwticket-copy svg { width: 16px; height: 16px; }
+
+.cwticket-art {
+  align-self: center;
+  color: color-mix(in srgb, var(--coupon-ink) 24%, transparent);
+}
+
+.cwticket-art svg { width: 62px; height: 62px; display: block; }
+
+.cwticket.is-featured .cwticket-stub {
+  width: 100%;
+  min-height: 44px;
+  border: none;
+  border-radius: 0 0 16px 16px;
+  background: var(--coupon-accent);
+  color: var(--coupon-stub-ink, #fff);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 850;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.12);
+}
+
+.cwticket.is-featured .cwticket-stub svg { width: 15px; height: 15px; }
+
+.cwticket.is-featured .cwticket-stub-text {
+  writing-mode: horizontal-tb;
+  transform: none;
+  font-size: 0.85rem;
+  letter-spacing: 0.3px;
+}
+
+.cwticket.is-featured .cwticket-badge {
+  position: absolute;
+  left: 14px;
+  bottom: 24px;
+  z-index: 4;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--card-bg);
+  border: 2px solid var(--coupon-accent);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.2);
+}
+
+.cwticket.is-featured .cwticket-badge img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 5px;
+}
+
+.cwticket.is-featured .cwticket-badge span {
+  font-family: var(--font-serif);
+  font-weight: 800;
+  font-size: 1rem;
+  color: var(--coupon-ink);
+}
+
+.cwticket.is-featured::before,
+.cwticket.is-featured::after {
+  content: '';
+  position: absolute;
+  bottom: 36px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--bg-color);
+  z-index: 3;
+}
+
+.cwticket.is-featured::before { left: -8px; right: auto; top: auto; }
+.cwticket.is-featured::after { right: -8px; left: auto; top: auto; }
