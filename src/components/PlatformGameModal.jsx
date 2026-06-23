@@ -144,8 +144,6 @@ export default function PlatformGameModal({
       0,
       Math.round(Number(settlement?.pointsAwarded ?? settlement?.coinsAwarded ?? 0)),
     );
-    const remaining = Math.max(0, totalAwarded - runtimeAwardedCoinsRef.current);
-    if (remaining > 0) awardCoinsWithRank(remaining);
     const authoritativeTotal = Number.isFinite(Number(settlement?.pointsBalance))
       ? Math.max(0, Math.round(Number(settlement.pointsBalance)))
       : seedCoinsRef.current + totalAwarded;
@@ -156,7 +154,7 @@ export default function PlatformGameModal({
     window.setTimeout(() => {
       onDone?.(settlement);
     }, 80);
-  }, [awardCoinsWithRank, onDone, resetTo]);
+  }, [onDone, resetTo]);
 
   if (!open) return null;
 

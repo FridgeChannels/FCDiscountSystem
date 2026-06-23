@@ -164,6 +164,20 @@ export function claimCoupon(touchId, rewardPlanId, couponId) {
   });
 }
 
+export function claimInitialReward(touchId, rewardPlanId) {
+  return request('/api/fc/rewards/claim-initial', {
+    method: 'POST',
+    body: JSON.stringify({ touchId, rewardPlanId }),
+  });
+}
+
+export function claimTargetRewardPack(touchId, rewardPlanId) {
+  return request('/api/fc/rewards/claim-target-pack', {
+    method: 'POST',
+    body: JSON.stringify({ touchId, rewardPlanId }),
+  });
+}
+
 export function observeCoupon(touchId) {
   return request('/api/fc/coupons/observe', {
     method: 'POST',

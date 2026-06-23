@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { getRuntimeManifest, validateManifestEntry } from './runtime-manifest.js';
+import { splitCouponsIntoPacks } from '../src/api/splitRewardPacks.js';
 import {
   fetchBrandAsset,
   isAllowedBrandAssetUrl,
@@ -32,15 +33,114 @@ function writePlanCache(touchId, data) {
   planCache.set(touchId, { data, expiresAt: Date.now() + PLAN_CACHE_TTL_MS });
 }
 
+function parseCouponPercent(raw) {
+  const parsed = Number.parseInt(String(raw ?? '').replace(/[^\d]/g, ''), 10);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function stepCouponId(step) {
+  return step?.couponId ?? step?.campaignId ?? null;
+}
+
+function formatStepValue(step) {
+  if (step?.discountValue) return `${step.discountValue}% OFF`;
+  if (step?.couponType === 'free_shipping') return 'FREE SHIPPING';
+  return 'Reward';
+}
+
+function formatStepNum(step) {
+  if (step?.couponType === 'free_shipping') return '0';
+  if (step?.discountValue == null) return '';
+  return String(step.discountValue).replace('%', '');
+}
+
+function observedMatchesStep(observed, step) {
+  if (!observed || !step) return false;
+  const observedId = observed.couponId ?? observed.campaignId ?? null;
+  const couponId = stepCouponId(step);
+  if (observedId && couponId) return observedId === couponId;
+  return observed.tier != null && step.tier != null && Number(observed.tier) === Number(step.tier);
+}
+
+function normalizePlanForPackFlow(plan) {
+  if (!plan || typeof plan !== 'object') return plan;
+  if (plan.initialReward || plan.targetRewardPack) return plan;
+
+  const ladder = [...(plan.ladder ?? [])].sort((a, b) => (a.tier ?? 0) - (b.tier ?? 0));
+  const observed = plan.observedCoupon ?? plan.currentCoupon ?? null;
+  const validSteps = ladder.filter(
+    (step) => parseCouponPercent(step.discountValue ?? step.num) > 0
+      || step.couponType === 'free_shipping'
+      || String(step.discountValue ?? '').toLowerCase().includes('free ship'),
+  );
+  if (!validSteps.length) return plan;
+
+  if (validSteps.length === 1) {
+    const only = validSteps[0];
+    return {
+      ...plan,
+      initialReward: {
+        couponId: stepCouponId(only),
+        tier: only.tier,
+        discountValue: formatStepNum(only),
+        label: formatStepValue(only),
+        conditions: 'Sitewide · No minimum',
+        couponCode: observedMatchesStep(observed, only) ? observed?.couponCode ?? null : null,
+        issued: observedMatchesStep(observed, only) && Boolean(observed?.couponCode),
+      },
+      targetRewardPack: null,
+    };
+  }
+
+  const packSeed = plan.rewardPlanId ?? plan.touchId ?? '';
+  const { initial: startStep, targetCoupons: targetSteps } = splitCouponsIntoPacks(validSteps, packSeed);
+
+  const initialReward = startStep
+    ? {
+        couponId: stepCouponId(startStep),
+        tier: startStep.tier,
+        discountValue: formatStepNum(startStep),
+        label: formatStepValue(startStep),
+        conditions: 'Sitewide · No minimum',
+        couponCode: observedMatchesStep(observed, startStep) ? observed?.couponCode ?? null : null,
+        issued: observedMatchesStep(observed, startStep) && Boolean(observed?.couponCode),
+      }
+    : null;
+
+  const targetRewardPack = targetSteps.length
+    ? {
+        threshold: plan.ladder?.find((step) => step.tier === 1)?.pointsThreshold ?? 0,
+        issued: false,
+        coupons: targetSteps.map((step) => ({
+          couponId: stepCouponId(step),
+          tier: step.tier,
+          discountValue: formatStepNum(step),
+          label: formatStepValue(step),
+          conditions: 'Sitewide · No minimum',
+          couponCode: observedMatchesStep(observed, step) ? observed?.couponCode ?? null : null,
+          issued: observedMatchesStep(observed, step) && Boolean(observed?.couponCode),
+        })),
+      }
+    : null;
+
+  return {
+    ...plan,
+    initialReward,
+    targetRewardPack,
+  };
+}
+
 function getPlanDeduped(touchId, { timeoutMs = ENGINE_REWARD_PLAN_TIMEOUT_MS, skipTapReward = false } = {}) {
   const inflightKey = `${touchId}:${skipTapReward ? 'skipTap' : 'tap'}`;
   const existing = planInflight.get(inflightKey);
   if (existing) return existing;
   const body = { touchId };
   if (skipTapReward) body.skipTapReward = true;
-  const promise = callEngine('/reward-plan/generate', body, timeoutMs).finally(() => {
-    planInflight.delete(inflightKey);
-  });
+  const promise = callEngine('/reward-plan/generate', body, timeoutMs)
+    .then((data) => normalizePlanForPackFlow(data))
+    .finally(() => {
+      planInflight.delete(inflightKey);
+    });
   planInflight.set(inflightKey, promise);
   return promise;
 }
@@ -544,6 +644,87 @@ const server = http.createServer(async (req, res) => {
       const data = await callEngine('/coupons/redeem', body);
       if (body.touchId) planCache.delete(body.touchId);
       sendJson(res, 200, data);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/fc/rewards/claim-initial') {
+      const body = await readJson(req);
+      const touchId = body?.touchId;
+      const rewardPlanId = body?.rewardPlanId;
+      if (!touchId || !rewardPlanId) {
+        sendJson(res, 400, { error: 'touchId and rewardPlanId required' });
+        return;
+      }
+
+      const plan = await getPlanDeduped(touchId, { timeoutMs: ENGINE_REWARD_PLAN_TIMEOUT_MS });
+      const couponId = plan?.initialReward?.couponId;
+      if (!couponId) {
+        sendJson(res, 400, { error: 'initial reward coupon not available' });
+        return;
+      }
+
+      const issued = await callEngine('/coupons/redeem', {
+        touchId,
+        rewardPlanId,
+        couponId,
+        campaignId: couponId,
+      });
+      planCache.delete(touchId);
+      sendJson(res, 200, {
+        coupon: {
+          couponId: issued?.couponId ?? couponId,
+          couponCode: issued?.couponCode ?? plan?.initialReward?.couponCode ?? null,
+          discountValue: plan?.initialReward?.discountValue ?? '',
+          label: plan?.initialReward?.label ?? '',
+          conditions: plan?.initialReward?.conditions ?? '',
+          expiresAt: plan?.cycleExpiresAt ?? null,
+        },
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/fc/rewards/claim-target-pack') {
+      const body = await readJson(req);
+      const touchId = body?.touchId;
+      const rewardPlanId = body?.rewardPlanId;
+      if (!touchId || !rewardPlanId) {
+        sendJson(res, 400, { error: 'touchId and rewardPlanId required' });
+        return;
+      }
+
+      const plan = await getPlanDeduped(touchId, { timeoutMs: ENGINE_REWARD_PLAN_TIMEOUT_MS });
+      const rawCoupons = Array.isArray(plan?.targetRewardPack?.coupons) ? plan.targetRewardPack.coupons : [];
+      if (!rawCoupons.length) {
+        sendJson(res, 400, { error: 'target reward pack not available' });
+        return;
+      }
+
+      const packResult = await callEngine('/coupons/redeem-pack', { touchId, rewardPlanId });
+      const issuedById = new Map(
+        (packResult?.coupons ?? [])
+          .filter((coupon) => coupon?.couponId)
+          .map((coupon) => [String(coupon.couponId), coupon]),
+      );
+      const issuedCoupons = rawCoupons.map((coupon) => {
+        const couponId = coupon?.couponId;
+        const issued = couponId ? issuedById.get(String(couponId)) : null;
+        return {
+          couponId: issued?.couponId ?? couponId,
+          couponCode: issued?.couponCode ?? coupon?.couponCode ?? null,
+          discountValue: coupon?.discountValue ?? '',
+          label: coupon?.label ?? '',
+          conditions: coupon?.conditions ?? '',
+          expiresAt: plan?.cycleExpiresAt ?? null,
+        };
+      });
+
+      planCache.delete(touchId);
+      sendJson(res, 200, {
+        pack: {
+          threshold: plan?.targetRewardPack?.threshold ?? 0,
+          coupons: issuedCoupons,
+        },
+      });
       return;
     }
 

@@ -1,5 +1,6 @@
 import { iconForTemplate, labelForTemplate } from './gameLabels.js';
 import { mergeBrand } from '../lib/brandTheme.js';
+import { splitCouponsIntoPacks } from './splitRewardPacks.js';
 
 const GAME_PROGRESS_TIERS = [
   { difficultyLevel: 1, rewardPotentialLevel: 1 },
@@ -23,8 +24,10 @@ function clampGameRating(value) {
 }
 
 function formatDiscountValue(step) {
+  if (step.couponType === 'free_shipping' || String(step.discountValue ?? '').toLowerCase().includes('free ship')) {
+    return 'Free Ship';
+  }
   if (step.discountValue) return `${step.discountValue}%`;
-  if (step.couponType === 'free_shipping') return 'Free Ship';
   return `${step.tier}`;
 }
 
@@ -40,6 +43,37 @@ function stepCouponId(step) {
 
 function observedCouponId(observed) {
   return observed?.couponId ?? observed?.campaignId;
+}
+
+function normalizePackCoupon(raw, fallbackTarget = 0, fallbackTier = null) {
+  if (!raw || typeof raw !== 'object') return null;
+  const couponId = raw.couponId ?? raw.campaignId ?? null;
+  const rawNum = raw.num ?? raw.discountValue ?? raw.discountPercent ?? '';
+  const normalizedNum =
+    rawNum == null || rawNum === ''
+      ? ''
+      : String(rawNum).replace('%', '').replace('Free Ship', '0');
+  const explicitValue = raw.value ?? raw.label ?? raw.discountLabel ?? '';
+  const value =
+    explicitValue
+    || (normalizedNum && normalizedNum !== '0' ? `${normalizedNum}% OFF` : '')
+    || (raw.couponType === 'free_shipping' ? 'FREE SHIPPING' : '');
+  const target = Number.isFinite(Number(raw.target ?? raw.pointsThreshold))
+    ? Math.max(0, Number(raw.target ?? raw.pointsThreshold))
+    : fallbackTarget;
+  const tier = raw.tier != null ? Number(raw.tier) : fallbackTier;
+  return {
+    tier: tier != null && Number.isFinite(tier) ? tier : undefined,
+    campaignId: couponId ?? undefined,
+    couponId: couponId ?? undefined,
+    num: normalizedNum,
+    value: value || raw.title || 'Reward',
+    target,
+    code: raw.code ?? raw.couponCode ?? raw.mockCode ?? '',
+    conditions: raw.conditions ?? raw.terms ?? undefined,
+    expiresAt: raw.expiresAt ?? raw.expiryAt ?? undefined,
+    issued: Boolean(raw.issued ?? raw.isIssued ?? raw.couponCode ?? raw.code),
+  };
 }
 
 /** 已发券观测记录与 ladder 档位对齐（couponId 优先，tier 兜底） */
@@ -75,32 +109,75 @@ export function couponWithCode(coupon, code) {
 
 /** 折扣百分比（无法解析时为 0），用于过滤掉占位的 0% 券。 */
 function couponPercent(coupon) {
+  if (coupon?.couponType === 'free_shipping') return 1;
   const raw = coupon?.num ?? coupon?.value;
   const parsed = parseInt(String(raw ?? '').replace(/[^\d]/g, ''), 10);
+  if (String(raw ?? '').toLowerCase().includes('free ship')) return 1;
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 /**
- * 把已映射的 discounts（每档一张券）适配成礼包模型（后端不动，前端适配）：
- *  - startPack：pointsThreshold===0 且有有效折扣的券 —— 开局直接拥有，无需做任务。
- *  - targetPack：pointsThreshold>0 的券打成「一个」礼包，解锁门槛取其中最大阈值
- *    —— 做任务攒满金币后一次性拿到包内全部券。
- * 任一礼包为空时返回 null。
+ * 把已映射的 discounts 适配成礼包模型：
+ *  - startPack：随机选一张作为初始券，直接展示券码，无需任务或点击解锁。
+ *  - targetPack：其余券作为大礼包，领取时一次性展示全部券码（threshold=0，无需攒分）。
  */
-export function buildPacksFromDiscounts(discounts = []) {
+export function buildPacksFromDiscounts(discounts = [], seed = '') {
   const list = (discounts ?? []).filter((d) => couponPercent(d) > 0);
-  const startCoupons = list.filter((d) => (d.target ?? 0) === 0);
-  const targetCoupons = list.filter((d) => (d.target ?? 0) > 0);
+  const { initial, targetCoupons } = splitCouponsIntoPacks(list, seed);
 
-  const startPack = startCoupons.length ? { coupons: startCoupons } : null;
+  const startPack = initial ? { coupons: [{ ...initial, target: 0 }] } : null;
   const targetPack = targetCoupons.length
     ? {
-        threshold: Math.max(...targetCoupons.map((d) => d.target ?? 0)),
-        coupons: targetCoupons,
+        threshold: 0,
+        coupons: targetCoupons.map((coupon) => ({ ...coupon, target: 0 })),
       }
     : null;
 
   return { startPack, targetPack };
+}
+
+/** 当前 magnet 是否只有一张可领券(无需做任务、不进首页)。 */
+export function isSingleCouponReward(startPack, targetPack) {
+  const startCount = startPack?.coupons?.length ?? 0;
+  const targetCount = targetPack?.coupons?.length ?? 0;
+  return startCount + targetCount === 1;
+}
+
+function buildExplicitPacksFromPlan(plan) {
+  const initialReward = normalizePackCoupon(plan?.initialReward, 0, 1);
+  const rawTargetCoupons = Array.isArray(plan?.targetRewardPack?.coupons)
+    ? plan.targetRewardPack.coupons
+    : [];
+  const explicitThreshold = Number(plan?.targetRewardPack?.threshold);
+  const normalizedTargetCoupons = rawTargetCoupons
+    .map((coupon, index) =>
+      normalizePackCoupon(
+        coupon,
+        Number.isFinite(explicitThreshold) ? explicitThreshold : 0,
+        index + 2,
+      ))
+    .filter(Boolean);
+
+  if (!initialReward && !normalizedTargetCoupons.length) return null;
+
+  const targetThreshold = Number.isFinite(explicitThreshold) ? explicitThreshold : 0;
+
+  return {
+    startPack: initialReward ? { coupons: [initialReward] } : null,
+    targetPack: normalizedTargetCoupons.length
+      ? {
+          threshold: targetThreshold,
+          coupons: normalizedTargetCoupons.map((coupon) => ({ ...coupon, target: targetThreshold })),
+        }
+      : null,
+  };
+}
+
+/** 优先使用引擎下发的 initialReward / targetRewardPack，否则从 discounts 推导。 */
+export function resolveRewardPacks(plan, discounts = [], seed = '') {
+  const explicit = buildExplicitPacksFromPlan(plan);
+  if (explicit) return explicit;
+  return buildPacksFromDiscounts(discounts, seed);
 }
 
 /** 结算页（Reward Used / Round Complete）展示用的券信息 */
@@ -276,7 +353,8 @@ export function mapPlanToViewModel(plan, claimRecord = null, magnetBrandParam = 
   }));
 
   const discounts = applyClaimToDiscounts(baseDiscounts, claimForCycle);
-  const { startPack, targetPack } = buildPacksFromDiscounts(discounts);
+  const packSeed = plan.rewardPlanId ?? plan.touchId ?? '';
+  const { startPack, targetPack } = resolveRewardPacks(plan, discounts, packSeed);
 
   const tierIndex = ladder.findIndex((step) => step.tier === plan.currentTier);
   const currentStepIndex =
@@ -304,7 +382,7 @@ export function mapPlanToViewModel(plan, claimRecord = null, magnetBrandParam = 
     challenges,
     rewardPlanId: plan.rewardPlanId,
     dailyCapReached: plan.reasonCodes?.includes('DAILY_CAP_REACHED') ?? false,
-    hasInitialDiscount: deriveHasInitialDiscount(ladder),
+    hasInitialDiscount: Boolean(startPack?.coupons?.length) || deriveHasInitialDiscount(ladder),
     cycleExpired,
     tapReward: plan.tapReward ?? null,
     shopifyReward: plan.shopifyReward ?? null,

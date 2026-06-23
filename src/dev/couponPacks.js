@@ -13,12 +13,6 @@ export const MOCK_CURRENT_PACK = {
       conditions: DEFAULT_CONDITIONS,
       mockCode: 'WELCOME15',
     },
-    {
-      couponId: 'mock-start-ship',
-      value: 'Free Shipping',
-      conditions: 'Free standard shipping',
-      mockCode: 'SHIPFREE',
-    },
   ],
 };
 
@@ -26,8 +20,8 @@ export const MOCK_TARGET_PACK = {
   id: 'mock-target-pack',
   type: 'target',
   title: 'Your target gift',
-  subtitle: 'Complete challenges to unlock the whole pack.',
-  threshold: 120,
+  subtitle: 'Your bonus coupons, ready to use.',
+  threshold: 0,
   coupons: [
     {
       couponId: 'mock-target-20',
@@ -41,6 +35,12 @@ export const MOCK_TARGET_PACK = {
       value: '$10 OFF',
       conditions: 'Orders over $80',
       mockCode: 'SAVE10',
+    },
+    {
+      couponId: 'mock-start-ship',
+      value: 'Free Shipping',
+      conditions: 'Free standard shipping',
+      mockCode: 'SHIPFREE',
     },
     {
       couponId: 'mock-target-ship',
