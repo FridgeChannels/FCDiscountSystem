@@ -594,6 +594,10 @@ export default function App() {
   const [walletCopiedCode, setWalletCopiedCode] = useState(null);
   // 礼包领取结果:null | { pack, coupons }
   const [giftReveal, setGiftReveal] = useState(null);
+  // target 礼包解锁弹窗已确认(Continue / View my coupons)后进入 completed 流。
+  const [targetUnlockAcknowledged, setTargetUnlockAcknowledged] = useState(false);
+  // 从解锁弹窗进券包时暂存已签发券,避免 wallet state 尚未刷新导致空列表。
+  const [walletRevealCoupons, setWalletRevealCoupons] = useState([]);
   const [coinGainSignal, setCoinGainSignal] = useState(0);
   const [lastGainAmount, setLastGainAmount] = useState(0);
   const [unlockToastSignal, setUnlockToastSignal] = useState(0);
@@ -1760,7 +1764,7 @@ export default function App() {
     : isInitialPackIssued(activePlan, derivedPacks.startPack) || walletHasPack(couponWallet, currentPack?.id);
   const targetPackIssued = devScene
     ? walletHasPack(couponWallet, targetPack?.id)
-    : isTargetPackIssued(activePlan, derivedPacks.targetPack);
+    : isTargetPackIssued(activePlan, derivedPacks.targetPack) || walletHasPack(couponWallet, targetPack?.id);
   const currentPackClaimed = initialPackIssued;
   const targetClaimed = targetPackIssued;
   const currentPackIssuedCoupons = useMemo(() => {
@@ -1792,8 +1796,9 @@ export default function App() {
           ...MOCK_EXPIRED_COUPONS,
         ]
       : [];
+    const revealBoost = walletRevealCoupons.filter((coupon) => coupon?.code);
     const walletByKey = new Map(
-      dedupeWalletCoupons([...couponWallet, ...completedPreviewWallet, ...devMockCoupons])
+      dedupeWalletCoupons([...couponWallet, ...completedPreviewWallet, ...devMockCoupons, ...revealBoost])
         .filter((coupon) => coupon?.code)
         .map((coupon) => {
           const key = walletCouponKey(coupon) ?? coupon.code;
@@ -1801,7 +1806,7 @@ export default function App() {
         }),
     );
     return enrichWalletCoupons([...walletByKey.values()], packCouponsForDisplay);
-  }, [couponWallet, currentPack, targetPack, devScene, packCouponsForDisplay]);
+  }, [couponWallet, currentPack, targetPack, devScene, packCouponsForDisplay, walletRevealCoupons]);
 
   const completedAvailableCoupons = useMemo(
     () => selectCompletedAvailableCoupons(enrichedCouponWallet),
@@ -1867,7 +1872,7 @@ export default function App() {
     ? solePackClaimed
     : currentPackClaimed && (!targetPack || targetClaimed);
   const completedMode = devScene === 'completed'
-    || (!devScene && allRewardsClaimed && !giftReveal);
+    || (!devScene && !giftReveal && (allRewardsClaimed || targetUnlockAcknowledged));
   const showRewardsPage = walletOpen || completedMode;
   const planBlocksHome = planLoading && !rewardPlanId;
   const welcomePackPending = Boolean(currentPack) && !readWelcomeCompleted(touchId);
@@ -1914,6 +1919,13 @@ export default function App() {
     setCouponWallet(upsertCouponsToWallet(touchId, entries));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allRewardsClaimed, devScene, activePlan?.cycleId, rewardPlanId, derivedPacks.startPack, derivedPacks.targetPack]);
+
+  useEffect(() => {
+    if (!targetPack?.id || !walletRevealCoupons.length) return;
+    if (walletHasPack(couponWallet, targetPack.id)) {
+      setWalletRevealCoupons([]);
+    }
+  }, [couponWallet, targetPack?.id, walletRevealCoupons.length]);
 
   useEffect(() => {
     if (devScene !== 'unlocked') {
@@ -2083,6 +2095,8 @@ export default function App() {
     clearCouponWallet(touchId);
     setCouponWallet([]);
     setClaimedCode(null);
+    setTargetUnlockAcknowledged(false);
+    setWalletRevealCoupons([]);
     resetRound();                       // 刷新折扣档位 / 倒计时 / 清各类卡片
     setPoints(0);                       // 首登从 0 金币开始累积
     setWelcomeStep(0);                  // 回到欢迎流起点
@@ -3357,7 +3371,17 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPackClaimed, targetUnlocked, targetClaimed, targetPack?.id, devScene, singleCouponOnlyMode]);
 
-  async function handleSettlementComplete(settlement) {
+  function dismissTargetGiftReveal({ openWallet = false } = {}) {
+    const coded = (giftReveal?.coupons ?? []).filter((coupon) => coupon?.code);
+    setTargetUnlockAcknowledged(true);
+    setGiftReveal(null);
+    if (coded.length) setWalletRevealCoupons(coded);
+    if (openWallet) {
+      setWalletNavDirection('forward');
+      setWalletOpen(true);
+    }
+  }
+
     dbg('[FCDBG][App] settlement received', settlement);
     clearGameSessionCache();
     setActiveModal(null);
@@ -3999,6 +4023,8 @@ export default function App() {
           onSelectScene={(sceneId) => {
             setGiftReveal(null);
             setWalletOpen(false);
+            setTargetUnlockAcknowledged(false);
+            setWalletRevealCoupons([]);
             navigateToDevScene(sceneId);
             setDevScene(sceneId);
           }}
@@ -4006,11 +4032,15 @@ export default function App() {
             navigateToDevScene('home');
             setDevScene('home');
             setGiftReveal(null);
+            setTargetUnlockAcknowledged(false);
+            setWalletRevealCoupons([]);
             setWalletOpen(true);
           }}
           onResetFirstLogin={() => {
             setGiftReveal(null);
             setWalletOpen(false);
+            setTargetUnlockAcknowledged(false);
+            setWalletRevealCoupons([]);
             clearCouponWallet(touchId);
             setCouponWallet([]);
             if (devScene) {
@@ -4031,8 +4061,9 @@ export default function App() {
           copiedCode={walletCopiedCode}
           onCopy={handleWalletCopy}
           onShop={handleShopNowDirect}
-          onOpenWallet={() => { setGiftReveal(null); setWalletOpen(true); }}
-          onClose={() => setGiftReveal(null)}
+          redeemingCoupon={redeemingCoupon}
+          onOpenWallet={() => dismissTargetGiftReveal({ openWallet: true })}
+          onClose={() => dismissTargetGiftReveal()}
         />
       )}
 
@@ -5373,10 +5404,11 @@ function GiftOpeningHero({ brand, coupons }) {
   );
 }
 
-function GiftRevealModal({ pack, coupons, brand, copiedCode, onCopy, onShop, onOpenWallet, onClose }) {
+function GiftRevealModal({ pack, coupons, brand, copiedCode, onCopy, onShop, redeemingCoupon = false, onOpenWallet, onClose }) {
   const list = coupons ?? [];
   const count = list.length;
   const label = `${count} coupon${count === 1 ? '' : 's'}`;
+  const walletReady = !redeemingCoupon && list.length > 0 && list.every((coupon) => coupon?.code);
   const confetti = Array.from({ length: 42 }, (_, index) => ({
     id: index,
     left: `${4 + ((index * 37) % 92)}%`,
@@ -5427,7 +5459,15 @@ function GiftRevealModal({ pack, coupons, brand, copiedCode, onCopy, onShop, onO
             );
           })}
         </div>
-        <button className="gift-reveal-btn" type="button" onClick={onOpenWallet}>View my coupons</button>
+        <button
+          className="gift-reveal-btn"
+          type="button"
+          onClick={walletReady ? onOpenWallet : undefined}
+          disabled={!walletReady}
+          aria-busy={!walletReady}
+        >
+          {walletReady ? 'View my coupons' : 'Saving to My coupons…'}
+        </button>
         <button className="gift-reveal-close" type="button" onClick={onClose}>Continue</button>
       </main>
     </div>

@@ -1799,6 +1799,11 @@
 
 .gift-reveal-btn:hover { background: var(--brand-primary-hover, #4a5947); }
 .gift-reveal-btn:active { transform: scale(0.98); }
+.gift-reveal-btn:disabled {
+  opacity: 0.72;
+  cursor: wait;
+  transform: none;
+}
 
 .gift-reveal-close {
   display: block;
