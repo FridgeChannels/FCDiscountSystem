@@ -83,7 +83,7 @@ function InlineGameHost({ start, onDone, onError, onRuntimeEvent }) {
       cancelled = true;
       dbg('[FCDBG][GameHost] unmount', { sessionId: start.sessionId });
     };
-  }, [start.pointsMode, start.runtimeComponent, start.sessionId, start.templateKey]);
+  }, [start.runtimeComponent, start.sessionId, start.templateKey]);
 
   const handleComplete = useCallback(async (result) => {
     const payload = {

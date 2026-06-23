@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
-import { claimCoupon, claimInitialReward, claimTargetRewardPack, completeSurvey, fetchMagnetBrandParam, fetchPlayerProfile, fetchRewardPlan, fetchShopifyStatus, fetchSurveyQuestions, fetchTodayLeaderboard, observeCoupon, redeemCoupon, renewCycle, startGameSession, submitSurveyAnswers, updatePlayerProfile, uploadPlayerAvatar } from './api/client.js';
+import { claimCoupon, claimInitialReward, claimTargetRewardPack, completeSurvey, fetchCouponWallet, fetchMagnetBrandParam, fetchPlayerProfile, fetchRewardPlan, fetchShopifyStatus, fetchSurveyQuestions, fetchTodayLeaderboard, observeCoupon, redeemCoupon, renewCycle, startGameSession, submitSurveyAnswers, updatePlayerProfile, uploadPlayerAvatar } from './api/client.js';
 import {
   readCachedRewardPlan,
   readCachedMagnetBrandParam,
@@ -27,20 +27,36 @@ import {
   readCachedProfile,
   writeCachedProfile,
   readCouponWallet,
+  writeCouponWallet,
   upsertCouponsToWallet,
+  syncWalletForCycle,
+  walletCouponKey,
   setWalletCouponStatus,
   clearCouponWallet,
 } from './api/cache.js';
 import {
   applyClaimToDiscounts,
   buildPacksFromDiscounts,
+  buildWalletEntriesFromPacks,
   couponWithCode,
+  isInitialPackIssued,
   isSingleCouponReward,
+  isTargetPackIssued,
   mapPlanToViewModel,
   resolveRewardPacks,
   nextTierThresholdFromDiscounts,
   resolveSettlementCoupon,
 } from './api/mapPlan.js';
+import { mapApiWalletToLocal } from './api/mapWallet.js';
+import { couponDisplayMode, couponPercentNum, couponPaletteTierFor, enrichCouponDisplay } from './api/couponDisplay.js';
+import {
+  dedupeWalletCoupons,
+  enrichWalletCoupons,
+  selectCompletedAvailableCoupons,
+  selectWalletArchiveCoupons,
+  isWalletCouponUsable,
+  walletHasCouponForCycle,
+} from './api/walletCoupons.js';
 import PlatformGameModal from './components/PlatformGameModal.jsx';
 import DevToolbar from './components/DevToolbar.jsx';
 import {
@@ -198,6 +214,8 @@ function tierReceiptSessionKey(touchId, cycleId, tier) {
   return `fc_receipt_tier_${touchId}_${cycleId ?? 'none'}_${tier ?? 'unknown'}`;
 }
 
+const TAP_ENTRY_DISPLAY_POINTS = 5;
+
 /** 非首次回访:有 welcome 标记、已领券缓存、或历史 plan 缓存 */
 function isReturnVisitor(touchId) {
   if (!touchId) return false;
@@ -317,46 +335,31 @@ function openExternalLink(url) {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
+function couponPaletteTier(coupon) {
+  return couponPaletteTierFor(coupon);
+}
+
 function tierForDiscount(num) {
   const n = parseInt(num, 10);
-  if (Number.isNaN(n)) return 0;
+  if (Number.isNaN(n) || n <= 0) return couponPaletteTierFor({ couponType: 'percentage' });
   return Math.max(0, Math.min(5, Math.round((n - 15) / 5)));
 }
 
-function couponPaletteTier(coupon) {
-  if (Number.isInteger(coupon?.paletteTier)) {
-    return Math.max(0, Math.min(5, coupon.paletteTier));
-  }
-  const seed = String(
-    coupon?.couponId
-    ?? coupon?.campaignId
-    ?? coupon?.code
-    ?? coupon?.mockCode
-    ?? `${coupon?.value ?? ''}-${coupon?.num ?? ''}`,
-  );
-  let hash = 2166136261;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash ^= seed.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) % 6;
-}
-
 function assignCouponPaletteTiers(coupons = []) {
-  const used = new Set();
-  return coupons.map((coupon) => {
-    let tier = couponPaletteTier(coupon);
-    while (used.has(tier) && used.size < 6) tier = (tier + 1) % 6;
-    used.add(tier);
-    return { ...coupon, paletteTier: tier };
-  });
+  return coupons.map((coupon) => enrichCouponDisplay(coupon));
 }
 
 function couponPaletteProps(coupon) {
+  const type = coupon?.couponType ?? coupon?.discountType ?? 'percentage';
   return {
     'data-coupon-theme': COUPON_THEME,
     'data-tier': String(couponPaletteTier(coupon)),
+    'data-coupon-type': type,
   };
+}
+
+function couponTicketHeadline(coupon) {
+  return coupon?.headline ?? coupon?.value ?? 'Reward';
 }
 
 function formatCountdown(totalSeconds) {
@@ -508,6 +511,7 @@ export default function App() {
   const zoomAfterCloseRef = useRef(null);
   const settlementCouponRef = useRef(null);
   const autoIssuedPackRef = useRef(null);
+  const pendingPackUnlockAfterSettlementRef = useRef(false);
   const unlockedPreviewShownRef = useRef(false);
   const shopifyPendingRef = useRef(null);
   const devPreviewActiveRef = useRef(false);
@@ -515,6 +519,10 @@ export default function App() {
   const magnetBrandParamRef = useRef(null);
   // 仅在 bootstrap 成功结束后标记，避免 StrictMode 二次挂载时跳过 plan 请求导致一直 loading
   const sessionBootstrapCompleteRef = useRef(null);
+  const entryTapFxRequestedRef = useRef(false);
+  const entryTapFxPlayedRef = useRef(false);
+  const entryTapHomeReadyRef = useRef(false);
+  const welcomeAfterEntryFxRef = useRef(false);
 
   const touchId = useTouchId();
   const [devScene, setDevScene] = useState(() => getDevScene());
@@ -531,7 +539,7 @@ export default function App() {
   const [surveyQuestions, setSurveyQuestions] = useState([]);
   const [activeSurveyTask, setActiveSurveyTask] = useState(null);
   const [surveyLoading, setSurveyLoading] = useState(false);
-  const [welcomeStep, setWelcomeStep] = useState(() => (isReturnVisitor(getTouchId()) ? 3 : 0));
+  const [welcomeStep, setWelcomeStep] = useState(3);
   const welcomeStepRef = useRef(welcomeStep);
   const [welcomeCoupon, setWelcomeCoupon] = useState(null);
   const [welcomeTargetPoints, setWelcomeTargetPoints] = useState(67);
@@ -553,8 +561,8 @@ export default function App() {
   const [forceWalletView, setForceWalletView] = useState(false);
   const [pendingPoints, setPendingPoints] = useState(0);
   const [redeemingCoupon, setRedeemingCoupon] = useState(false);
-  const [introActive, setIntroActive] = useState(() => isReturnVisitor(getTouchId()));
-  const [returnIntroGate, setReturnIntroGate] = useState(() => isReturnVisitor(getTouchId()));
+  const [introActive, setIntroActive] = useState(true);
+  const [returnIntroGate, setReturnIntroGate] = useState(true);
   const [renewGiftIntro, setRenewGiftIntro] = useState(false);
   const [renewFlowActive, setRenewFlowActive] = useState(false);
   const [renewPlanReady, setRenewPlanReady] = useState(false);
@@ -581,6 +589,7 @@ export default function App() {
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [leaderboardData, setLeaderboardData] = useState(null);
   const [walletOpen, setWalletOpen] = useState(false);
+  const [walletNavDirection, setWalletNavDirection] = useState('forward');
   const [couponWallet, setCouponWallet] = useState(() => readCouponWallet(getTouchId()));
   const [walletCopiedCode, setWalletCopiedCode] = useState(null);
   // 礼包领取结果:null | { pack, coupons }
@@ -597,6 +606,23 @@ export default function App() {
     setLeaderboardData(null);
     setCouponWallet(readCouponWallet(touchId));
   }, [touchId]);
+
+  const refreshCouponWallet = useCallback(async () => {
+    if (!touchId || devScene) return;
+    try {
+      const payload = await fetchCouponWallet(touchId);
+      const rows = Array.isArray(payload) ? payload : (payload?.coupons ?? []);
+      const entries = dedupeWalletCoupons(mapApiWalletToLocal(rows));
+      writeCouponWallet(touchId, entries);
+      setCouponWallet(entries);
+    } catch (err) {
+      dbgError('[FCDBG][App] wallet sync failed', err);
+    }
+  }, [touchId, devScene]);
+
+  useEffect(() => {
+    void refreshCouponWallet();
+  }, [refreshCouponWallet]);
 
   const displayProfile = useMemo(() => {
     if (playerProfile) {
@@ -736,28 +762,19 @@ export default function App() {
       setRenewGiftIntro(false);
       void applyRenewPlanAfterGiftRef.current?.();
     } else if (welcomeStepRef.current >= 3) {
-      if (singleCouponOnlyRef.current && !solePackClaimedRef.current) {
-        // Return-visitor gift replays welcomeStep 3; unclaimed single-coupon magnets need Welcome.
-        setWelcomeStep(1);
-        setIntroActive(false);
-        setReturnIntroGate(false);
-        returnIntroShownRef.current = true;
-        returnIntroPendingRef.current = false;
-      } else if (!singleCouponOnlyRef.current && !currentPackClaimedRef.current) {
-        setWelcomeStep(1);
-        setIntroActive(false);
-        setReturnIntroGate(false);
-        returnIntroShownRef.current = true;
-        returnIntroPendingRef.current = false;
-      } else {
-        returnIntroShownRef.current = true;
-        returnIntroPendingRef.current = false;
-        setReturnIntroGate(false);
-        setIntroActive(false);
-        setPendingRewardSignal((value) => value + 1);
-        if (!planLoading) {
-          window.setTimeout(() => playPendingTapRewardRef.current(), 760);
-        }
+      const needsWelcome =
+        (singleCouponOnlyRef.current && !solePackClaimedRef.current && !currentPackClaimedRef.current)
+        || (!singleCouponOnlyRef.current && !currentPackClaimedRef.current);
+      welcomeAfterEntryFxRef.current = needsWelcome;
+      returnIntroShownRef.current = true;
+      returnIntroPendingRef.current = false;
+      setReturnIntroGate(false);
+      setIntroActive(false);
+      setPendingRewardSignal((value) => value + 1);
+      if (!planLoading) {
+        window.setTimeout(() => playPendingTapRewardRef.current(), 760);
+      } else if (!needsWelcome) {
+        welcomeAfterEntryFxRef.current = false;
       }
     } else {
       setWelcomeStep(1);
@@ -885,14 +902,16 @@ export default function App() {
   const [discounts, setDiscounts] = useState(INITIAL_DISCOUNTS);
   const [planCurrentTier, setPlanCurrentTier] = useState(0);
   const [rewardPacks, setRewardPacks] = useState({ startPack: null, targetPack: null });
+  const [activePlan, setActivePlan] = useState(null);
   // 已领取但后端未核销的券码。存在时,每次登录都强制停留在最低折扣页,直到后端标记核销。
   const [claimedCode, setClaimedCode] = useState(null);
   // 确认领取弹窗:{ onConfirm } —— 点击「确认领取」后执行的领取动作。
   // 状态D · 新挑战开启过渡页:null | { reason: 'redeemed' | 'expired', coupon?: object }
   const [newChallenge, setNewChallenge] = useState(null);
 
-  // 把已带券码(已领取/已签发)的券同步进「我的券包」。target 礼包券 source='target',否则 'start'。
+  // 礼包模型下券码由 plan / claim API 写入；勿再把 ladder discounts 灌进券包。
   useEffect(() => {
+    if (rewardPacks.startPack || activePlan?.initialReward) return;
     const coded = (discounts ?? []).filter((d) => d.code);
     if (!coded.length) return;
     const expiresAt = countdownSeconds > 0
@@ -912,7 +931,7 @@ export default function App() {
     setCouponWallet(upsertCouponsToWallet(touchId, entries));
     // countdownSeconds 仅用于推导过期时间,不入依赖以免每秒重跑。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [discounts, touchId]);
+  }, [activePlan?.initialReward, discounts, rewardPacks.startPack, touchId]);
 
   // 过期标记:expiresAt 已过的活跃券标记为 'expired'(随 tick 每秒复查)。
   useEffect(() => {
@@ -928,11 +947,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [couponWallet, touchId, tick]);
 
-  const walletAvailableCount = useMemo(
-    () => couponWallet.filter((coupon) => coupon.status === 'active').length,
-    [couponWallet],
-  );
-
   const upsertIssuedPackCoupons = useCallback((pack, coupons, { reveal = false } = {}) => {
     if (!pack?.id || !Array.isArray(coupons) || !coupons.length) return [];
     const fallbackExpiresAt = countdownSeconds > 0
@@ -940,24 +954,31 @@ export default function App() {
       : undefined;
     const entries = coupons
       .filter((coupon) => coupon?.code)
-      .map((coupon) => ({
+      .map((coupon) => enrichCouponDisplay({
         packId: pack.id,
         paletteTier: coupon.paletteTier,
         code: coupon.code,
         num: coupon.num,
         value: coupon.value,
+        headline: coupon.headline,
         conditions: coupon.conditions,
+        couponType: coupon.couponType,
+        displayMode: coupon.displayMode,
+        restrictions: coupon.restrictions,
+        currencyCode: coupon.currencyCode,
         expiresAt: coupon.expiresAt ?? fallbackExpiresAt,
         status: 'active',
         source: pack.type === 'target' ? 'target' : 'start',
         couponId: coupon.couponId ?? coupon.campaignId,
-        cycleId: rewardPlanId ?? undefined,
+        cycleId: activePlan?.cycleId ?? rewardPlanId ?? undefined,
+        addedAt: new Date().toISOString(),
       }));
     if (!entries.length) return [];
     setCouponWallet(upsertCouponsToWallet(touchId, entries));
     if (reveal) setGiftReveal({ pack, coupons: entries });
+    void refreshCouponWallet();
     return entries;
-  }, [countdownSeconds, rewardPlanId, touchId]);
+  }, [activePlan?.cycleId, countdownSeconds, refreshCouponWallet, rewardPlanId, touchId]);
 
   const syncFromPlan = useCallback((plan, { fromCache = false, devPreview = false, fromNewChallengeRenew = false } = {}) => {
     const renewInProgress = Boolean(newChallengeRenewRef.current || renewFlowActiveRef.current);
@@ -971,17 +992,37 @@ export default function App() {
       claimRecord = null;
     }
     const vm = mapPlanToViewModel(plan, claimRecord, magnetBrandParamRef.current);
+    setActivePlan(plan);
     setRewardPlanId(vm.rewardPlanId);
-    setDiscounts(vm.discounts.length ? vm.discounts : INITIAL_DISCOUNTS);
+    setDiscounts(vm.discounts.length ? vm.discounts : (import.meta.env.DEV ? INITIAL_DISCOUNTS : []));
     setPlanCurrentTier(plan.currentTier ?? 0);
     setRewardPacks(resolveRewardPacks(plan, vm.discounts, vm.rewardPlanId ?? touchId));
     setCurrentStepIndex(vm.currentStepIndex);
     setCountdownSeconds(vm.countdownSeconds);
     setBrand(vm.brand);
-    setChallenges(vm.challenges.length ? vm.challenges : FALLBACK_CHALLENGES);
+    setChallenges(vm.challenges.length ? vm.challenges : (import.meta.env.DEV ? FALLBACK_CHALLENGES : []));
     setDailyCapReached(vm.dailyCapReached);
     setHasInitialDiscount(vm.hasInitialDiscount);
     setWelcomeTargetPoints(vm.points);
+
+    if (!devPreview) {
+      const packExpiresAt = vm.countdownSeconds > 0
+        ? new Date(Date.now() + vm.countdownSeconds * 1000).toISOString()
+        : undefined;
+      const walletEntries = buildWalletEntriesFromPacks({
+        rewardPlanId: vm.rewardPlanId,
+        cycleId: plan.cycleId ?? plan.rewardPlanId,
+        startPack: vm.startPack,
+        targetPack: vm.targetPack,
+        expiresAt: packExpiresAt,
+      });
+      const cycleId = plan.cycleId ?? plan.rewardPlanId;
+      if (cycleId) {
+        setCouponWallet(syncWalletForCycle(touchId, cycleId, walletEntries, { pruneOtherCycles: false }));
+      } else if (walletEntries.length) {
+        setCouponWallet(upsertCouponsToWallet(touchId, walletEntries));
+      }
+    }
 
     if (devPreview) {
       setPoints(vm.points);
@@ -999,29 +1040,21 @@ export default function App() {
       vm.couponRedeemed;
     const tapAwarded = vm.tapReward?.awarded ?? 0;
     const shopifyAwarded = vm.shopifyReward?.awarded ?? 0;
-    const entryAwarded = shopifyAwarded > 0 ? shopifyAwarded : tapAwarded;
+    const serverEntryAwarded = shopifyAwarded > 0 ? shopifyAwarded : tapAwarded;
     const entryKind = shopifyAwarded > 0 ? 'shopify' : 'tap';
-    const tapFxKey = `fc_tap_fx_${touchId}`;
-    const shopifyFxKey = `fc_shopify_fx_${touchId}`;
-    const entryFxPlayed =
-      entryKind === 'shopify'
-        ? sessionStorage.getItem(shopifyFxKey)
-        : sessionStorage.getItem(tapFxKey);
+    const entryTapFxOnVisit = entryTapFxRequestedRef.current && !renewInProgress && !fromNewChallengeRenew;
+    const displayEntryPts = serverEntryAwarded > 0
+      ? serverEntryAwarded
+      : (entryTapFxOnVisit ? TAP_ENTRY_DISPLAY_POINTS : 0);
     const blocksEntryReward =
-      fromCache ||
-      entryAwarded <= 0 ||
+      displayEntryPts <= 0 ||
       vm.cycleExpired ||
-      redeemedMatch ||
-      !!storedClaim;
-    const deferEntryFx =
-      !blocksEntryReward &&
-      (welcomeInProgress || (welcomeDone && !entryFxPlayed));
-    const entryFxKey = entryKind === 'shopify' ? shopifyFxKey : tapFxKey;
-    // 回访 +N 已计入 plan 总分;仅当展示分仍低于「总分-N」时才延迟播放入场动画。
-    const entryBasePoints = Math.max(0, vm.points - entryAwarded);
+      redeemedMatch;
+    const deferEntryFx = !blocksEntryReward;
+    const entryBasePoints = Math.max(0, vm.points - displayEntryPts);
     const shouldDeferEntryFx =
       deferEntryFx &&
-      (welcomeInProgress || pointsRef.current < entryBasePoints);
+      (returnIntroPendingRef.current || welcomeInProgress || pointsRef.current < entryBasePoints);
 
     const resolveSyncedPoints = (planPoints) => {
       const settlementAnchor = lastSettlementBalanceRef.current;
@@ -1053,12 +1086,10 @@ export default function App() {
       const stalePlanPoints = sameCycle && vm.points < pointsRef.current;
       if (shouldDeferEntryFx) {
         pendingRewardKindRef.current = entryKind;
-        pendingTapRewardRef.current = entryAwarded;
+        pendingTapRewardRef.current = displayEntryPts;
         setPendingRewardSignal((value) => value + 1);
         setPoints(entryBasePoints);
-      } else if (deferEntryFx && entryAwarded > 0) {
-        // 入场 +N 已在余额里且用户已看到更高分(如刚结算),不再重复扣 5 分。
-        sessionStorage.setItem(entryFxKey, '1');
+      } else if (deferEntryFx && displayEntryPts > 0) {
         pendingTapRewardRef.current = 0;
         pendingRewardKindRef.current = 'tap';
         if (!stalePlanPoints) setPoints(resolveSyncedPoints(vm.points));
@@ -1089,12 +1120,15 @@ export default function App() {
       !vm.cycleExpired &&
       !redeemedMatch &&
       !returnIntroShownRef.current &&
-      !renewFlowActiveRef.current &&
-      !packRewardFlow;
+      !renewFlowActiveRef.current;
     const singleCouponPlan = isSingleCouponReward(vm.startPack, vm.targetPack);
     const singleCouponIssued = singleCouponPlan && (vm.couponClaimed || Boolean(vm.claimedCouponCode));
     const initialPackCoupon = vm.startPack?.coupons?.[0] ?? null;
-    const initialRewardIssued = Boolean(initialPackCoupon?.code) || vm.couponClaimed || Boolean(vm.claimedCouponCode);
+    const initialRewardIssued =
+      vm.initialPackIssued ||
+      Boolean(initialPackCoupon?.code) ||
+      vm.couponClaimed ||
+      Boolean(vm.claimedCouponCode);
 
     if (!fromNewChallengeRenew && !renewInProgress) {
       if (packRewardFlow && !initialRewardIssued) {
@@ -1107,19 +1141,24 @@ export default function App() {
         } else if (welcomeInProgress) {
           setIntroActive(welcomeStepRef.current === 0);
         }
-      } else if (packRewardFlow && initialRewardIssued && welcomeDone) {
-        setWelcomeStep(3);
-        setIntroActive(false);
-        setReturnIntroGate(false);
-        returnIntroPendingRef.current = false;
-        returnIntroShownRef.current = true;
+      } else if (packRewardFlow && initialRewardIssued) {
+        if (!welcomeDone) writeWelcomeCompleted(touchId);
+        if (!returnIntroPendingRef.current) {
+          setWelcomeStep(3);
+          setIntroActive(false);
+          setReturnIntroGate(false);
+          returnIntroPendingRef.current = false;
+          returnIntroShownRef.current = true;
+        }
       } else if (singleCouponPlan && singleCouponIssued) {
         if (!welcomeDone) writeWelcomeCompleted(touchId);
-        setWelcomeStep(3);
-        setIntroActive(false);
-        setReturnIntroGate(false);
-        returnIntroShownRef.current = true;
-        returnIntroPendingRef.current = false;
+        if (!returnIntroPendingRef.current) {
+          setWelcomeStep(3);
+          setIntroActive(false);
+          setReturnIntroGate(false);
+          returnIntroShownRef.current = true;
+          returnIntroPendingRef.current = false;
+        }
       } else if (welcomeInProgress) {
         setIntroActive(welcomeStepRef.current === 0);
       } else if (shouldShowReturnIntro || returnIntroPendingRef.current) {
@@ -1286,7 +1325,8 @@ export default function App() {
     }
 
     if (sceneId === 'return-visit') {
-      sessionStorage.removeItem(`fc_tap_fx_${touchId}`);
+      entryTapFxRequestedRef.current = true;
+      entryTapFxPlayedRef.current = false;
       returnIntroPendingRef.current = true;
       returnIntroShownRef.current = false;
       setReturnIntroGate(true);
@@ -1524,14 +1564,14 @@ export default function App() {
       };
     }
 
-    const returnVisitorOnEntry = isReturnVisitor(touchId);
-    setWelcomeStep(returnVisitorOnEntry ? 3 : 0);
+    setWelcomeStep(3);
     setClaimedCode(readClaimRecord(touchId)?.code ?? null);
     setNewChallenge(null);
     const hadCachedPlan = Boolean(readCachedRewardPlan(touchId));
     setPlanLoading(!hadCachedPlan);
     setPlanError(null);
     setRewardPlanId(null);
+    setActivePlan(null);
     clearGameSessionCache();
     setRewardPlanFetched(false);
     giftEndPendingRef.current = false;
@@ -1540,13 +1580,17 @@ export default function App() {
     rememberTouchId(touchId);
     returnIntroShownRef.current = false;
     returnIntroPendingRef.current = false;
+    entryTapFxRequestedRef.current = false;
+    entryTapFxPlayedRef.current = false;
 
     const shopifyOAuthReturn = isShopifyOAuthPending(touchId);
 
-    // 非首次 tap:立即播回访礼盒,与 plan 请求并行(Shopify 授权回流时不播礼盒,直接进登录积分动效)
-    if (returnVisitorOnEntry && !shopifyOAuthReturn) {
-      if (!readWelcomeCompleted(touchId)) writeWelcomeCompleted(touchId);
-      sessionStorage.removeItem(`fc_tap_fx_${touchId}`);
+    // 每次 Tap 进入都播礼盒视频（OAuth 回流 / renew 流程除外）
+    if (!shopifyOAuthReturn && !renewFlowActiveRef.current && !newChallengeRenewRef.current) {
+      if (!readWelcomeCompleted(touchId) && isReturnVisitor(touchId)) {
+        writeWelcomeCompleted(touchId);
+      }
+      entryTapFxRequestedRef.current = true;
       returnIntroPendingRef.current = true;
       setReturnIntroGate(true);
       setWelcomeStep(3);
@@ -1558,9 +1602,9 @@ export default function App() {
       setIntroActive(false);
       setWelcomeStep(3);
     } else {
-      // 首登与 plan 并行播放礼盒，避免等待接口期间只显示 Refreshing rewards…
       setReturnIntroGate(false);
       setIntroActive(true);
+      setWelcomeStep(3);
     }
 
     preloadRuntimeManifest(touchId).catch((err) => {
@@ -1711,52 +1755,76 @@ export default function App() {
   const targetUnlocked = !targetPack
     || planCurrentTier >= 1
     || (targetThreshold != null && targetThreshold > 0 && points >= targetThreshold);
-  const currentPackClaimed = walletHasPack(couponWallet, currentPack?.id);
-  const targetClaimed = walletHasPack(couponWallet, targetPack?.id);
+  const initialPackIssued = devScene
+    ? walletHasPack(couponWallet, currentPack?.id)
+    : isInitialPackIssued(activePlan, derivedPacks.startPack) || walletHasPack(couponWallet, currentPack?.id);
+  const targetPackIssued = devScene
+    ? walletHasPack(couponWallet, targetPack?.id)
+    : isTargetPackIssued(activePlan, derivedPacks.targetPack);
+  const currentPackClaimed = initialPackIssued;
+  const targetClaimed = targetPackIssued;
   const currentPackIssuedCoupons = useMemo(() => {
     if (!currentPack) return [];
     const issued = couponWallet.filter((coupon) => coupon.packId === currentPack.id);
     return currentPack.coupons.map((coupon) => {
       const matched = issued.find((entry) => entry.couponId === coupon.couponId);
       return matched
-        ? { ...coupon, ...matched, paletteTier: matched.paletteTier ?? coupon.paletteTier }
-        : coupon;
+        ? enrichCouponDisplay({ ...matched, ...coupon, code: matched.code ?? coupon.code })
+        : enrichCouponDisplay(coupon);
     });
   }, [couponWallet, currentPack]);
-  const displayedCouponWallet = useMemo(() => {
+  const packCouponsForDisplay = useMemo(
+    () => [...(currentPack?.coupons ?? []), ...(targetPack?.coupons ?? [])],
+    [currentPack, targetPack],
+  );
+
+  const enrichedCouponWallet = useMemo(() => {
     const completedPreviewWallet = devScene === 'completed'
       ? [
           ...mockPackWalletEntries(currentPack),
           ...mockPackWalletEntries(targetPack),
         ]
       : [];
-    const devMockCoupons = import.meta.env.DEV
+    const devMockCoupons = import.meta.env.DEV && devScene
       ? [
           ...MOCK_DEV_ACTIVE_COUPONS,
           ...MOCK_USED_COUPONS,
           ...MOCK_EXPIRED_COUPONS,
         ]
       : [];
-    const walletByCode = new Map(
-      [...couponWallet, ...completedPreviewWallet, ...devMockCoupons]
+    const walletByKey = new Map(
+      dedupeWalletCoupons([...couponWallet, ...completedPreviewWallet, ...devMockCoupons])
         .filter((coupon) => coupon?.code)
-        .map((coupon) => [coupon.code, coupon]),
+        .map((coupon) => {
+          const key = walletCouponKey(coupon) ?? coupon.code;
+          return [key, coupon];
+        }),
     );
-    const paletteByCouponId = new Map(
-      [...(currentPack?.coupons ?? []), ...(targetPack?.coupons ?? [])]
-        .filter((coupon) => coupon.couponId)
-        .map((coupon) => [coupon.couponId, coupon.paletteTier]),
-    );
-    return [...walletByCode.values()].map((coupon) => ({
-      ...coupon,
-      paletteTier: coupon.paletteTier ?? paletteByCouponId.get(coupon.couponId),
-    }));
-  }, [couponWallet, currentPack, targetPack, devScene]);
+    return enrichWalletCoupons([...walletByKey.values()], packCouponsForDisplay);
+  }, [couponWallet, currentPack, targetPack, devScene, packCouponsForDisplay]);
+
+  const completedAvailableCoupons = useMemo(
+    () => selectCompletedAvailableCoupons(enrichedCouponWallet),
+    [enrichedCouponWallet],
+  );
+
+  const walletArchiveCoupons = useMemo(
+    () => selectWalletArchiveCoupons(enrichedCouponWallet),
+    [enrichedCouponWallet],
+  );
+
+  const walletBadgeCount = useMemo(
+    () => enrichedCouponWallet.filter((coupon) => isWalletCouponUsable(coupon)).length,
+    [enrichedCouponWallet],
+  );
   const targetProgressPct = targetThreshold ? Math.min((points / targetThreshold) * 100, 100) : 100;
   const targetDelta = targetThreshold ? Math.max(targetThreshold - points, 0) : 0;
   const singleCouponOnlyMode = useMemo(
     () => !devScene && isSingleCouponReward(derivedPacks.startPack, derivedPacks.targetPack),
     [derivedPacks.startPack, derivedPacks.targetPack, devScene],
+  );
+  const packTargetMode = Boolean(
+    targetPack?.coupons?.length && targetThreshold > 0 && !singleCouponOnlyMode,
   );
   const soleRewardPack = useMemo(() => {
     if (!singleCouponOnlyMode) return null;
@@ -1777,8 +1845,8 @@ export default function App() {
     return soleRewardPack.coupons.map((coupon) => {
       const matched = issued.find((entry) => entry.couponId === coupon.couponId);
       return matched
-        ? { ...coupon, ...matched, paletteTier: matched.paletteTier ?? coupon.paletteTier }
-        : coupon;
+        ? enrichCouponDisplay({ ...matched, ...coupon, code: matched.code ?? coupon.code })
+        : enrichCouponDisplay(coupon);
     });
   }, [couponWallet, soleRewardPack]);
   const welcomeCoupons = useMemo(() => {
@@ -1801,16 +1869,17 @@ export default function App() {
   const completedMode = devScene === 'completed'
     || (!devScene && allRewardsClaimed && !giftReveal);
   const showRewardsPage = walletOpen || completedMode;
-
-  useEffect(() => {
-    if (devScene) return;
-    if (currentPack?.coupons?.some((coupon) => coupon?.code)) {
-      upsertIssuedPackCoupons(currentPack, currentPack.coupons);
-    }
-    if (targetPack?.coupons?.some((coupon) => coupon?.code)) {
-      upsertIssuedPackCoupons(targetPack, targetPack.coupons);
-    }
-  }, [currentPack, devScene, targetPack, upsertIssuedPackCoupons]);
+  const planBlocksHome = planLoading && !rewardPlanId;
+  const welcomePackPending = Boolean(currentPack) && !readWelcomeCompleted(touchId);
+  const initialPackPending = singleCouponOnlyMode
+    ? Boolean(soleRewardPack && (!solePackClaimed || welcomePackPending))
+    : Boolean(currentPack && (welcomePackPending || !walletHasPack(couponWallet, currentPack?.id)));
+  const showWelcomeRitual = !introActive
+    && !returnIntroGate
+    && !renewGiftIntro
+    && !planBlocksHome
+    && initialPackPending;
+  const showRenewWelcomeLoading = renewFlowActive && !introActive && welcomeStep < 1;
 
   useEffect(() => {
     if (devScene || !singleCouponOnlyMode || !soleRewardPack || solePackClaimed) return;
@@ -1827,6 +1896,24 @@ export default function App() {
     returnIntroShownRef.current = true;
     returnIntroPendingRef.current = false;
   }, [allRewardsClaimed, devScene, touchId]);
+
+  useEffect(() => {
+    if (devScene || !allRewardsClaimed || !rewardPlanId) return;
+    const packExpiresAt = countdownSeconds > 0
+      ? new Date(Date.now() + countdownSeconds * 1000).toISOString()
+      : undefined;
+    const cycleId = activePlan?.cycleId ?? rewardPlanId;
+    const entries = buildWalletEntriesFromPacks({
+      rewardPlanId,
+      cycleId,
+      startPack: derivedPacks.startPack,
+      targetPack: derivedPacks.targetPack,
+      expiresAt: packExpiresAt,
+    });
+    if (!entries.length) return;
+    setCouponWallet(upsertCouponsToWallet(touchId, entries));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allRewardsClaimed, devScene, activePlan?.cycleId, rewardPlanId, derivedPacks.startPack, derivedPacks.targetPack]);
 
   useEffect(() => {
     if (devScene !== 'unlocked') {
@@ -1856,6 +1943,31 @@ export default function App() {
     claimedCode &&
     claimRecord?.code === claimedCode &&
     claimMatchesCurrentCycle,
+  );
+  const entryTapHomeBlocked = Boolean(
+    showWelcomeRitual ||
+    newChallenge ||
+    showClaimedScreen ||
+    completedMode ||
+    walletOpen ||
+    renewFlowActive ||
+    showRenewWelcomeLoading ||
+    showReceipt ||
+    zoomActive ||
+    giftReveal ||
+    shopifyAuthOverlay,
+  );
+  entryTapHomeReadyRef.current = (
+    !introActive &&
+    !returnIntroGate &&
+    !renewGiftIntro &&
+    !planLoading &&
+    !giftWaitingPlan &&
+    !isWelcomeVideoActive &&
+    !welcomeVideoFading &&
+    (welcomeStep >= 3 || readWelcomeCompleted(touchId)) &&
+    returnIntroShownRef.current &&
+    !entryTapHomeBlocked
   );
   const showBestOffer = (showClaimedScreen || isBestOffer) && !forceWalletView;
   const lockedCoupon = claimedCode
@@ -1894,6 +2006,9 @@ export default function App() {
   const expiryDate = useMemo(() => formatExpiryDate(countdownSeconds), [countdownSeconds]);
   const urgent = countdownSeconds < 86400 && countdownSeconds > 0;
   const gameProgressLadder = useMemo(() => {
+    if (packTargetMode && targetThreshold > 0) {
+      return [{ percent: 0, threshold: targetThreshold }];
+    }
     const byTier = (discounts ?? [])
       .map((step) => ({
         tier: Math.max(0, Number(step?.tier) || 0),
@@ -1909,14 +2024,28 @@ export default function App() {
       return { percent: step.percent, threshold: floor };
     });
     return normalized;
-  }, [discounts]);
+  }, [discounts, packTargetMode, targetThreshold]);
   const gameProgressView = useMemo(() => ({
     currentPoints: points,
-    targetPoints,
-    progressPct,
-    label: `${points} / ${targetPoints}`,
+    targetPoints: packTargetMode ? targetThreshold : targetPoints,
+    progressPct: packTargetMode ? targetProgressPct : progressPct,
+    label: packTargetMode
+      ? `${points} / ${targetThreshold}`
+      : `${points} / ${targetPoints}`,
     ladder: gameProgressLadder,
-  }), [gameProgressLadder, points, progressPct, targetPoints]);
+    giftReward: packTargetMode
+      ? { couponCount: targetCouponCount }
+      : null,
+  }), [
+    gameProgressLadder,
+    packTargetMode,
+    points,
+    progressPct,
+    targetCouponCount,
+    targetPoints,
+    targetProgressPct,
+    targetThreshold,
+  ]);
 
   // 预留“游戏内实时进度”事件通道:产品确认埋点后,可在这里接入实时积分变更。
   const handleGameRuntimeEvent = useCallback((event) => {
@@ -2002,6 +2131,8 @@ export default function App() {
     setRenewFlowActive(true);
     setRenewPlanReady(false);
     setRenewIssueAutoAdvance(false);
+    autoIssuedPackRef.current = null;
+    autoClaimInitialRef.current = null;
     renewPlanAppliedRef.current = false;
 
     setNewChallenge(null);
@@ -2010,6 +2141,8 @@ export default function App() {
     clearClaimedCode(touchId);
     setClaimedCode(null);
 
+    entryTapFxRequestedRef.current = true;
+    entryTapFxPlayedRef.current = false;
     clearWelcomeCompleted(touchId);
     sessionStorage.removeItem(`fc_tap_fx_${touchId}`);
     pendingTapRewardRef.current = 0;
@@ -2075,6 +2208,7 @@ export default function App() {
           if (closedCode) {
             setCouponWallet(setWalletCouponStatus(touchId, closedCode, reason === 'expired' ? 'expired' : 'used'));
           }
+          void refreshCouponWallet();
           clearCachedRewardPlan(touchId);
           setNewChallenge({ reason, coupon: settlementCoupon });
           clearClaimedCode(touchId);
@@ -2106,18 +2240,18 @@ export default function App() {
     if (tearTimerRef.current) window.clearTimeout(tearTimerRef.current);
   }, []);
 
-  const playPendingTapReward = useCallback(() => {
+    const playPendingTapReward = useCallback(() => {
     const pts = pendingTapRewardRef.current;
     if (!pts || pts <= 0) return;
-    const kind = pendingRewardKindRef.current === 'shopify' ? 'shopify' : 'tap';
-    const fxKey = kind === 'shopify' ? `fc_shopify_fx_${touchId}` : `fc_tap_fx_${touchId}`;
-    if (sessionStorage.getItem(fxKey)) {
+    if (entryTapFxPlayedRef.current) {
       pendingTapRewardRef.current = 0;
       pendingRewardKindRef.current = 'tap';
       setPoints(pendingTapTargetRef.current || pointsRef.current);
       return;
     }
-    sessionStorage.setItem(fxKey, '1');
+    if (!entryTapHomeReadyRef.current) return;
+    entryTapFxPlayedRef.current = true;
+    entryTapFxRequestedRef.current = false;
     pendingTapRewardRef.current = 0;
     pendingRewardKindRef.current = 'tap';
     triggerLoginBonusAnimation(pts, pendingTapTargetRef.current || pointsRef.current + pts);
@@ -2172,7 +2306,23 @@ export default function App() {
 
     const vm = syncFromPlan(plan, { fromNewChallengeRenew: true });
     setPlanLoading(false);
-    const welcomeNeeded = (vm.discounts?.length ?? 0) > 0;
+    const packRewardFlow = Boolean(vm.startPack?.coupons?.length);
+    const welcomeNeeded = packRewardFlow || (vm.discounts?.length ?? 0) > 0;
+
+    const cycleId = plan.cycleId ?? plan.rewardPlanId;
+    const packExpiresAt = vm.countdownSeconds > 0
+      ? new Date(Date.now() + vm.countdownSeconds * 1000).toISOString()
+      : undefined;
+    const initialWalletEntries = buildWalletEntriesFromPacks({
+      rewardPlanId: vm.rewardPlanId,
+      cycleId,
+      startPack: vm.startPack,
+      targetPack: null,
+      expiresAt: packExpiresAt,
+    });
+    if (initialWalletEntries.length) {
+      setCouponWallet(upsertCouponsToWallet(touchId, initialWalletEntries));
+    }
 
     if (welcomeNeeded) {
       const tapAwarded = vm.tapReward?.awarded ?? 0;
@@ -2184,7 +2334,10 @@ export default function App() {
         setPoints(vm.points);
       }
       setRenewIssueAutoAdvance(false);
-      const displayCoupon = vm.discounts[vm.currentStepIndex] ?? vm.discounts[0] ?? null;
+      const displayCoupon = vm.startPack?.coupons?.[0]
+        ?? vm.discounts[vm.currentStepIndex]
+        ?? vm.discounts[0]
+        ?? null;
       setWelcomeCoupon(displayCoupon);
       setWelcomeStep(1);
       setIntroActive(false);
@@ -2209,34 +2362,48 @@ export default function App() {
     setIntroActive(false);
   }, []);
 
-  // 回访礼盒结束且首页就绪后再播 +5/Shopify(不在 intro 期间触发)
+  // 礼盒结束且首页就绪后再播 +5/Shopify(不在 intro / 欢迎页 / 券包页等非首页触发)
   useEffect(() => {
-    if (introActive || planLoading || isWelcomeVideoActive || welcomeVideoFading) return undefined;
-    if (welcomeStep < 3 && !readWelcomeCompleted(touchId)) return undefined;
-    if (!returnIntroShownRef.current) return undefined;
+    if (!entryTapHomeReadyRef.current) return undefined;
     if (!pendingTapRewardRef.current) return undefined;
-
-    const kind = pendingRewardKindRef.current === 'shopify' ? 'shopify' : 'tap';
-    const fxKey = kind === 'shopify' ? `fc_shopify_fx_${touchId}` : `fc_tap_fx_${touchId}`;
-    if (sessionStorage.getItem(fxKey)) {
-      pendingTapRewardRef.current = 0;
-      pendingRewardKindRef.current = 'tap';
-      setPoints(pendingTapTargetRef.current || pointsRef.current);
-      return undefined;
-    }
+    if (entryTapFxPlayedRef.current) return undefined;
 
     const timer = window.setTimeout(() => playPendingTapReward(), 220);
     return () => window.clearTimeout(timer);
   }, [
+    completedMode,
+    giftReveal,
+    giftWaitingPlan,
     introActive,
     isWelcomeVideoActive,
+    newChallenge,
     pendingRewardSignal,
     planLoading,
     playPendingTapReward,
+    renewFlowActive,
+    renewGiftIntro,
+    returnIntroGate,
+    shopifyAuthOverlay,
+    showClaimedScreen,
+    showReceipt,
+    showWelcomeRitual,
     touchId,
+    walletOpen,
     welcomeStep,
     welcomeVideoFading,
+    zoomActive,
   ]);
+
+  // 非首页且不会再进入首页时,静默入账 tap 奖励(不播动效)
+  useEffect(() => {
+    if (!completedMode && !showClaimedScreen) return;
+    if (!pendingTapRewardRef.current || entryTapFxPlayedRef.current) return;
+    entryTapFxPlayedRef.current = true;
+    entryTapFxRequestedRef.current = false;
+    pendingTapRewardRef.current = 0;
+    pendingRewardKindRef.current = 'tap';
+    setPoints(pendingTapTargetRef.current || pointsRef.current);
+  }, [completedMode, pendingRewardSignal, showClaimedScreen]);
 
   // 进页时积分已够下一档门槛 → 补触发 receipt(不仅依赖 creditPoints 动画)
   useEffect(() => {
@@ -2278,7 +2445,7 @@ export default function App() {
     welcomeVideoFading,
   ]);
 
-  function triggerLoginBonusAnimation(pts, targetBalance) {
+  function triggerLoginBonusAnimation(pts, targetBalance, onComplete) {
     const viewport = viewportRef.current;
     if (!viewport) return;
 
@@ -2305,7 +2472,11 @@ export default function App() {
       flyCoins(
         Math.min(10, Math.max(6, Math.round(pts * 1.5))),
         () => {
-          creditPoints(pts, 600, targetBalance);
+          creditPoints(pts, 600, targetBalance, onComplete);
+          if (welcomeAfterEntryFxRef.current) {
+            welcomeAfterEntryFxRef.current = false;
+            setWelcomeStep(1);
+          }
         },
         startPos
       );
@@ -2775,8 +2946,11 @@ export default function App() {
 
   // 🅓 Roll the points counter up to the new total (instead of a hard jump),
   // highlighting the counter while it credits; celebrate once at the end.
-  function creditPoints(pts, duration = 600, absoluteTarget) {
-    if (!pts && absoluteTarget == null) return;
+  function creditPoints(pts, duration = 600, absoluteTarget, onComplete) {
+    if (!pts && absoluteTarget == null) {
+      onComplete?.();
+      return;
+    }
     setForceWalletView(false);
     if (pointsTweenRef.current) {
       cancelAnimationFrame(pointsTweenRef.current);
@@ -2788,7 +2962,8 @@ export default function App() {
 
     if (prefersReducedMotion()) {
       setPoints(to);
-      if (next && to >= targetPoints) triggerCelebration(to);
+      if (next && to >= targetPoints && !packTargetMode) triggerCelebration(to);
+      onComplete?.();
       return;
     }
 
@@ -2804,7 +2979,8 @@ export default function App() {
         pointsTweenRef.current = null;
         setPoints(to);
         setCrediting(false);
-        if (next && to >= targetPoints) triggerCelebration(to);
+        if (next && to >= targetPoints && !packTargetMode) triggerCelebration(to);
+        onComplete?.();
       }
     };
     pointsTweenRef.current = requestAnimationFrame(step);
@@ -2944,7 +3120,31 @@ export default function App() {
   async function autoClaimInitialPack() {
     const packToClaim = singleCouponOnlyMode ? soleRewardPack : currentPack;
     if (!packToClaim?.coupons?.length) return;
+    const cycleId = activePlan?.cycleId ?? rewardPlanId;
+    const initialCouponId = packToClaim.coupons[0]?.couponId;
+    if (initialCouponId && walletHasCouponForCycle(couponWallet, cycleId, initialCouponId)) {
+      writeWelcomeCompleted(touchId);
+      return;
+    }
     if (walletHasPack(couponWallet, packToClaim.id)) return;
+    if (!devScene && activePlan?.initialReward?.couponCode) {
+      const merged = mergeIssuedCoupon(
+        packToClaim.coupons[0] ?? null,
+        activePlan.initialReward,
+        packToClaim?.expiresAt,
+      );
+      if (merged?.code) {
+        upsertIssuedPackCoupons(packToClaim, [merged]);
+        writeWelcomeCompleted(touchId);
+        return;
+      }
+    }
+    if (!devScene && isInitialPackIssued(activePlan, derivedPacks.startPack)) {
+      const coded = packToClaim.coupons.filter((coupon) => coupon?.code);
+      if (coded.length) upsertIssuedPackCoupons(packToClaim, coded);
+      writeWelcomeCompleted(touchId);
+      return;
+    }
     if (devScene && devScene !== 'welcome') {
       claimMockPack(packToClaim, { reveal: false });
       return;
@@ -2961,6 +3161,7 @@ export default function App() {
       return;
     }
     if (!rewardPlanId || redeemingCoupon) return;
+    if (planLoading && !activePlan?.initialReward?.couponCode) return;
 
     setRedeemingCoupon(true);
     try {
@@ -3043,8 +3244,8 @@ export default function App() {
 
   // 领取 target 礼包:签发券码 → 把礼包内的券写进券包 → 弹"获得 N 张券"小结算。
   // 注:当前后端为单券签发,整包发码需后端支持;此处已按"整包写入"组织,后端就绪后自动生效。
-  async function issueTargetPack() {
-    if (redeemingCoupon) return;
+  async function issueTargetPack({ optimisticReveal = true } = {}) {
+    if (redeemingCoupon) return false;
     if (devScene && targetPack) {
       claimMockPack(targetPack);
       return true;
@@ -3053,12 +3254,21 @@ export default function App() {
     if (targetClaimed) return true;
     const alreadyIssued = targetPack.coupons.filter((coupon) => coupon?.code);
     if (alreadyIssued.length === targetPack.coupons.length) {
-      upsertIssuedPackCoupons(targetPack, alreadyIssued, { reveal: true });
+      const entries = upsertIssuedPackCoupons(targetPack, alreadyIssued, { reveal: false });
+      if (optimisticReveal && entries.length) {
+        setGiftReveal({ pack: targetPack, coupons: entries });
+      }
       return true;
     }
     if (!rewardPlanId) {
-      showNotification('Rewards not ready', 'Please wait a moment and try again.', '⚠️');
+      if (!optimisticReveal) {
+        showNotification('Rewards not ready', 'Please wait a moment and try again.', '⚠️');
+      }
       return false;
+    }
+
+    if (optimisticReveal) {
+      setGiftReveal({ pack: targetPack, coupons: targetCoupons });
     }
 
     setRedeemingCoupon(true);
@@ -3079,7 +3289,10 @@ export default function App() {
       if (!mergedCoupons.length || !mergedCoupons.every((coupon) => coupon?.code)) {
         throw new Error('Target reward pack response was incomplete');
       }
-      upsertIssuedPackCoupons(targetPack, mergedCoupons, { reveal: true });
+      const entries = upsertIssuedPackCoupons(targetPack, mergedCoupons, { reveal: false });
+      if (entries.length) {
+        setGiftReveal({ pack: targetPack, coupons: entries });
+      }
       clearCachedRewardPlan(touchId);
       void reloadPlan({ background: true, refresh: true }).catch((err) => {
         dbgError('[FCDBG][App] reload after target reward claim failed', err);
@@ -3090,25 +3303,36 @@ export default function App() {
       return false;
     } finally {
       setRedeemingCoupon(false);
+      pendingPackUnlockAfterSettlementRef.current = false;
     }
+  }
+
+  function beginTargetPackUnlock() {
+    if (!targetPack?.id || singleCouponOnlyMode || targetClaimed) return;
+    if (autoIssuedPackRef.current === targetPack.id) return;
+    autoIssuedPackRef.current = targetPack.id;
+    void issueTargetPack().then((issued) => {
+      if (!issued) autoIssuedPackRef.current = null;
+    });
   }
 
   useEffect(() => {
     if (devScene === 'home') return;
-    if (introActive || returnIntroGate || renewGiftIntro) return;
+    if (renewGiftIntro) return;
     const pack = singleCouponOnlyMode ? soleRewardPack : currentPack;
-    if (!pack?.id || walletHasPack(couponWallet, pack.id)) {
+    const serverIssued = !devScene && isInitialPackIssued(activePlan, derivedPacks.startPack);
+    if (!pack?.id || walletHasPack(couponWallet, pack.id) || serverIssued) {
       autoClaimInitialRef.current = null;
       return;
     }
-    if (planLoading && !rewardPlanId) return;
+    if (planLoading && !activePlan?.initialReward?.couponCode && !rewardPlanFetched) return;
     if (autoClaimInitialRef.current === pack.id) return;
     autoClaimInitialRef.current = pack.id;
     void autoClaimInitialPack();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    introActive,
-    returnIntroGate,
+    activePlan,
+    derivedPacks.startPack,
     renewGiftIntro,
     singleCouponOnlyMode,
     soleRewardPack,
@@ -3117,11 +3341,14 @@ export default function App() {
     devScene,
     planLoading,
     rewardPlanId,
+    rewardPlanFetched,
   ]);
 
   useEffect(() => {
     if (devScene === 'completed' || devScene === 'home' || singleCouponOnlyMode) return;
+    if (pendingPackUnlockAfterSettlementRef.current) return;
     if (!currentPackClaimed || !targetUnlocked || targetClaimed || !targetPack?.id) return;
+    if (!devScene && isTargetPackIssued(activePlan, derivedPacks.targetPack)) return;
     if (autoIssuedPackRef.current === targetPack.id) return;
     autoIssuedPackRef.current = targetPack.id;
     void issueTargetPack().then((issued) => {
@@ -3147,9 +3374,9 @@ export default function App() {
       patchCachedRewardPlanPoints(touchId, balanceAfter);
     }
     lastSettlementBalanceRef.current = balanceAfter;
-    // 结算后 plan 刷新不应再触发「入场 +5」延迟展示,否则会 602→597 并误判未达券档。
-    sessionStorage.setItem(`fc_tap_fx_${touchId}`, '1');
-    sessionStorage.setItem(`fc_shopify_fx_${touchId}`, '1');
+    // 游戏结算后 plan 刷新不再重复播放入场 +5
+    entryTapFxPlayedRef.current = true;
+    entryTapFxRequestedRef.current = false;
     pendingTapRewardRef.current = 0;
 
     const refreshPlan = () => {
@@ -3158,6 +3385,18 @@ export default function App() {
         setPlanError(err instanceof Error ? err.message : 'Could not refresh rewards');
       });
     };
+
+    const willUnlockTarget = packTargetMode
+      && targetThreshold > 0
+      && balanceAfter >= targetThreshold
+      && !targetClaimed
+      && currentPackClaimed;
+    if (willUnlockTarget) {
+      pendingPackUnlockAfterSettlementRef.current = true;
+    }
+    const openTargetUnlockAfterProgress = willUnlockTarget
+      ? () => beginTargetPackUnlock()
+      : undefined;
 
     if (settlement.couponWon && !targetPack) {
       const unlocked = resolveUnlockedCoupon(discounts, currentStepIndex);
@@ -3183,12 +3422,16 @@ export default function App() {
     }
 
     if (pts > 0) {
-      triggerLoginBonusAnimation(pts, balanceAfter);
+      triggerLoginBonusAnimation(pts, balanceAfter, openTargetUnlockAfterProgress);
       window.setTimeout(() => {
         refreshPlan();
         void syncLeaderboard(true);
       }, 1900);
       return;
+    }
+
+    if (willUnlockTarget) {
+      beginTargetPackUnlock();
     }
 
     refreshPlan();
@@ -3232,7 +3475,7 @@ export default function App() {
     setZoomCoupon(coupon);
     const liveTokens = faceEl ? readCouponTokens(faceEl.closest('.coupon')) : null;
     // faceEl 不在当前视图时(best offer / 已锁定流程)按券面档位回退,保证刮刮卡背景与券面一致。
-    setZoomColors(liveTokens ?? readCouponTokensForTier(tierForDiscount(coupon.num)));
+    setZoomColors(liveTokens ?? readCouponTokensForTier(couponPaletteTier(coupon)));
     setZoomCopyState('Copy');
     setZoomRect({
       left: vpRect.left + (vpRect.width - cardW) / 2,
@@ -3495,6 +3738,10 @@ export default function App() {
       renewPlanRef.current = null;
       returnIntroShownRef.current = true;
       returnIntroPendingRef.current = false;
+      if (pendingTapRewardRef.current > 0) {
+        window.setTimeout(() => playPendingTapRewardRef.current(), 280);
+      }
+      return;
     }
     if (singleCouponOnlyMode || !devScene) {
       setIntroActive(false);
@@ -3513,24 +3760,6 @@ export default function App() {
     (introActive || renewGiftIntro) &&
     (renewGiftIntro || (!renewFlowActive && hasInitialDiscount) || isReturnIntro);
   const brandIntroIsWelcome = renewGiftIntro || welcomeStep < 3;
-  const showRenewWelcomeLoading = renewFlowActive && !introActive && welcomeStep < 1;
-  const planBlocksHome = planLoading && !rewardPlanId;
-  const initialPackPending = singleCouponOnlyMode
-    ? Boolean(soleRewardPack && !solePackClaimed)
-    : Boolean(currentPack && !currentPackClaimed);
-  const showWelcomeRitual = !introActive
-    && !returnIntroGate
-    && !renewGiftIntro
-    && !planBlocksHome
-    && initialPackPending;
-  const showRewardsShell = !devScene
-    && !introActive
-    && !planBlocksHome
-    && !returnIntroGate
-    && !renewGiftIntro
-    && !showWelcomeRitual
-    && !giftReveal
-    && allRewardsClaimed;
   const showHome = !devScene || devScene === 'home' || devScene === 'completed';
 
   return (
@@ -3591,7 +3820,7 @@ export default function App() {
         </div>
       )}
 
-      {(showRenewWelcomeLoading || (planLoading && !introActive && !returnIntroGate && !showWelcomeRitual && !giftWaitingPlan && !showRewardsShell)) && (
+      {(showRenewWelcomeLoading || (planLoading && !introActive && !returnIntroGate && !showWelcomeRitual && !giftWaitingPlan)) && (
         <div className="reward-sync-status" role="status">
           Refreshing rewards…
         </div>
@@ -3604,21 +3833,28 @@ export default function App() {
         profile={displayProfile}
         shopifyStatus={shopifyAuthStatus}
         onOpenShopifyAccount={openShopifyAccountEntry}
-        onOpenWallet={() => setWalletOpen(true)}
-        onBackFromWallet={() => setWalletOpen(false)}
+        onOpenWallet={() => {
+          setWalletNavDirection('forward');
+          setWalletOpen(true);
+        }}
+        onBackFromWallet={() => {
+          setWalletNavDirection('back');
+          setWalletOpen(false);
+        }}
         walletOpen={walletOpen}
         rewardsCompleted={completedMode}
-        walletCount={walletAvailableCount}
+        walletCount={walletBadgeCount}
       />
 
       {showRewardsPage ? (
         <CouponWalletPage
-          coupons={displayedCouponWallet}
+          key={walletOpen ? 'wallet-archive' : completedMode ? 'completed-rewards' : 'wallet-active'}
+          coupons={walletOpen ? walletArchiveCoupons : completedAvailableCoupons}
           copiedCode={walletCopiedCode}
           onCopy={handleWalletCopy}
           onClaim={handleShopNowDirect}
-          completed={completedMode}
-          currentCycleId={rewardPlanId}
+          completed={completedMode && !walletOpen}
+          navDirection={walletNavDirection}
           time={time}
           isExpired={isExpired}
           urgent={urgent}
@@ -3626,13 +3862,14 @@ export default function App() {
       ) : (
         <>
           <main className="content-area">
-            <div className={`reward-journey ${urgent ? 'is-urgent' : ''}`}>
+            <div className="reward-journey-shell">
               <img
                 className="reward-journey-gift"
                 src="/rewards/target-gift.png"
                 alt=""
                 aria-hidden="true"
               />
+              <div className={`reward-journey ${urgent ? 'is-urgent' : ''}`}>
               <TargetProgress
                 points={points}
                 threshold={targetThreshold}
@@ -3659,6 +3896,7 @@ export default function App() {
                 onOpenLeaderboard={() => { void syncLeaderboard(true); setLeaderboardOpen(true); }}
               />
             </div>
+            </div>
             <RulesFooter rulesOpen={rulesOpen} onToggle={() => setRulesOpen((value) => !value)} />
           </main>
           <LeaderboardSheet
@@ -3669,32 +3907,6 @@ export default function App() {
           />
         </>
       )}
-      </>
-      )}
-
-      {showRewardsShell && (
-      <>
-        <Header
-          brand={brand}
-          profile={displayProfile}
-          shopifyStatus={shopifyAuthStatus}
-          onOpenShopifyAccount={openShopifyAccountEntry}
-          onOpenWallet={() => setWalletOpen(true)}
-          onBackFromWallet={() => setWalletOpen(false)}
-          walletOpen={walletOpen}
-          rewardsCompleted={completedMode}
-          walletCount={walletAvailableCount}
-        />
-        <CouponWalletPage
-          coupons={displayedCouponWallet}
-          copiedCode={walletCopiedCode}
-          onCopy={handleWalletCopy}
-          onClaim={handleShopNowDirect}
-          completed={completedMode}
-          time={time}
-          isExpired={isExpired}
-          urgent={urgent}
-        />
       </>
       )}
 
@@ -3833,8 +4045,14 @@ export default function App() {
           copiedCode={walletCopiedCode}
           onCopy={handleWalletCopy}
           onContinue={() => {
-            if (devScene) void handleContinueWelcomePack();
-            else setWalletOpen(true);
+            if (devScene) {
+              void handleContinueWelcomePack();
+              return;
+            }
+            const welcomeClaimed = singleCouponOnlyMode ? solePackClaimed : currentPackClaimed;
+            if (!welcomeClaimed) return;
+            setWalletOpen(false);
+            handleWelcomeRitualComplete();
           }}
           onShop={handleShopNowDirect}
           singleCoupon={singleCouponOnlyMode}
@@ -3870,18 +4088,18 @@ function BrandMark({ className = 'brand-logo' }) {
 }
 
 function PackCouponSummary({ coupon, compact = false, showCondition = true, showCode = false, copied = false, onCopy }) {
-  const num = couponDiscountNum(coupon);
-  const title = num ? `${num}% OFF` : (coupon.value || 'Reward');
+  const mode = couponDisplayMode(coupon);
+  const title = couponTicketHeadline(coupon);
   return (
     <div
-      className={`pack-ticket ${compact ? 'is-compact' : ''} ${compact && !showCode ? 'is-unclaimed-preview' : ''}`}
+      className={`pack-ticket is-type-${mode} ${compact ? 'is-compact' : ''} ${compact && !showCode ? 'is-unclaimed-preview' : ''}`}
       {...couponPaletteProps(coupon)}
     >
       <div className="pack-ticket-main">
         <div className="pack-coupon-copy">
-          <span className="pack-coupon-value">{title}</span>
+          <span className={`pack-coupon-value is-${mode}`}>{title}</span>
           {showCondition && (
-            <span className="pack-coupon-condition">{coupon.conditions || 'Sitewide · No minimum'}</span>
+            <span className="pack-coupon-condition">{coupon.conditions || 'No minimum'}</span>
           )}
         </div>
         {showCode && coupon.code && (
@@ -3921,25 +4139,31 @@ function PackCouponSummary({ coupon, compact = false, showCondition = true, show
 }
 
 function TargetBundleTicket({ coupons }) {
-  const list = (coupons ?? []).slice(0, 3);
+  const list = (coupons ?? []).filter(Boolean);
   if (!list.length) return null;
+  const countLabel = `${list.length} coupon${list.length === 1 ? '' : 's'} in target gift`;
   return (
     <div
-      className="target-coupon-row"
-      style={{ '--bundle-coupon-count': list.length }}
-      data-coupon-count={list.length}
-      aria-label={`${list.length} coupons in target gift`}
+      className="target-coupon-scroll"
+      tabIndex={0}
+      role="region"
+      aria-label={countLabel}
     >
-      {list.map((coupon) => (
-        <CouponTicket
-          key={coupon.couponId ?? coupon.value}
-          coupon={coupon}
-          className="is-target-preview"
-          showDetails={false}
-          showCode={false}
-          showShop={false}
-        />
-      ))}
+      <div
+        className="target-coupon-row"
+        data-coupon-count={list.length <= 2 ? list.length : 3}
+      >
+        {list.map((coupon, index) => (
+          <CouponTicket
+            key={coupon.couponId ? `${coupon.couponId}-${index}` : `${coupon.value}-${index}`}
+            coupon={coupon}
+            className="is-target-preview"
+            showDetails={false}
+            showCode={false}
+            showShop={false}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -3963,31 +4187,33 @@ function WelcomeRitual({
   return (
     <div className="welcome-pack-overlay" role="dialog" aria-label="Welcome gift">
       <section className="welcome-pack-card">
-        <div className="welcome-rewards-hero">
-          <div className="welcome-pack-brand">
-            {brand?.logoUrl ? <img src={brand.logoUrl} alt={`${brandName} logo`} /> : <BrandMark className="welcome-pack-logo" />}
-            <span>{brandName}</span>
+        <div className="welcome-rewards-hero-shell">
+          <div className="welcome-rewards-hero">
+            <div className="welcome-pack-brand">
+              {brand?.logoUrl ? <img src={brand.logoUrl} alt={`${brandName} logo`} /> : <BrandMark className="welcome-pack-logo" />}
+              <span>{brandName}</span>
+            </div>
+            <img
+              className="welcome-rewards-gift"
+              src="/rewards/welcome-rewards-hero-final-small.png"
+              alt=""
+              aria-hidden="true"
+            />
+            <p className="welcome-pack-eyebrow">Rewards unlocked</p>
+            <h1>{singleCoupon ? 'Your reward is ready!' : 'Your first reward is ready!'}</h1>
+            <p className="welcome-pack-subtitle">
+              {issuing && !hasCodes ? (
+                <>Preparing your coupon code…</>
+              ) : singleCoupon ? (
+                <>Your exclusive offer is ready.<br />Copy the code below and start shopping.</>
+              ) : (
+                <>
+                  Here’s your starter coupon.<br />
+                  More coupons are on the way.
+                </>
+              )}
+            </p>
           </div>
-          <img
-            className="welcome-rewards-gift"
-            src="/rewards/welcome-rewards-hero-final-small.png"
-            alt=""
-            aria-hidden="true"
-          />
-          <p className="welcome-pack-eyebrow">Rewards unlocked</p>
-          <h1>{singleCoupon ? 'Your reward is ready!' : 'Your first reward is ready!'}</h1>
-          <p className="welcome-pack-subtitle">
-            {issuing && !hasCodes ? (
-              <>Preparing your coupon code…</>
-            ) : singleCoupon ? (
-              <>Your exclusive offer is ready.<br />Copy the code below and start shopping.</>
-            ) : (
-              <>
-                Here’s your starter coupon.<br />
-                More coupons are on the way.
-              </>
-            )}
-          </p>
         </div>
 
         <div className="welcome-pack-list">
@@ -4011,12 +4237,12 @@ function WelcomeRitual({
         <div className="welcome-pack-actions">
           {!autoIssue && (
             <button className="welcome-pack-claim" type="button" onClick={onContinue}>
-              {singleCoupon ? 'Save & view my coupon' : 'Continue to rewards'}
+              {singleCoupon ? 'View my coupons' : 'Get More OFF'}
             </button>
           )}
           {autoIssue && claimed && (
             <button className="welcome-pack-claim" type="button" onClick={onContinue}>
-              View my coupons
+              {singleCoupon ? 'View my coupons' : 'Get More OFF'}
             </button>
           )}
         </div>
@@ -4048,21 +4274,24 @@ function HeaderBase({
 
   if (walletOpen) {
     return (
-      <header className={`brand-header is-wallet-header ${rewardsCompleted ? 'is-completed' : ''}`}>
-        {!rewardsCompleted && (
-          <button className="cwallet-back" type="button" onClick={onBackFromWallet} aria-label="Back to rewards">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="m15 18-6-6 6-6" />
-            </svg>
-          </button>
-        )}
+      <header className="brand-header is-wallet-header">
+        <button
+          className="cwallet-back"
+          type="button"
+          onClick={onBackFromWallet}
+          aria-label={rewardsCompleted ? 'Back to your rewards' : 'Back to rewards'}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="m15 18-6-6 6-6" />
+          </svg>
+        </button>
         <div className="cwallet-head-title">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a2 2 0 0 0 0-4V9Z" />
             <path d="M15 7v10" strokeDasharray="2 2" />
           </svg>
           <div>
-            <h1>{rewardsCompleted ? 'Your rewards' : 'My coupons'}</h1>
+            <h1>My coupons</h1>
           </div>
         </div>
       </header>
@@ -4263,6 +4492,37 @@ function RatingIcons({ count, type }) {
   );
 }
 
+function ChallengeCardIcon({ challenge, isShopifyConnect }) {
+  const [imgFailed, setImgFailed] = useState(false);
+
+  if (isShopifyConnect) {
+    return (
+      <img
+        className="challenge-card-icon"
+        src="/gift-opening/shopify-icon.png"
+        alt=""
+        aria-hidden="true"
+      />
+    );
+  }
+
+  if (challenge.iconUrl && !imgFailed) {
+    return (
+      <img
+        className="challenge-card-icon"
+        src={challenge.iconUrl}
+        alt=""
+        aria-hidden="true"
+        loading="lazy"
+        decoding="async"
+        onError={() => setImgFailed(true)}
+      />
+    );
+  }
+
+  return challenge.icon;
+}
+
 function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, onOpen, onOpenLeaderboard }) {
   return (
     <section className="earn-progress-section" data-screen-label="挑战任务">
@@ -4299,13 +4559,7 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, onOpen, onO
           return (
             <div className={`challenge-card ${isGame ? 'is-game-card' : ''}`} key={challenge.id} style={isShopifyConnect ? { background: 'linear-gradient(135deg, #f6f9f4 0%, #eaf0e6 100%)', borderColor: 'rgba(94, 128, 62, 0.18)' } : undefined}>
               <div className="challenge-icon-wrapper">
-                {isShopifyConnect ? (
-                  <img className="challenge-card-icon" src="/gift-opening/shopify-icon.png" alt="" aria-hidden="true" />
-                ) : challenge.iconUrl ? (
-                  <img className="challenge-card-icon" src={challenge.iconUrl} alt="" aria-hidden="true" />
-                ) : (
-                  challenge.icon
-                )}
+                <ChallengeCardIcon challenge={challenge} isShopifyConnect={isShopifyConnect} />
               </div>
               <div className="challenge-card-body">
                 <span className="challenge-badge">{challenge.badge}</span>
@@ -4844,10 +5098,69 @@ function formatWalletExpiry(iso) {
 }
 
 function couponDiscountNum(coupon) {
-  if (coupon?.num != null && coupon.num !== '') return String(coupon.num);
-  const value = coupon?.value ? String(coupon.value) : '';
-  const fromValue = value.includes('%') ? value.replace(/[^\d]/g, '') : '';
-  return fromValue || '';
+  return couponPercentNum(coupon);
+}
+
+function CouponValueFace({ coupon, featured = false }) {
+  const mode = couponDisplayMode(coupon);
+  const num = couponPercentNum(coupon);
+  const headline = couponTicketHeadline(coupon);
+  const percentValue = Number(num);
+  if (featured) {
+    if (mode === 'percent' && num && percentValue > 0) {
+      return (
+        <>
+          <b>{num}</b>
+          <span className="cwticket-disc-unit">
+            <span className="cwticket-disc-pct">%</span>
+            <span className="cwticket-disc-off">OFF</span>
+          </span>
+        </>
+      );
+    }
+    return <span className="cwticket-disc-text">{headline}</span>;
+  }
+  if (mode === 'percent' && num && percentValue > 0) {
+    return (
+      <>
+        <b>{num}%</b>
+        <span>OFF</span>
+      </>
+    );
+  }
+  return <b className={`cwticket-headline is-${mode}`}>{headline}</b>;
+}
+
+function CouponTicketArt({ coupon }) {
+  const mode = couponDisplayMode(coupon);
+  if (mode === 'free-shipping') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M2.5 7.5h11v8h-11z" />
+        <path d="M13.5 10h4l3 3v2.5h-7z" />
+        <circle cx="7" cy="17.5" r="1.7" />
+        <circle cx="17.5" cy="17.5" r="1.7" />
+        <path d="M21 5.5l.6-1.4.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6z" />
+      </svg>
+    );
+  }
+  if (mode === 'bogo') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 8v13" />
+        <path d="M19 12H5" />
+        <path d="M12 8a4 4 0 0 0 0-8 4 4 0 0 0 0 8z" />
+        <path d="M20 6l.6-1.4.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6z" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 8h12l-1.1 11.2a1 1 0 0 1-1 .8H8.1a1 1 0 0 1-1-.8L6 8z" />
+      <path d="M9 8V6.5a3 3 0 0 1 6 0V8" />
+      <path d="M20 6l.6-1.4.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6z" />
+    </svg>
+  );
 }
 
 function CouponTicket({
@@ -4862,29 +5175,18 @@ function CouponTicket({
   featured = false,
   brand = null,
 }) {
-  const num = couponDiscountNum(coupon);
   const expiry = formatWalletExpiry(coupon.expiresAt);
-  const conditions = coupon.conditions || 'Sitewide · No minimum';
+  const conditions = coupon.conditions || 'No minimum';
   const displayCode = coupon.code || coupon.mockCode;
+  const mode = couponDisplayMode(coupon);
 
   if (featured) {
-    const isFreeShip = !num;
     const brandInitial = (brand?.name || 'A').trim().charAt(0).toUpperCase() || 'A';
     return (
-      <div className={`cwticket is-colored is-featured ${className}`.trim()} {...couponPaletteProps(coupon)}>
+      <div className={`cwticket is-colored is-featured is-type-${mode} ${className}`.trim()} {...couponPaletteProps(coupon)}>
         <div className="cwticket-main">
           <div className="cwticket-disc">
-            {isFreeShip ? (
-              <span className="cwticket-disc-text">{coupon.value || 'Reward'}</span>
-            ) : (
-              <>
-                <b>{num}</b>
-                <span className="cwticket-disc-unit">
-                  <span className="cwticket-disc-pct">%</span>
-                  <span className="cwticket-disc-off">OFF</span>
-                </span>
-              </>
-            )}
+            <CouponValueFace coupon={coupon} featured />
           </div>
           <div className="cwticket-info">
             <div className="cwticket-cond">{conditions}</div>
@@ -4910,21 +5212,7 @@ function CouponTicket({
             )}
           </div>
           <span className="cwticket-art" aria-hidden="true">
-            {isFreeShip ? (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2.5 7.5h11v8h-11z" />
-                <path d="M13.5 10h4l3 3v2.5h-7z" />
-                <circle cx="7" cy="17.5" r="1.7" />
-                <circle cx="17.5" cy="17.5" r="1.7" />
-                <path d="M21 5.5l.6-1.4.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6z" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M6 8h12l-1.1 11.2a1 1 0 0 1-1 .8H8.1a1 1 0 0 1-1-.8L6 8z" />
-                <path d="M9 8V6.5a3 3 0 0 1 6 0V8" />
-                <path d="M20 6l.6-1.4.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6z" />
-              </svg>
-            )}
+            <CouponTicketArt coupon={coupon} />
           </span>
         </div>
         {showShop && (
@@ -4940,10 +5228,10 @@ function CouponTicket({
     );
   }
   return (
-    <div className={`cwticket is-colored ${className}`.trim()} {...couponPaletteProps(coupon)}>
+    <div className={`cwticket is-colored is-type-${mode} ${className}`.trim()} {...couponPaletteProps(coupon)}>
       <div className="cwticket-main">
         <div className="cwticket-value">
-          {num ? (<><b>{num}%</b><span>OFF</span></>) : (<b>{coupon.value || 'Reward'}</b>)}
+          <CouponValueFace coupon={coupon} />
         </div>
         {showDetails && <div className="cwticket-cond">{conditions}</div>}
         {showDetails && expiry && <div className="cwticket-expire">Expires {expiry}</div>}
@@ -4996,8 +5284,7 @@ function WalletTicket({ coupon, copiedCode, onCopy, onClaim }) {
 }
 
 function InactiveTicket({ coupon, label }) {
-  const num = couponDiscountNum(coupon);
-  const conditions = coupon.conditions || 'Sitewide · No minimum';
+  const conditions = coupon.conditions || 'No minimum';
   const labelLower = (label || '').toLowerCase();
   const displayCode = coupon.code || coupon.mockCode || 'DEVCODE';
 
@@ -5005,14 +5292,7 @@ function InactiveTicket({ coupon, label }) {
     <div className={`cwticket is-inactive is-${labelLower}`} {...couponPaletteProps(coupon)}>
       <div className="cwticket-main">
         <div className="cwticket-value">
-          {num ? (
-            <>
-              <b>{num}%</b>
-              <span>OFF</span>
-            </>
-          ) : (
-            <b>{coupon.value || 'Reward'}</b>
-          )}
+          <CouponValueFace coupon={coupon} />
         </div>
         <div className="cwticket-details">
           <div className="cwticket-code-lbl">CODE: {displayCode}</div>
@@ -5031,8 +5311,7 @@ function InactiveTicket({ coupon, label }) {
 }
 
 function SettlementTicket({ coupon, status }) {
-  const num = couponDiscountNum(coupon);
-  const conditions = coupon.conditions || 'Sitewide · No minimum';
+  const conditions = coupon.conditions || 'No minimum';
   const displayCode = coupon.code || coupon.mockCode || 'DEVCODE';
   const isUsed = status === 'used';
 
@@ -5040,14 +5319,7 @@ function SettlementTicket({ coupon, status }) {
     <div className={`cwticket ${isUsed ? 'is-settlement-used' : 'is-settlement-earned is-colored'}`} {...couponPaletteProps(coupon)}>
       <div className="cwticket-main">
         <div className="cwticket-value">
-          {num ? (
-            <>
-              <b>{num}%</b>
-              <span>OFF</span>
-            </>
-          ) : (
-            <b>{coupon.value || 'Reward'}</b>
-          )}
+          <CouponValueFace coupon={coupon} />
         </div>
         <div className="cwticket-details">
           <div className="cwticket-code-lbl">CODE: {displayCode}</div>
@@ -5083,7 +5355,7 @@ function GiftOpeningHero({ brand, coupons }) {
         />
         <div className="gift-opening-coupons">
           {previewCoupons.map((coupon, index) => {
-            const num = couponDiscountNum(coupon);
+            const headline = couponTicketHeadline(coupon);
             return (
               <div
                 className="gift-opening-ticket"
@@ -5091,7 +5363,7 @@ function GiftOpeningHero({ brand, coupons }) {
                 data-ticket-index={index}
                 {...couponPaletteProps(coupon)}
               >
-                <span>{num ? `${num}% OFF` : (coupon.value || 'Reward')}</span>
+                <span>{headline}</span>
               </div>
             );
           })}
@@ -5164,29 +5436,31 @@ function GiftRevealModal({ pack, coupons, brand, copiedCode, onCopy, onShop, onO
 
 function CompletedRewardsIntro({ couponCount, time, isExpired, urgent }) {
   return (
-    <section className={`completed-rewards-intro ${urgent ? 'is-urgent' : ''}`}>
+    <div className={`completed-rewards-shell ${urgent ? 'is-urgent' : ''}`}>
       <img
         className="completed-rewards-gift"
         src="/rewards/target-gift.png"
         alt=""
         aria-hidden="true"
       />
-      <div className="completed-rewards-copy-block">
-        <p className="completed-rewards-eyebrow">All rewards unlocked</p>
-        <h2>You earned the full reward set.</h2>
-        <p className="completed-rewards-copy">
-          All {couponCount} coupons are ready to use. Pick your favorites before the event ends.
-        </p>
-      </div>
-      <div className="completed-rewards-timer">
-        <span>{isExpired ? 'Event ended' : 'Time left to use'}</span>
-        {!isExpired && (
-          <strong>
-            {time.digits[0]}d&nbsp; {time.digits[1]}h&nbsp; {time.digits[2]}m&nbsp; {time.digits[3]}s
-          </strong>
-        )}
-      </div>
-    </section>
+      <section className={`completed-rewards-intro ${urgent ? 'is-urgent' : ''}`}>
+        <div className="completed-rewards-copy-block">
+          <p className="completed-rewards-eyebrow">All rewards unlocked</p>
+          <h2>You earned the full reward set.</h2>
+          <p className="completed-rewards-copy">
+            All {couponCount} coupons are ready to use. Pick your favorites before the event ends.
+          </p>
+        </div>
+        <div className="completed-rewards-timer">
+          <span>{isExpired ? 'Event ended' : 'Time left to use'}</span>
+          {!isExpired && (
+            <strong>
+              {time.digits[0]}d&nbsp; {time.digits[1]}h&nbsp; {time.digits[2]}m&nbsp; {time.digits[3]}s
+            </strong>
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -5196,21 +5470,25 @@ function CouponWalletPage({
   onCopy,
   onClaim,
   completed = false,
-  currentCycleId = null,
+  navDirection = 'forward',
   time,
   isExpired = false,
   urgent = false,
 }) {
   const list = coupons ?? [];
-  const active = list.filter((c) => c.status === 'active');
-  // 已使用 / 已过期只展示「当前活动」内的券(按 cycleId 匹配,无 cycleId 的旧券放行)。
-  // completed 状态下只展示未使用的券,不展示已使用 / 已过期。
-  const inCurrentCycle = (c) => !currentCycleId || !c.cycleId || c.cycleId === currentCycleId;
-  const used = completed ? [] : list.filter((c) => c.status === 'used' && inCurrentCycle(c));
-  const expired = completed ? [] : list.filter((c) => c.status === 'expired' && inCurrentCycle(c));
+  const active = completed
+    ? list
+    : list.filter((coupon) => coupon.status === 'active' && isWalletCouponUsable(coupon));
+  const used = completed ? [] : list.filter((coupon) => coupon.status === 'used');
+  const expired = completed
+    ? []
+    : list.filter((coupon) => coupon.status === 'expired' || (coupon.status === 'active' && !isWalletCouponUsable(coupon)));
 
   return (
-    <main className={`content-area cwallet-page ${completed ? 'is-completed' : ''}`} data-screen-label={completed ? '全部奖励' : '我的优惠券'}>
+    <main
+      className={`content-area cwallet-page ${completed ? 'is-completed' : ''} ${navDirection === 'back' ? 'is-nav-back' : 'is-nav-forward'}`}
+      data-screen-label={completed ? '全部奖励' : '我的优惠券'}
+    >
       {completed && (
         <CompletedRewardsIntro
           couponCount={active.length}
@@ -5228,7 +5506,7 @@ function CouponWalletPage({
               {!completed && <div className="cwallet-section-label">Available · {active.length}</div>}
               <div className="cwallet-ticket-grid">
                 {active.map((coupon) => (
-                  <WalletTicket key={coupon.code} coupon={coupon} copiedCode={copiedCode} onCopy={onCopy} onClaim={onClaim} />
+                  <WalletTicket key={walletCouponKey(coupon) ?? coupon.code} coupon={coupon} copiedCode={copiedCode} onCopy={onCopy} onClaim={onClaim} />
                 ))}
               </div>
             </>
@@ -5238,7 +5516,7 @@ function CouponWalletPage({
               <div className="cwallet-section-label">Used · {used.length}</div>
               <div className="cwallet-ticket-grid">
                 {used.map((coupon) => (
-                  <InactiveTicket key={coupon.code} coupon={coupon} label="Used" />
+                  <InactiveTicket key={walletCouponKey(coupon) ?? coupon.code} coupon={coupon} label="Used" />
                 ))}
               </div>
             </>
@@ -5248,7 +5526,7 @@ function CouponWalletPage({
               <div className="cwallet-section-label">Expired · {expired.length}</div>
               <div className="cwallet-ticket-grid">
                 {expired.map((coupon) => (
-                  <InactiveTicket key={coupon.code} coupon={coupon} label="Expired" />
+                  <InactiveTicket key={walletCouponKey(coupon) ?? coupon.code} coupon={coupon} label="Expired" />
                 ))}
               </div>
             </>

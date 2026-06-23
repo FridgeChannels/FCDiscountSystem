@@ -170,6 +170,7 @@ export default function PlatformGameModal({
           displayCoins={displayCoins}
           lastGain={lastGain}
           tierUnlock={tierUnlock}
+          giftReward={progressView?.giftReward ?? null}
           todayRank={todayRank}
           rankChange={rankChange}
         />

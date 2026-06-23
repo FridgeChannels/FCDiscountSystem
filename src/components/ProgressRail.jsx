@@ -1,6 +1,7 @@
 /**
  * Progress Rail — 游戏顶部固定的进度轨道。
  * 展示:当前金币(🪙 N) + ladder 全部折扣档位与剩余距离。
+ * 礼包模式下右侧展示大礼包，不再展示单张券档位。
  * 金币增长与路径推进由父级通过 displayCoins/rail 驱动(见 useGameProgress)。
  */
 export default function ProgressRail({
@@ -8,6 +9,7 @@ export default function ProgressRail({
   displayCoins,
   lastGain,
   tierUnlock,
+  giftReward,
   todayRank,
   rankChange,
 }) {
@@ -15,6 +17,67 @@ export default function ProgressRail({
 
   const { nodes, isMaxTier } = rail;
   const unlockPercent = tierUnlock?.percent;
+
+  if (giftReward) {
+    const threshold = rail.next?.threshold
+      ?? nodes[nodes.length - 1]?.threshold
+      ?? 0;
+    const fillPct = threshold > 0
+      ? Math.min(100, (displayCoins / threshold) * 100)
+      : (isMaxTier ? 100 : 0);
+    const visibleFillPct = fillPct > 0 ? Math.max(fillPct, fillPct >= 100 ? 100 : 2) : 0;
+    const left = Math.max(0, threshold - displayCoins);
+    const couponCount = giftReward.couponCount ?? 0;
+    const isUnlockPulse = tierUnlock != null || (threshold > 0 && left <= 0);
+
+    return (
+      <div className="progress-rail progress-rail--gift-pack" aria-label="Gift pack progress">
+        <div className="progress-rail-coins" aria-label={`${displayCoins} coins`}>
+          <i className="coin-ic progress-rail-coin-icon" aria-hidden="true" />
+          <span className="progress-rail-coin-value">{displayCoins}</span>
+          {lastGain ? (
+            <span className="progress-rail-coin-gain" key={lastGain.id} aria-live="polite">
+              +{lastGain.amount}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="progress-rail-pack-track">
+          <div className="progress-rail-pack-line" aria-hidden="true">
+            <span
+              className="progress-rail-pack-fill"
+              style={{ width: `${visibleFillPct}%` }}
+            />
+          </div>
+          <span className={`progress-rail-pack-status${isUnlockPulse ? ' is-unlock-pulse' : ''}`}>
+            {left > 0 ? `${left} left` : 'Ready!'}
+          </span>
+        </div>
+
+        <div
+          className={`progress-rail-gift${isUnlockPulse ? ' is-unlock-pulse' : ''}`}
+          aria-label={`${couponCount} coupon${couponCount === 1 ? '' : 's'} in gift pack`}
+        >
+          <img src="/rewards/target-gift.png" alt="" aria-hidden="true" />
+          {couponCount > 1 ? (
+            <span className="progress-rail-gift-badge">{couponCount}</span>
+          ) : null}
+        </div>
+
+        {todayRank != null && (
+          <div className="progress-rail-rank" aria-label={`Today rank ${todayRank}`}>
+            <span className="progress-rail-rank-icon">🏆</span>
+            <span className="progress-rail-rank-value" key={todayRank}>#{todayRank}</span>
+            {rankChange ? (
+              <span className="progress-rail-rank-up" key={rankChange.id}>
+                ↑{rankChange.amount}
+              </span>
+            ) : null}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="progress-rail" aria-label="Game progress">

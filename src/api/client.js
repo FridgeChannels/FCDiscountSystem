@@ -185,6 +185,11 @@ export function observeCoupon(touchId) {
   });
 }
 
+export function fetchCouponWallet(touchId, { limit } = {}) {
+  const limitQs = limit ? `&limit=${encodeURIComponent(limit)}` : '';
+  return request(`/api/fc/coupons/wallet?touchId=${encodeURIComponent(touchId)}${limitQs}`);
+}
+
 export function renewCycle(touchId, reason = 'expired') {
   return request('/api/fc/cycle/renew', {
     method: 'POST',

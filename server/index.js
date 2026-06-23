@@ -43,9 +43,25 @@ function stepCouponId(step) {
 }
 
 function formatStepValue(step) {
-  if (step?.discountValue) return `${step.discountValue}% OFF`;
+  if (step?.label) return step.label;
   if (step?.couponType === 'free_shipping') return 'FREE SHIPPING';
+  if (step?.couponType === 'buy_x_get_y') return 'BUY X GET Y';
+  if (step?.couponType === 'fixed_amount' && step?.discountValue) return `${step.discountValue} OFF`;
+  if (step?.discountValue) return `${step.discountValue}% OFF`;
   return 'Reward';
+}
+
+function packCouponFromStep(step, observed) {
+  return {
+    couponId: stepCouponId(step),
+    tier: step.tier,
+    discountValue: formatStepNum(step),
+    label: formatStepValue(step),
+    conditions: step.conditions ?? 'No minimum',
+    couponType: step.couponType,
+    couponCode: observedMatchesStep(observed, step) ? observed?.couponCode ?? null : null,
+    issued: observedMatchesStep(observed, step) && Boolean(observed?.couponCode),
+  };
 }
 
 function formatStepNum(step) {
@@ -71,6 +87,8 @@ function normalizePlanForPackFlow(plan) {
   const validSteps = ladder.filter(
     (step) => parseCouponPercent(step.discountValue ?? step.num) > 0
       || step.couponType === 'free_shipping'
+      || step.couponType === 'buy_x_get_y'
+      || step.couponType === 'fixed_amount'
       || String(step.discountValue ?? '').toLowerCase().includes('free ship'),
   );
   if (!validSteps.length) return plan;
@@ -79,15 +97,7 @@ function normalizePlanForPackFlow(plan) {
     const only = validSteps[0];
     return {
       ...plan,
-      initialReward: {
-        couponId: stepCouponId(only),
-        tier: only.tier,
-        discountValue: formatStepNum(only),
-        label: formatStepValue(only),
-        conditions: 'Sitewide · No minimum',
-        couponCode: observedMatchesStep(observed, only) ? observed?.couponCode ?? null : null,
-        issued: observedMatchesStep(observed, only) && Boolean(observed?.couponCode),
-      },
+      initialReward: packCouponFromStep(only, observed),
       targetRewardPack: null,
     };
   }
@@ -95,31 +105,13 @@ function normalizePlanForPackFlow(plan) {
   const packSeed = plan.rewardPlanId ?? plan.touchId ?? '';
   const { initial: startStep, targetCoupons: targetSteps } = splitCouponsIntoPacks(validSteps, packSeed);
 
-  const initialReward = startStep
-    ? {
-        couponId: stepCouponId(startStep),
-        tier: startStep.tier,
-        discountValue: formatStepNum(startStep),
-        label: formatStepValue(startStep),
-        conditions: 'Sitewide · No minimum',
-        couponCode: observedMatchesStep(observed, startStep) ? observed?.couponCode ?? null : null,
-        issued: observedMatchesStep(observed, startStep) && Boolean(observed?.couponCode),
-      }
-    : null;
+  const initialReward = startStep ? packCouponFromStep(startStep, observed) : null;
 
   const targetRewardPack = targetSteps.length
     ? {
         threshold: plan.ladder?.find((step) => step.tier === 1)?.pointsThreshold ?? 0,
         issued: false,
-        coupons: targetSteps.map((step) => ({
-          couponId: stepCouponId(step),
-          tier: step.tier,
-          discountValue: formatStepNum(step),
-          label: formatStepValue(step),
-          conditions: 'Sitewide · No minimum',
-          couponCode: observedMatchesStep(observed, step) ? observed?.couponCode ?? null : null,
-          issued: observedMatchesStep(observed, step) && Boolean(observed?.couponCode),
-        })),
+        coupons: targetSteps.map((step) => packCouponFromStep(step, observed)),
       }
     : null;
 
@@ -733,6 +725,21 @@ const server = http.createServer(async (req, res) => {
       const data = await callEngine('/coupons/observe', body);
       if (body.touchId) planCache.delete(body.touchId);
       sendJson(res, 200, data);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/fc/coupons/wallet') {
+      const touchId = url.searchParams.get('touchId');
+      if (!touchId) {
+        sendJson(res, 400, { error: 'touchId required' });
+        return;
+      }
+      const limit = url.searchParams.get('limit');
+      const qs = limit ? `&limit=${encodeURIComponent(limit)}` : '';
+      const coupons = await callEngineGet(
+        `/coupons/wallet?touchId=${encodeURIComponent(touchId)}${qs}`,
+      );
+      sendJson(res, 200, { coupons });
       return;
     }
 

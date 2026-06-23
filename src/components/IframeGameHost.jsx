@@ -18,8 +18,13 @@ export default function IframeGameHost({
   const [errorMessage, setErrorMessage] = useState('');
   const [bootAttempt, setBootAttempt] = useState(0);
   const onErrorRef = useRef(onError);
+  const onRuntimeEventRef = useRef(onRuntimeEvent);
   const startRef = useRef(start);
+  const sessionRef = useRef(null);
+  const boundSessionKeyRef = useRef('');
+  const playingRef = useRef(false);
   onErrorRef.current = onError;
+  onRuntimeEventRef.current = onRuntimeEvent;
   startRef.current = start;
 
   const { gameOverVisible, settleGameResultSafe } = useGameOverSettlement({
@@ -27,6 +32,8 @@ export default function IframeGameHost({
     onError,
     sessionId: start.sessionId,
   });
+  const settleGameResultSafeRef = useRef(settleGameResultSafe);
+  settleGameResultSafeRef.current = settleGameResultSafe;
 
   const iframeSrc = useMemo(() => {
     const url = new URL(iframeUrl, window.location.href);
@@ -40,7 +47,13 @@ export default function IframeGameHost({
     [iframeSrc],
   );
 
+  const hostSessionKey = `${start.sessionId}|${bootAttempt}|${iframeSrc}`;
+
   useEffect(() => {
+    playingRef.current = false;
+    boundSessionKeyRef.current = '';
+    sessionRef.current?.cancel();
+    sessionRef.current = null;
     setBootAttempt(0);
     setStatus('loading');
     setErrorMessage('');
@@ -50,34 +63,48 @@ export default function IframeGameHost({
     const iframe = iframeRef.current;
     if (!iframe) return undefined;
 
-    let session = null;
+    if (boundSessionKeyRef.current === hostSessionKey && sessionRef.current) {
+      return undefined;
+    }
+
     let cancelled = false;
 
     const attach = () => {
       if (cancelled) return;
-      setStatus('loading');
-      setErrorMessage('');
+      if (boundSessionKeyRef.current === hostSessionKey && sessionRef.current) {
+        return;
+      }
+
+      sessionRef.current?.cancel();
+      boundSessionKeyRef.current = hostSessionKey;
+
+      if (!playingRef.current) {
+        setStatus('loading');
+        setErrorMessage('');
+      }
+
       dbg('[FCDBG][IframeGameHost] attach', {
-        sessionId: start.sessionId,
-        iframeSrc,
+        sessionId: startRef.current?.sessionId,
+        hostSessionKey,
         allowedOrigin: resolvedAllowedOrigin,
       });
 
-      session = attachIframeHost({
+      sessionRef.current = attachIframeHost({
         iframe,
         allowedOrigin: resolvedAllowedOrigin,
         payload: startRef.current,
         handlers: {
           onReady: () => {
+            playingRef.current = true;
             dbg('[FCDBG][IframeGameHost] runtime ready', {
               sessionId: startRef.current?.sessionId,
-              attempt: bootAttempt,
+              hostSessionKey,
             });
             setStatus('playing');
           },
           onComplete: async (result) => {
             try {
-              await settleGameResultSafe(result);
+              await settleGameResultSafeRef.current(result);
             } catch (err) {
               dbgError('[FCDBG][IframeGameHost] complete failed', err);
               setStatus('error');
@@ -85,7 +112,7 @@ export default function IframeGameHost({
             }
           },
           onEvent: (event) => {
-            onRuntimeEvent?.(event);
+            onRuntimeEventRef.current?.(event);
           },
           onError: (message) => {
             dbgError('[FCDBG][IframeGameHost] runtime error', message);
@@ -97,18 +124,25 @@ export default function IframeGameHost({
       });
     };
 
+    const onLoad = () => {
+      attach();
+    };
+
+    iframe.addEventListener('load', onLoad, { once: true });
     if (iframe.contentDocument?.readyState === 'complete') {
       attach();
-    } else {
-      iframe.addEventListener('load', attach);
     }
 
     return () => {
       cancelled = true;
-      iframe.removeEventListener('load', attach);
-      session?.cancel();
+      iframe.removeEventListener('load', onLoad);
+      if (boundSessionKeyRef.current === hostSessionKey) {
+        sessionRef.current?.cancel();
+        sessionRef.current = null;
+        boundSessionKeyRef.current = '';
+      }
     };
-  }, [bootAttempt, iframeSrc, resolvedAllowedOrigin, settleGameResultSafe, start.sessionId]);
+  }, [hostSessionKey, resolvedAllowedOrigin]);
 
   useEffect(() => {
     const iframe = iframeRef.current;
@@ -124,7 +158,7 @@ export default function IframeGameHost({
     if (iframe.contentDocument?.readyState === 'complete') {
       attachViewport();
     } else {
-      iframe.addEventListener('load', attachViewport);
+      iframe.addEventListener('load', attachViewport, { once: true });
     }
 
     return () => {
@@ -134,16 +168,21 @@ export default function IframeGameHost({
   }, [iframeSrc, resolvedAllowedOrigin, start.sessionId]);
 
   useEffect(() => {
-    if (status !== 'loading') return undefined;
-    if (bootAttempt >= 2) return undefined;
+    if (status !== 'loading' || playingRef.current) return undefined;
+    if (bootAttempt >= 1) return undefined;
 
     const timeoutId = window.setTimeout(() => {
+      if (playingRef.current) return;
       dbgError('[FCDBG][IframeGameHost] ready timeout; retry bootstrap', {
         sessionId: start.sessionId,
         attempt: bootAttempt,
       });
+      playingRef.current = false;
+      boundSessionKeyRef.current = '';
+      sessionRef.current?.cancel();
+      sessionRef.current = null;
       setBootAttempt((value) => value + 1);
-    }, 4500);
+    }, 15000);
 
     return () => {
       window.clearTimeout(timeoutId);
@@ -151,14 +190,14 @@ export default function IframeGameHost({
   }, [bootAttempt, start.sessionId, status]);
 
   useEffect(() => {
-    if (status !== 'loading' || bootAttempt < 2) return;
+    if (status !== 'loading' || bootAttempt < 1 || playingRef.current) return;
     const timeoutId = window.setTimeout(() => {
-      if (status !== 'loading') return;
+      if (playingRef.current) return;
       const message = 'Game start timed out. Please retry.';
       setStatus('error');
       setErrorMessage(message);
       onErrorRef.current?.(message);
-    }, 6500);
+    }, 20000);
     return () => {
       window.clearTimeout(timeoutId);
     };

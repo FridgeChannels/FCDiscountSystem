@@ -1,3 +1,5 @@
+import { dedupeWalletCoupons } from './walletCoupons.js';
+
 const REWARD_PLAN_CACHE_PREFIX = 'fc.rewardPlan.';
 const TOUCH_ID_COOKIE = 'fc_touch_id';
 const REWARD_PLAN_MAX_STALE_MS = 24 * 60 * 60 * 1000;
@@ -109,7 +111,29 @@ function normalizeWalletCoupon(raw) {
     source: raw.source === 'target' ? 'target' : 'start',
     couponId: raw.couponId ? String(raw.couponId) : undefined,
     cycleId: raw.cycleId ? String(raw.cycleId) : undefined,
+    couponType: raw.couponType ? String(raw.couponType) : undefined,
+    headline: raw.headline != null ? String(raw.headline) : undefined,
+    displayMode: raw.displayMode != null ? String(raw.displayMode) : undefined,
     addedAt: raw.addedAt ? String(raw.addedAt) : new Date().toISOString(),
+  };
+}
+
+/** One wallet row per issuance: unique code wins; pre-issue rows scoped by cycle + campaign. */
+export function walletCouponKey(coupon) {
+  if (coupon?.code) return `code:${coupon.code}`;
+  if (coupon?.cycleId && coupon?.couponId) return `cycle:${coupon.cycleId}:id:${coupon.couponId}`;
+  if (coupon?.couponId) return `id:${coupon.couponId}`;
+  return null;
+}
+
+function mergeWalletCoupon(prev, incoming) {
+  if (!incoming) return prev ?? null;
+  if (!prev) return incoming;
+  return {
+    ...prev,
+    ...incoming,
+    status: prev.status,
+    addedAt: prev.addedAt ?? incoming.addedAt,
   };
 }
 
@@ -118,7 +142,7 @@ export function readCouponWallet(touchId) {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(couponWalletKey(touchId)) ?? 'null');
     if (parsed?.version !== COUPON_WALLET_VERSION || !Array.isArray(parsed.coupons)) return [];
-    return parsed.coupons.map(normalizeWalletCoupon).filter(Boolean);
+    return dedupeWalletCoupons(parsed.coupons.map(normalizeWalletCoupon).filter(Boolean));
   } catch {
     return [];
   }
@@ -139,19 +163,45 @@ export function writeCouponWallet(touchId, coupons) {
   }
 }
 
-/** 合并一组券进券包，按 code 去重（已存在则更新非空字段，保留原 status）。返回合并后的列表。 */
+/** 合并一组券进券包，按 cycle+couponId / 券码去重。返回合并后的列表。 */
 export function upsertCouponsToWallet(touchId, coupons) {
   const incoming = (Array.isArray(coupons) ? coupons : []).map(normalizeWalletCoupon).filter(Boolean);
   if (!incoming.length) return readCouponWallet(touchId);
-  const existing = readCouponWallet(touchId);
-  const byCode = new Map(existing.map((c) => [c.code, c]));
-  for (const coupon of incoming) {
-    const prev = byCode.get(coupon.code);
-    byCode.set(coupon.code, prev ? { ...prev, ...coupon, status: prev.status } : coupon);
-  }
-  const merged = Array.from(byCode.values());
+  const merged = dedupeWalletCoupons([...readCouponWallet(touchId), ...incoming]);
   writeCouponWallet(touchId, merged);
   return merged;
+}
+
+/**
+ * 用 plan 签发的券同步当前 cycle 的券包内容（与已有条目合并，不丢弃已签发但 plan 尚未带回 code 的券）。
+ */
+export function syncWalletForCycle(
+  touchId,
+  cycleId,
+  entries,
+  { pruneOtherCycles = true } = {},
+) {
+  if (!touchId || !cycleId) return readCouponWallet(touchId);
+  const incoming = (Array.isArray(entries) ? entries : []).map(normalizeWalletCoupon).filter(Boolean);
+  const existing = readCouponWallet(touchId);
+  const prevForCycle = existing.filter((c) => c.cycleId === cycleId);
+  const byKey = new Map();
+  for (const coupon of prevForCycle) {
+    const key = walletCouponKey(coupon);
+    if (key) byKey.set(key, coupon);
+  }
+  for (const coupon of incoming) {
+    const key = walletCouponKey(coupon);
+    if (!key) continue;
+    byKey.set(key, mergeWalletCoupon(byKey.get(key), coupon));
+  }
+  const current = dedupeWalletCoupons(Array.from(byKey.values()));
+  const otherCycles = pruneOtherCycles
+    ? []
+    : existing.filter((c) => c.cycleId && c.cycleId !== cycleId);
+  const wallet = [...otherCycles, ...current];
+  writeCouponWallet(touchId, wallet);
+  return wallet;
 }
 
 /** 更新券包中某张券的状态（如核销 → 'used'）。返回更新后的列表。 */

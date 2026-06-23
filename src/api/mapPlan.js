@@ -1,6 +1,7 @@
 import { iconForTemplate, labelForTemplate } from './gameLabels.js';
 import { mergeBrand } from '../lib/brandTheme.js';
 import { splitCouponsIntoPacks } from './splitRewardPacks.js';
+import { enrichCouponDisplay } from './couponDisplay.js';
 
 const GAME_PROGRESS_TIERS = [
   { difficultyLevel: 1, rewardPotentialLevel: 1 },
@@ -48,32 +49,88 @@ function observedCouponId(observed) {
 function normalizePackCoupon(raw, fallbackTarget = 0, fallbackTier = null) {
   if (!raw || typeof raw !== 'object') return null;
   const couponId = raw.couponId ?? raw.campaignId ?? null;
+  const couponType = raw.couponType ?? raw.discountType ?? undefined;
   const rawNum = raw.num ?? raw.discountValue ?? raw.discountPercent ?? '';
   const normalizedNum =
     rawNum == null || rawNum === ''
       ? ''
-      : String(rawNum).replace('%', '').replace('Free Ship', '0');
-  const explicitValue = raw.value ?? raw.label ?? raw.discountLabel ?? '';
-  const value =
-    explicitValue
-    || (normalizedNum && normalizedNum !== '0' ? `${normalizedNum}% OFF` : '')
-    || (raw.couponType === 'free_shipping' ? 'FREE SHIPPING' : '');
-  const target = Number.isFinite(Number(raw.target ?? raw.pointsThreshold))
-    ? Math.max(0, Number(raw.target ?? raw.pointsThreshold))
-    : fallbackTarget;
-  const tier = raw.tier != null ? Number(raw.tier) : fallbackTier;
-  return {
-    tier: tier != null && Number.isFinite(tier) ? tier : undefined,
+      : String(rawNum).replace('%', '').replace('Free Ship', '0').replace(/^B\d+G\d+$/, '0');
+  const base = {
+    tier: raw.tier != null && Number.isFinite(Number(raw.tier)) ? Number(raw.tier) : fallbackTier ?? undefined,
     campaignId: couponId ?? undefined,
     couponId: couponId ?? undefined,
     num: normalizedNum,
-    value: value || raw.title || 'Reward',
-    target,
+    target: Number.isFinite(Number(raw.target ?? raw.pointsThreshold))
+      ? Math.max(0, Number(raw.target ?? raw.pointsThreshold))
+      : fallbackTarget,
     code: raw.code ?? raw.couponCode ?? raw.mockCode ?? '',
-    conditions: raw.conditions ?? raw.terms ?? undefined,
     expiresAt: raw.expiresAt ?? raw.expiryAt ?? undefined,
+    couponType,
+    currencyCode: raw.currencyCode ?? null,
+    restrictions: raw.restrictions ?? undefined,
     issued: Boolean(raw.issued ?? raw.isIssued ?? raw.couponCode ?? raw.code),
+    label: raw.label ?? raw.title ?? undefined,
+    value: raw.value ?? raw.discountValue ?? undefined,
+    conditions: raw.conditions ?? raw.terms ?? undefined,
   };
+  return enrichCouponDisplay(base);
+}
+
+/** 初始礼包是否已在服务端签发（以 plan.initialReward 为准）。 */
+export function isInitialPackIssued(plan, startPack) {
+  const initial = plan?.initialReward;
+  if (initial?.issued || initial?.couponCode) return true;
+  const coupon = startPack?.coupons?.[0];
+  return Boolean(coupon?.issued || coupon?.code);
+}
+
+/** 目标礼包是否已全部签发（以 plan.targetRewardPack 为准）。 */
+export function isTargetPackIssued(plan, targetPack) {
+  const target = plan?.targetRewardPack;
+  if (target?.issued) return true;
+  const apiCoupons = target?.coupons ?? [];
+  if (apiCoupons.length > 0) {
+    return apiCoupons.every((c) => c.issued || c.couponCode || c.code);
+  }
+  const packCoupons = targetPack?.coupons ?? [];
+  if (!packCoupons.length) return false;
+  return packCoupons.every((c) => c.issued || c.code);
+}
+
+/** 把 plan 里已签发的礼包券同步进本地券包（无独立 wallet API 时的权威来源）。 */
+export function buildWalletEntriesFromPacks({
+  rewardPlanId,
+  cycleId,
+  startPack,
+  targetPack,
+  expiresAt,
+}) {
+  const entries = [];
+  const pushCoupon = (packType, coupon) => {
+    const code = coupon?.code ?? coupon?.couponCode;
+    if (!code) return;
+    entries.push(enrichCouponDisplay({
+      packId: `${packType}-${rewardPlanId ?? 'local'}`,
+      code,
+      num: coupon.num,
+      value: coupon.value,
+      headline: coupon.headline,
+      conditions: coupon.conditions,
+      couponType: coupon.couponType,
+      displayMode: coupon.displayMode,
+      restrictions: coupon.restrictions,
+      currencyCode: coupon.currencyCode,
+      expiresAt: coupon.expiresAt ?? expiresAt,
+      status: 'active',
+      source: packType === 'target' ? 'target' : 'start',
+      couponId: coupon.couponId ?? coupon.campaignId,
+      cycleId,
+      addedAt: coupon.addedAt ?? new Date().toISOString(),
+    }));
+  };
+  for (const coupon of startPack?.coupons ?? []) pushCoupon('start', coupon);
+  for (const coupon of targetPack?.coupons ?? []) pushCoupon('target', coupon);
+  return entries;
 }
 
 /** 已发券观测记录与 ladder 档位对齐（couponId 优先，tier 兜底） */
@@ -121,8 +178,16 @@ function couponPercent(coupon) {
  *  - startPack：随机选一张作为初始券，直接展示券码，无需任务或点击解锁。
  *  - targetPack：其余券作为大礼包，领取时一次性展示全部券码（threshold=0，无需攒分）。
  */
+/** 折扣值是否有效（含免邮、BOGO 等非百分比券）。 */
+function isRewardCouponStep(step) {
+  if (step?.couponType === 'free_shipping' || step?.couponType === 'buy_x_get_y' || step?.couponType === 'fixed_amount') {
+    return true;
+  }
+  return couponPercent(step) > 0;
+}
+
 export function buildPacksFromDiscounts(discounts = [], seed = '') {
-  const list = (discounts ?? []).filter((d) => couponPercent(d) > 0);
+  const list = (discounts ?? []).filter((d) => isRewardCouponStep(d));
   const { initial, targetCoupons } = splitCouponsIntoPacks(list, seed);
 
   const startPack = initial ? { coupons: [{ ...initial, target: 0 }] } : null;
@@ -394,6 +459,8 @@ export function mapPlanToViewModel(plan, claimRecord = null, magnetBrandParam = 
     claimedCouponCode: observed?.couponCode || null,
     awaitingNewChallenge: plan.reasonCodes?.includes('AWAITING_NEW_CHALLENGE') ?? false,
     observedCouponStatus: observed?.status ?? null,
+    initialPackIssued: isInitialPackIssued(plan, startPack),
+    targetPackIssued: isTargetPackIssued(plan, targetPack),
   };
 }
 

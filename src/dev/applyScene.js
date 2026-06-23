@@ -1,9 +1,4 @@
-import {
-  clearClaimedCode,
-  clearWelcomeCompleted,
-  writeClaimRecord,
-  writeWelcomeCompleted,
-} from '../api/cache.js';
+import { couponPaletteTierFor } from '../api/couponDisplay.js';
 import { getSceneConfig } from './scenes.js';
 
 export function isDevPreviewEnabled() {
@@ -127,7 +122,7 @@ export function applyDevSceneUi(ui, ctx) {
       setReceiptCoupon(unlocked);
       const liveTokens = targetEl ? readCouponTokens(targetEl.closest('.coupon')) : null;
       setReceiptColors(
-        liveTokens ?? readCouponTokensForTier?.(tierForDiscount?.(unlocked?.num) ?? 0) ?? null,
+        liveTokens ?? readCouponTokensForTier?.(couponPaletteTierFor(unlocked) ?? 0) ?? null,
       );
       setPendingPoints(points);
       setShowReceipt(true);
@@ -144,7 +139,7 @@ export function applyDevSceneUi(ui, ctx) {
       const liveTokens = targetEl ? readCouponTokens(targetEl.closest('.coupon')) : null;
       // 无可读券面时按档位回退,保证刮刮卡背景与券面一致
       setZoomColors(
-        liveTokens ?? readCouponTokensForTier?.(tierForDiscount?.(coupon.num) ?? 0) ?? null,
+        liveTokens ?? readCouponTokensForTier?.(couponPaletteTierFor(coupon) ?? 0) ?? null,
       );
       setZoomCopyState('Copy');
       setZoomPhase(ui.zoomPhase ?? 'flipped');
