@@ -749,7 +749,9 @@ export default function App() {
   const [isWelcomeVideoActive, setIsWelcomeVideoActive] = useState(false);
   const [welcomeVideoFading, setWelcomeVideoFading] = useState(false);
   const welcomeVideoRef = useRef(null);
+  const welcomeVideoFadingRef = useRef(false);
   const welcomeVideoFallbackTimerRef = useRef(null);
+  const handleWelcomeVideoEndRef = useRef(() => {});
   const giftEndPendingRef = useRef(false);
   const rewardPlanFetchedRef = useRef(false);
   const renewPlanReadyRef = useRef(false);
@@ -796,11 +798,13 @@ export default function App() {
   }, [planLoading]);
 
   const handleWelcomeVideoEnd = useCallback((fromUserGesture = false) => {
-    if (welcomeVideoFading) return;
+    if (welcomeVideoFadingRef.current) return;
     if (welcomeVideoFallbackTimerRef.current) {
       window.clearTimeout(welcomeVideoFallbackTimerRef.current);
       welcomeVideoFallbackTimerRef.current = null;
     }
+    welcomeVideoFadingRef.current = true;
+    welcomeVideoRef.current?.pause();
     setWelcomeVideoFading(true);
 
     const planReady = renewFlowActiveRef.current
@@ -809,6 +813,7 @@ export default function App() {
 
     setTimeout(() => {
       setIsWelcomeVideoActive(false);
+      welcomeVideoFadingRef.current = false;
       setWelcomeVideoFading(false);
       if (planReady) {
         completeGiftVideoTransition(fromUserGesture);
@@ -817,7 +822,11 @@ export default function App() {
         setGiftWaitingPlan(true);
       }
     }, 500);
-  }, [completeGiftVideoTransition, welcomeVideoFading]);
+  }, [completeGiftVideoTransition]);
+
+  useEffect(() => {
+    handleWelcomeVideoEndRef.current = handleWelcomeVideoEnd;
+  }, [handleWelcomeVideoEnd]);
 
   const canSkipGiftVideo = renewFlowActive ? renewPlanReady : rewardPlanFetched;
 
@@ -843,6 +852,7 @@ export default function App() {
   useEffect(() => {
     if (giftWaitingPlan) return;
     if ((welcomeStep === 0 || welcomeStep >= 3) && introActive) {
+      welcomeVideoFadingRef.current = false;
       setIsWelcomeVideoActive(true);
       setWelcomeVideoFading(false);
     } else {
@@ -852,23 +862,25 @@ export default function App() {
   }, [welcomeStep, introActive, welcomeVideoFading, giftWaitingPlan]);
 
   useEffect(() => {
-    if (isWelcomeVideoActive && welcomeVideoRef.current) {
-      welcomeVideoRef.current.currentTime = 0;
-      welcomeVideoFallbackTimerRef.current = window.setTimeout(() => {
-        handleWelcomeVideoEnd();
-      }, 7000);
-      welcomeVideoRef.current.play().catch((e) => {
-        console.log("React welcome video play error:", e);
-        window.setTimeout(() => handleWelcomeVideoEnd(), 600);
-      });
-    }
+    if (!isWelcomeVideoActive || welcomeVideoFadingRef.current || !welcomeVideoRef.current) return;
+
+    const video = welcomeVideoRef.current;
+    video.currentTime = 0;
+    welcomeVideoFallbackTimerRef.current = window.setTimeout(() => {
+      handleWelcomeVideoEndRef.current();
+    }, 7000);
+    video.play().catch((e) => {
+      console.log("React welcome video play error:", e);
+      window.setTimeout(() => handleWelcomeVideoEndRef.current(), 600);
+    });
+
     return () => {
       if (welcomeVideoFallbackTimerRef.current) {
         window.clearTimeout(welcomeVideoFallbackTimerRef.current);
         welcomeVideoFallbackTimerRef.current = null;
       }
     };
-  }, [handleWelcomeVideoEnd, isWelcomeVideoActive]);
+  }, [isWelcomeVideoActive]);
 
   useEffect(() => {
     pointsRef.current = points;
@@ -3819,7 +3831,6 @@ export default function App() {
             muted
             onEnded={handleWelcomeVideoEnd}
             onError={handleWelcomeVideoEnd}
-            autoPlay
           />
         </div>
       )}
@@ -4062,7 +4073,6 @@ export default function App() {
           copiedCode={walletCopiedCode}
           onCopy={handleWalletCopy}
           onShop={handleShopNowDirect}
-          redeemingCoupon={redeemingCoupon}
           onOpenWallet={() => dismissTargetGiftReveal({ openWallet: true })}
           onClose={() => dismissTargetGiftReveal()}
         />
@@ -5405,11 +5415,10 @@ function GiftOpeningHero({ brand, coupons }) {
   );
 }
 
-function GiftRevealModal({ pack, coupons, brand, copiedCode, onCopy, onShop, redeemingCoupon = false, onOpenWallet, onClose }) {
+function GiftRevealModal({ pack, coupons, brand, copiedCode, onCopy, onShop, onOpenWallet, onClose }) {
   const list = coupons ?? [];
   const count = list.length;
   const label = `${count} coupon${count === 1 ? '' : 's'}`;
-  const walletReady = !redeemingCoupon && list.length > 0 && list.every((coupon) => coupon?.code);
   const confetti = Array.from({ length: 42 }, (_, index) => ({
     id: index,
     left: `${4 + ((index * 37) % 92)}%`,
@@ -5460,15 +5469,7 @@ function GiftRevealModal({ pack, coupons, brand, copiedCode, onCopy, onShop, red
             );
           })}
         </div>
-        <button
-          className="gift-reveal-btn"
-          type="button"
-          onClick={walletReady ? onOpenWallet : undefined}
-          disabled={!walletReady}
-          aria-busy={!walletReady}
-        >
-          {walletReady ? 'View my coupons' : 'Saving to My coupons…'}
-        </button>
+        <button className="gift-reveal-btn" type="button" onClick={onOpenWallet}>View my coupons</button>
         <button className="gift-reveal-close" type="button" onClick={onClose}>Continue</button>
       </main>
     </div>
