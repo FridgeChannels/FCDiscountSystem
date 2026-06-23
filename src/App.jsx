@@ -3382,6 +3382,7 @@ export default function App() {
     }
   }
 
+  async function handleSettlementComplete(settlement) {
     dbg('[FCDBG][App] settlement received', settlement);
     clearGameSessionCache();
     setActiveModal(null);
