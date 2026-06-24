@@ -357,12 +357,11 @@ function mapTaskToChallenge(task, gameIndex) {
     };
   }
 
-  const index = gameIndex + 1;
   const progress = gameProgressForTask(task, gameIndex);
   return {
     id: task.gameInstanceId,
     type: 'game',
-    badge: `Game ${index}`,
+    badge: 'Game',
     icon: iconForTemplate(task.templateKey),
     iconUrl: task.iconUrl,
     title: task.displayName || labelForTemplate(task.templateKey),

@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { getRuntimeManifest, validateManifestEntry } from './runtime-manifest.js';
 import { splitCouponsIntoPacks } from '../src/api/splitRewardPacks.js';
 import {
@@ -215,6 +216,42 @@ async function callEnginePatch(path, body, timeoutMs = ENGINE_TIMEOUT_MS) {
   return json.data;
 }
 
+function resolveRequestId(req) {
+  const fromHeader = req.headers['x-request-id'];
+  if (typeof fromHeader === 'string' && fromHeader.trim()) return fromHeader.trim();
+  if (Array.isArray(fromHeader) && fromHeader[0]?.trim()) return fromHeader[0].trim();
+  return randomUUID();
+}
+
+function emitTelemetryEvent(eventType, context = {}) {
+  const body = {
+    eventType,
+    touchId: context.touchId,
+    magnetId: context.magnetId,
+    customerId: context.customerId,
+    cycleId: context.cycleId,
+    sessionId: context.sessionId,
+    payload: context.payload ?? {},
+  };
+  void callEngine('/telemetry/event', body, 1500).catch(() => {
+    // 埋点失败不影响主业务
+  });
+}
+
+function emitActionEvent(stage, action, context = {}, extraPayload = {}) {
+  emitTelemetryEvent(`user_action_${stage}`, {
+    ...context,
+    payload: {
+      action,
+      ...extraPayload,
+    },
+  });
+}
+
+function emitActionFailed(action, context = {}, extraPayload = {}) {
+  emitActionEvent('failed', action, context, extraPayload);
+}
+
 const SHOPIFY_STATUS_CACHE_TTL_MS = Number(process.env.SHOPIFY_STATUS_CACHE_TTL_MS ?? 3600000);
 const shopifyStatusCache = new Map(); // touchId -> { data, expiresAt }
 const shopifyStatusInflight = new Map(); // touchId -> Promise
@@ -391,7 +428,7 @@ function sendJson(res, status, payload, extraHeaders = {}) {
     'content-type': 'application/json',
     'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET,POST,PUT,PATCH,OPTIONS',
-    'access-control-allow-headers': 'content-type,if-none-match',
+    'access-control-allow-headers': 'content-type,if-none-match,x-request-id',
     ...extraHeaders,
   });
   res.end(JSON.stringify(payload));
@@ -413,8 +450,10 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  let requestId = resolveRequestId(req);
   try {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
+    res.setHeader('x-request-id', requestId);
 
     if (req.method === 'GET' && url.pathname === '/api/fc/health') {
       sendJson(res, 200, { ok: true });
@@ -531,6 +570,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/fc/reward-plan') {
       const touchId = url.searchParams.get('touchId');
       if (!touchId) {
+        emitActionFailed('reward_plan_generate', {}, { requestId, reason: 'TOUCH_ID_REQUIRED' });
         sendJson(res, 400, { error: 'touchId required' });
         return;
       }
@@ -539,15 +579,35 @@ const server = http.createServer(async (req, res) => {
       if (!skipPlanCache) {
         const cachedPlan = readPlanCache(touchId);
         if (cachedPlan) {
+          emitTelemetryEvent('tap_received', {
+            touchId,
+            payload: { requestId, cacheHit: true, skipTapReward },
+          });
+          emitActionEvent('succeeded', 'reward_plan_generate', { touchId }, {
+            requestId,
+            cacheHit: true,
+          });
           sendJson(res, 200, cachedPlan);
           return;
         }
       }
+      emitTelemetryEvent('tap_received', {
+        touchId,
+        payload: { requestId, cacheHit: false, skipTapReward },
+      });
+      emitActionEvent('attempted', 'reward_plan_generate', { touchId }, {
+        requestId,
+        cacheHit: false,
+      });
       const data = await getPlanDeduped(touchId, {
         timeoutMs: ENGINE_REWARD_PLAN_TIMEOUT_MS,
         skipTapReward,
       });
       writePlanCache(touchId, data);
+      emitActionEvent('succeeded', 'reward_plan_generate', { touchId }, {
+        requestId,
+        cacheHit: false,
+      });
       sendJson(res, 200, data);
       return;
     }
@@ -588,7 +648,9 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && url.pathname === '/api/fc/session/start') {
       const body = await readJson(req);
+      emitActionEvent('attempted', 'session_start', { touchId: body?.touchId }, { requestId });
       const data = await callEngine('/games/session/start', body);
+      emitActionEvent('succeeded', 'session_start', { touchId: body?.touchId }, { requestId });
       sendJson(res, 200, data);
       return;
     }
@@ -596,9 +658,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/fc/session/complete') {
       const body = await readJson(req);
       const touchId = typeof body.touchId === 'string' ? body.touchId : '';
+      emitActionEvent('attempted', 'session_complete', { touchId }, { requestId });
       const { touchId: _omitTouchId, ...engineBody } = body;
       const data = await callEngine('/games/session/complete', engineBody);
       if (touchId) planCache.delete(touchId);
+      emitActionEvent('succeeded', 'session_complete', { touchId }, { requestId });
       sendJson(res, 200, data);
       return;
     }
@@ -606,35 +670,44 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/fc/survey/questions') {
       const touchId = url.searchParams.get('touchId');
       if (!touchId) {
+        emitActionFailed('survey_questions', {}, { requestId, reason: 'TOUCH_ID_REQUIRED' });
         sendJson(res, 400, { error: 'touchId required' });
         return;
       }
+      emitActionEvent('attempted', 'survey_questions', { touchId }, { requestId });
       const data = await callEngineGet(
         `/survey/questions?touchId=${encodeURIComponent(touchId)}`,
       );
+      emitActionEvent('succeeded', 'survey_questions', { touchId }, { requestId });
       sendJson(res, 200, data);
       return;
     }
 
     if (req.method === 'POST' && url.pathname === '/api/fc/survey/answers') {
       const body = await readJson(req);
+      emitActionEvent('attempted', 'survey_answers', { touchId: body?.touchId }, { requestId });
       const data = await callEngine('/survey/answers', body);
+      emitActionEvent('succeeded', 'survey_answers', { touchId: body?.touchId }, { requestId });
       sendJson(res, 201, data);
       return;
     }
 
     if (req.method === 'POST' && url.pathname === '/api/fc/survey/complete') {
       const body = await readJson(req);
+      emitActionEvent('attempted', 'survey_complete', { touchId: body?.touchId }, { requestId });
       const data = await callEngine('/survey/complete', body);
       if (body.touchId) planCache.delete(body.touchId);
+      emitActionEvent('succeeded', 'survey_complete', { touchId: body?.touchId }, { requestId });
       sendJson(res, 200, data);
       return;
     }
 
     if (req.method === 'POST' && url.pathname === '/api/fc/coupons/redeem') {
       const body = await readJson(req);
+      emitActionEvent('attempted', 'coupon_redeem', { touchId: body?.touchId }, { requestId });
       const data = await callEngine('/coupons/redeem', body);
       if (body.touchId) planCache.delete(body.touchId);
+      emitActionEvent('succeeded', 'coupon_redeem', { touchId: body?.touchId }, { requestId });
       sendJson(res, 200, data);
       return;
     }
@@ -643,7 +716,13 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const touchId = body?.touchId;
       const rewardPlanId = body?.rewardPlanId;
+      emitActionEvent('attempted', 'claim_initial', { touchId }, { requestId, rewardPlanId });
       if (!touchId || !rewardPlanId) {
+        emitActionFailed('claim_initial', { touchId }, {
+          requestId,
+          rewardPlanId,
+          reason: 'TOUCH_ID_OR_REWARD_PLAN_ID_REQUIRED',
+        });
         sendJson(res, 400, { error: 'touchId and rewardPlanId required' });
         return;
       }
@@ -651,6 +730,11 @@ const server = http.createServer(async (req, res) => {
       const plan = await getPlanDeduped(touchId, { timeoutMs: ENGINE_REWARD_PLAN_TIMEOUT_MS });
       const couponId = plan?.initialReward?.couponId;
       if (!couponId) {
+        emitActionFailed('claim_initial', { touchId }, {
+          requestId,
+          rewardPlanId,
+          reason: 'INITIAL_REWARD_NOT_AVAILABLE',
+        });
         sendJson(res, 400, { error: 'initial reward coupon not available' });
         return;
       }
@@ -662,6 +746,7 @@ const server = http.createServer(async (req, res) => {
         campaignId: couponId,
       });
       planCache.delete(touchId);
+      emitActionEvent('succeeded', 'claim_initial', { touchId }, { requestId, rewardPlanId });
       sendJson(res, 200, {
         coupon: {
           couponId: issued?.couponId ?? couponId,
@@ -679,7 +764,13 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const touchId = body?.touchId;
       const rewardPlanId = body?.rewardPlanId;
+      emitActionEvent('attempted', 'claim_target_pack', { touchId }, { requestId, rewardPlanId });
       if (!touchId || !rewardPlanId) {
+        emitActionFailed('claim_target_pack', { touchId }, {
+          requestId,
+          rewardPlanId,
+          reason: 'TOUCH_ID_OR_REWARD_PLAN_ID_REQUIRED',
+        });
         sendJson(res, 400, { error: 'touchId and rewardPlanId required' });
         return;
       }
@@ -691,6 +782,7 @@ const server = http.createServer(async (req, res) => {
       }));
 
       planCache.delete(touchId);
+      emitActionEvent('succeeded', 'claim_target_pack', { touchId }, { requestId, rewardPlanId });
       sendJson(res, 200, {
         pack: {
           threshold: 0,
@@ -702,8 +794,10 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && url.pathname === '/api/fc/coupons/observe') {
       const body = await readJson(req);
+      emitActionEvent('attempted', 'coupon_observe', { touchId: body?.touchId }, { requestId });
       const data = await callEngine('/coupons/observe', body);
       if (body.touchId) planCache.delete(body.touchId);
+      emitActionEvent('succeeded', 'coupon_observe', { touchId: body?.touchId }, { requestId });
       sendJson(res, 200, data);
       return;
     }
@@ -711,14 +805,17 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/fc/coupons/wallet') {
       const touchId = url.searchParams.get('touchId');
       if (!touchId) {
+        emitActionFailed('coupon_wallet', {}, { requestId, reason: 'TOUCH_ID_REQUIRED' });
         sendJson(res, 400, { error: 'touchId required' });
         return;
       }
+      emitActionEvent('attempted', 'coupon_wallet', { touchId }, { requestId });
       const limit = url.searchParams.get('limit');
       const qs = limit ? `&limit=${encodeURIComponent(limit)}` : '';
       const coupons = await callEngineGet(
         `/coupons/wallet?touchId=${encodeURIComponent(touchId)}${qs}`,
       );
+      emitActionEvent('succeeded', 'coupon_wallet', { touchId }, { requestId });
       sendJson(res, 200, { coupons });
       return;
     }
@@ -726,7 +823,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/fc/cycle/renew') {
       const body = await readJson(req);
       const touchId = body.touchId;
+      emitActionEvent('attempted', 'cycle_renew', { touchId }, { requestId });
       if (!touchId) {
+        emitActionFailed('cycle_renew', {}, { requestId, reason: 'TOUCH_ID_REQUIRED' });
         sendJson(res, 400, { error: 'touchId required' });
         return;
       }
@@ -735,12 +834,21 @@ const server = http.createServer(async (req, res) => {
         planCache.delete(touchId);
         writePlanCache(touchId, data);
       }
+      emitActionEvent('succeeded', 'cycle_renew', { touchId }, { requestId });
       sendJson(res, 200, data);
       return;
     }
 
     sendJson(res, 404, { error: 'not found' });
   } catch (err) {
+    emitTelemetryEvent('user_action_failed', {
+      payload: {
+        requestId,
+        path: req.url ?? '',
+        method: req.method ?? '',
+        message: err instanceof Error ? err.message : 'request failed',
+      },
+    });
     sendJson(res, 400, { error: err instanceof Error ? err.message : 'request failed' });
   }
 });

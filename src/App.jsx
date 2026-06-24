@@ -262,7 +262,7 @@ const LOCAL_PREVIEW_CHALLENGES = [
   {
     id: 'dev_memory_match',
     type: 'game',
-    badge: 'Game 1',
+    badge: 'Game',
     icon: '🃏',
     title: 'Card Match',
     desc: '',
@@ -276,7 +276,7 @@ const LOCAL_PREVIEW_CHALLENGES = [
   {
     id: 'dev_bridge_cross',
     type: 'game',
-    badge: 'Game 2',
+    badge: 'Game',
     icon: '🌉',
     title: 'Bridge Cross',
     desc: '',
@@ -4636,13 +4636,16 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, upgradeMaxP
           </div>
         ) : challenges.map((challenge) => {
           const pts = challenge.reward.replace(/[^0-9]/g, '');
+          const ptsValue = Number.parseInt(pts, 10);
+          const showRewardPill = Number.isFinite(ptsValue) && ptsValue > 0;
           const isShopifyConnect = challenge.type === 'shopify_connect';
           const isGame = challenge.type === 'game';
+          const badgeLabel = isGame ? 'Game' : challenge.badge;
           const isDisabled = dailyCapReached && !isShopifyConnect;
           const gameRewardCap = Number.isFinite(Number(upgradeMaxPoints))
             ? Math.max(5, Math.round(Number(upgradeMaxPoints)))
             : 5;
-          const gameRewardText = `5~${gameRewardCap} coins`;
+          const gameRewardAmount = `5~${gameRewardCap}`;
           const openCurrentChallenge = () => {
             if (isDisabled) return;
             onOpen(challenge);
@@ -4666,7 +4669,7 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, upgradeMaxP
                 <ChallengeCardIcon challenge={challenge} isShopifyConnect={isShopifyConnect} />
               </div>
               <div className="challenge-card-body">
-                <span className="challenge-badge">{challenge.badge}</span>
+                <span className="challenge-badge">{badgeLabel}</span>
                 <h4 className="challenge-title">{challenge.title}</h4>
                 {isGame ? (
                   <div className="challenge-game-meta">
@@ -4674,17 +4677,17 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, upgradeMaxP
                       <span>Difficulty</span>
                       <RatingIcons count={challenge.difficultyLevel} type="difficulty" />
                     </div>
-                    <div className="challenge-rating-row challenge-reward-range" aria-label={`Earn ${gameRewardText}`}>
-                      <span>Reward</span>
-                      <span className="challenge-reward-range-value">{gameRewardText}</span>
-                    </div>
                   </div>
                 ) : (
                   <p className="challenge-desc">{challenge.desc}</p>
                 )}
               </div>
               <button
-                className={isShopifyConnect ? 'btn btn-play shopify-connect-btn' : 'btn btn-outline btn-play'}
+                className={
+                  isGame
+                    ? 'btn btn-play shopify-connect-btn game-reward-btn'
+                    : (isShopifyConnect ? 'btn btn-play shopify-connect-btn' : 'btn btn-outline btn-play')
+                }
                 id={challenge.type === 'survey' ? 'take-survey-btn' : `play-${challenge.id}-btn`}
                 disabled={isDisabled}
                 onClick={(event) => {
@@ -4695,10 +4698,12 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, upgradeMaxP
                 {isDisabled ? (
                   <span>Cap Reached</span>
                 ) : isGame ? (
-                  <span className="btn-play-label">{challenge.cta}</span>
+                  <span className="btn-play-reward game-reward-pill">
+                    +{gameRewardAmount}<i className="coin-ic" aria-hidden="true" />
+                  </span>
                 ) : (
                   <>
-                    <span className="btn-play-reward">+{pts}<i className="coin-ic" aria-hidden="true" /></span>
+                    {showRewardPill && <span className="btn-play-reward">+{pts}<i className="coin-ic" aria-hidden="true" /></span>}
                     <span className="btn-play-label">{challenge.cta}</span>
                   </>
                 )}
@@ -5212,6 +5217,7 @@ function CouponValueFace({ coupon, featured = false }) {
   const mode = couponDisplayMode(coupon);
   const num = couponPercentNum(coupon);
   const headline = couponTicketHeadline(coupon);
+  const amountMatch = String(headline).match(/^(.+?)\s+OFF$/i);
   const percentValue = Number(num);
   if (featured) {
     if (mode === 'percent' && num && percentValue > 0) {
@@ -5231,6 +5237,14 @@ function CouponValueFace({ coupon, featured = false }) {
     return (
       <>
         <b>{num}%</b>
+        <span>OFF</span>
+      </>
+    );
+  }
+  if (mode === 'amount' && amountMatch) {
+    return (
+      <>
+        <b>{amountMatch[1]}</b>
         <span>OFF</span>
       </>
     );
