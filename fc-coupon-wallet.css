@@ -1033,10 +1033,27 @@
   align-self: center;
 }
 
-.challenges-list .challenge-card .btn-play:not(.shopify-connect-btn) {
-  background-color: transparent;
-  color: var(--brand-primary);
-  border: 1.5px solid var(--brand-primary);
+/* Keep challenge CTA readable when brand color is close to bg/text colors. */
+.challenges-list .challenge-card .btn-play {
+  background: var(--brand-primary);
+  color: var(--brand-on-primary, #fff);
+  border: 1.5px solid color-mix(in srgb, var(--brand-primary) 74%, #111 26%);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--brand-on-primary, #fff) 26%, transparent),
+    0 8px 16px color-mix(in srgb, var(--brand-primary) 30%, transparent);
+}
+
+.challenges-list .challenge-card .btn-play .btn-play-label {
+  color: inherit;
+}
+
+.challenges-list .challenge-card .btn-play:hover:not(:disabled) {
+  background: var(--brand-primary-hover, var(--brand-primary));
+  border-color: color-mix(in srgb, var(--brand-primary-hover, var(--brand-primary)) 74%, #111 26%);
+}
+
+.challenges-list .challenge-card .btn-play:disabled {
+  box-shadow: none;
 }
 
 .challenges-list .shopify-connect-btn {

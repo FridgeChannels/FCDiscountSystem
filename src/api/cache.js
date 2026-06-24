@@ -438,44 +438,20 @@ export function clearLegacyMagnetStorage() {
 }
 
 const MAGNET_BRAND_PARAM_PREFIX = 'fc.magnetBrandParam.';
-const MAGNET_BRAND_PARAM_CACHE_VERSION = 1;
-const MAGNET_BRAND_PARAM_MAX_STALE_MS = 24 * 60 * 60 * 1000;
 
 function magnetBrandParamKey(touchId) {
   return `${MAGNET_BRAND_PARAM_PREFIX}${touchId}`;
 }
 
-/** 按 magnet SN 缓存的品牌参数(magnet_brand_param),优先于 customer 表 */
-export function readCachedMagnetBrandParam(touchId) {
-  if (!canUseBrowserStorage() || !touchId) return null;
-  try {
-    const raw = window.localStorage.getItem(magnetBrandParamKey(touchId));
-    if (!raw) return null;
-    const cached = JSON.parse(raw);
-    if (cached?.version !== MAGNET_BRAND_PARAM_CACHE_VERSION) return null;
-    if (Date.now() - cached.cachedAt > MAGNET_BRAND_PARAM_MAX_STALE_MS) return null;
-    return cached.param ?? null;
-  } catch {
-    return null;
-  }
+/** magnet_brand_param is always fetched live — no localStorage cache. */
+export function readCachedMagnetBrandParam(_touchId) {
+  return null;
 }
 
-export function writeCachedMagnetBrandParam(touchId, param) {
-  if (!canUseBrowserStorage() || !touchId || !param) return;
-  try {
-    window.localStorage.setItem(
-      magnetBrandParamKey(touchId),
-      JSON.stringify({
-        version: MAGNET_BRAND_PARAM_CACHE_VERSION,
-        cachedAt: Date.now(),
-        param,
-      }),
-    );
-  } catch {
-    // Cache is an optimization only.
-  }
-}
+/** @deprecated no-op; magnet brand is not cached client-side */
+export function writeCachedMagnetBrandParam(_touchId, _param) {}
 
+/** Remove legacy cached rows from older builds. */
 export function clearCachedMagnetBrandParam(touchId) {
   if (!canUseBrowserStorage() || !touchId) return;
   window.localStorage.removeItem(magnetBrandParamKey(touchId));

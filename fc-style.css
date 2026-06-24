@@ -2101,6 +2101,56 @@ body {
   color: #8a4b17;
 }
 
+.inline-error-notice {
+  position: sticky;
+  top: 0;
+  z-index: 13;
+  margin: 0 16px 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(179, 92, 24, 0.28);
+  background: rgba(255, 246, 236, 0.96);
+  color: #8a4b17;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  backdrop-filter: blur(10px);
+}
+
+.inline-error-notice__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.inline-error-notice__text strong {
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.inline-error-notice__text span {
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: rgba(104, 57, 18, 0.95);
+}
+
+.inline-error-notice__dismiss {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 0;
+  flex-shrink: 0;
+}
+
+.inline-error-notice__dismiss:hover {
+  opacity: 0.8;
+}
+
 /* ============ Platform game — 铺满 mobile-viewport 卡片 ============ */
 .platform-game-overlay {
   position: absolute;

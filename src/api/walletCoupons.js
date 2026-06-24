@@ -108,3 +108,41 @@ export function selectCompletedAvailableCoupons(coupons = [], nowMs = Date.now()
 export function selectWalletArchiveCoupons(coupons = []) {
   return sortWalletCouponsByAcquiredAt(coupons);
 }
+
+/**
+ * 解锁页展示券：严格按 pack.coupons 顺序与 couponId 对齐，合并出码数据；
+ * 默认剔除礼包外条目与无 code 占位券，避免解锁页出现重复/幽灵券。
+ */
+export function selectPackRevealCoupons(pack, sourceCoupons = [], { requireCode = true } = {}) {
+  const packCoupons = pack?.coupons ?? [];
+  if (!packCoupons.length) {
+    const fallback = (sourceCoupons ?? []).filter(Boolean);
+    return requireCode ? fallback.filter((coupon) => coupon?.code) : fallback;
+  }
+
+  const sourceById = new Map();
+  for (const coupon of sourceCoupons ?? []) {
+    if (!coupon) continue;
+    const id = coupon.couponId ?? coupon.campaignId;
+    if (!id) continue;
+    const key = String(id);
+    const prev = sourceById.get(key);
+    if (!prev || !prev.code) {
+      sourceById.set(key, coupon);
+    }
+  }
+
+  const merged = packCoupons.map((packCoupon) => {
+    const id = packCoupon.couponId ?? packCoupon.campaignId;
+    const matched = id ? sourceById.get(String(id)) : null;
+    return enrichCouponDisplay({
+      ...packCoupon,
+      ...(matched ?? {}),
+      couponId: packCoupon.couponId ?? packCoupon.campaignId ?? matched?.couponId,
+      campaignId: packCoupon.campaignId ?? packCoupon.couponId ?? matched?.campaignId,
+      code: matched?.code || packCoupon.code || '',
+    });
+  });
+
+  return requireCode ? merged.filter((coupon) => coupon?.code) : merged;
+}

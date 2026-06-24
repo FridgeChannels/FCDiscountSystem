@@ -172,3 +172,31 @@ export function resolveBrandDisplay(customerBrand, gameBrandTheme) {
 
   return { logoUrl, primary, name };
 }
+
+/** Map Tap shell brand (mergeBrand output) to in-game brandTheme fields. */
+export function shellBrandToGameTheme(brand) {
+  if (!brand || typeof brand !== 'object') return null;
+  const accent = brand.buttonColor || brand.primaryColor || null;
+  const backgroundColor = brand.backgroundColor || null;
+  const logoUrl = brand.logoUrl || null;
+  const name = brand.name || null;
+  if (!accent && !backgroundColor && !logoUrl && !name) return null;
+  return {
+    ...(name ? { name } : {}),
+    ...(accent ? { primary: accent, brand_color: accent } : {}),
+    ...(backgroundColor ? { backgroundColor } : {}),
+    ...(logoUrl ? { logoUrl, logo: logoUrl } : {}),
+  };
+}
+
+/** Prefer page shell brand over engine payload for logo/colors (same magnet source). */
+export function applyShellBrandToGameStart(start, brand) {
+  if (!start || typeof start !== 'object') return start;
+  const shell = shellBrandToGameTheme(brand);
+  if (!shell) return start;
+  const engineTheme = start.brandTheme && typeof start.brandTheme === 'object' ? start.brandTheme : {};
+  return {
+    ...start,
+    brandTheme: { ...engineTheme, ...shell },
+  };
+}

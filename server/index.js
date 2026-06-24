@@ -256,9 +256,7 @@ const SHOPIFY_STATUS_CACHE_TTL_MS = Number(process.env.SHOPIFY_STATUS_CACHE_TTL_
 const shopifyStatusCache = new Map(); // touchId -> { data, expiresAt }
 const shopifyStatusInflight = new Map(); // touchId -> Promise
 
-const MAGNET_BRAND_PARAM_CACHE_TTL_MS = Number(process.env.MAGNET_BRAND_PARAM_CACHE_TTL_MS ?? 86400000);
-const magnetBrandParamCache = new Map(); // touchId -> { data, expiresAt }
-const magnetBrandParamInflight = new Map(); // touchId -> Promise
+const magnetBrandParamInflight = new Map(); // touchId -> Promise (in-flight dedup only, no TTL cache)
 
 const PLAYER_PROFILE_CACHE_TTL_MS = Number(process.env.PLAYER_PROFILE_CACHE_TTL_MS ?? 86400000);
 const playerProfileCache = new Map(); // touchId -> { data, expiresAt }
@@ -303,33 +301,13 @@ function getShopifyStatusDeduped(touchId, refresh = false) {
   return promise;
 }
 
-function readMagnetBrandParamCache(touchId) {
-  const entry = magnetBrandParamCache.get(touchId);
-  if (entry && entry.expiresAt > Date.now()) return entry.data;
-  if (entry) magnetBrandParamCache.delete(touchId);
-  return undefined;
-}
-
-function writeMagnetBrandParamCache(touchId, data) {
-  magnetBrandParamCache.set(touchId, { data, expiresAt: Date.now() + MAGNET_BRAND_PARAM_CACHE_TTL_MS });
-}
-
-function getMagnetBrandParamDeduped(touchId, refresh = false) {
-  if (!refresh) {
-    const cached = readMagnetBrandParamCache(touchId);
-    if (cached !== undefined) return Promise.resolve(cached);
-  } else {
-    magnetBrandParamCache.delete(touchId);
-  }
+function getMagnetBrandParamDeduped(touchId) {
   const existing = magnetBrandParamInflight.get(touchId);
   if (existing) return existing;
   const promise = callEngineGetAllowNull(
     `/identity/magnet-brand-param?touchId=${encodeURIComponent(touchId)}`,
   )
-    .then((data) => {
-      writeMagnetBrandParamCache(touchId, data ?? null);
-      return data ?? null;
-    })
+    .then((data) => data ?? null)
     .finally(() => {
       magnetBrandParamInflight.delete(touchId);
     });
@@ -501,8 +479,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { error: 'touchId required' });
         return;
       }
-      const refresh = url.searchParams.get('refresh') === '1';
-      const data = await getMagnetBrandParamDeduped(touchId, refresh);
+      const data = await getMagnetBrandParamDeduped(touchId);
       sendJson(res, 200, data);
       return;
     }

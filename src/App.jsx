@@ -2,13 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 import { claimCoupon, claimInitialReward, claimTargetRewardPack, completeSurvey, fetchCouponWallet, fetchMagnetBrandParam, fetchPlayerProfile, fetchRewardPlan, fetchShopifyStatus, fetchSurveyQuestions, fetchTodayLeaderboard, observeCoupon, redeemCoupon, renewCycle, startGameSession, submitSurveyAnswers, updatePlayerProfile, uploadPlayerAvatar } from './api/client.js';
 import {
   readCachedRewardPlan,
-  readCachedMagnetBrandParam,
+  clearCachedMagnetBrandParam,
   readCachedShopifyStatus,
   readRememberedTouchId,
   rememberTouchId,
   writeCachedRewardPlan,
   patchCachedRewardPlanPoints,
-  writeCachedMagnetBrandParam,
   writeCachedShopifyStatus,
   clearCachedShopifyStatus,
   markShopifyOAuthPending,
@@ -56,6 +55,7 @@ import {
   selectWalletArchiveCoupons,
   isWalletCouponUsable,
   walletHasCouponForCycle,
+  selectPackRevealCoupons,
 } from './api/walletCoupons.js';
 import PlatformGameModal from './components/PlatformGameModal.jsx';
 import DevToolbar from './components/DevToolbar.jsx';
@@ -77,7 +77,7 @@ import {
   MOCK_EXPIRED_COUPONS,
 } from './dev/couponPacks.js';
 import { dbg, dbgError } from './lib/debug.js';
-import { applyBrandTheme, brandFromMagnetParam } from './lib/brandTheme.js';
+import { applyBrandTheme, applyShellBrandToGameStart, brandFromMagnetParam } from './lib/brandTheme.js';
 import { preloadRuntimeManifest } from './lib/runtimeRegistry.js';
 import { normalizeLeaderboardView, FALLBACK_RANK } from './lib/leaderboard.js';
 import {
@@ -126,6 +126,9 @@ function formatFcError(err, fallback = 'Please try again') {
   }
   if (msg.includes('DAILY_CAP_REACHED')) {
     return 'Daily points limit reached. Come back tomorrow for more rewards.';
+  }
+  if (msg.includes('PACK_PREISSUE_INCOMPLETE')) {
+    return 'Rewards are still being prepared. Please wait a moment and try again.';
   }
   return msg.includes(':') ? msg.split(':').slice(1).join(':').trim() || msg : msg;
 }
@@ -512,6 +515,7 @@ export default function App() {
   const settlementCouponRef = useRef(null);
   const autoIssuedPackRef = useRef(null);
   const pendingPackUnlockAfterSettlementRef = useRef(false);
+  const inlineErrorTimerRef = useRef(null);
   const unlockedPreviewShownRef = useRef(false);
   const shopifyPendingRef = useRef(null);
   const devPreviewActiveRef = useRef(false);
@@ -552,6 +556,7 @@ export default function App() {
   const [copyState, setCopyState] = useState('Copy');
   const [activeModal, setActiveModal] = useState(null);
   const [notification, setNotification] = useState(null);
+  const [inlineError, setInlineError] = useState(null);
   const [dailyCapReached, setDailyCapReached] = useState(false);
   const [targetPulse, setTargetPulse] = useState('');
   const [crediting, setCrediting] = useState(false);
@@ -610,6 +615,13 @@ export default function App() {
     setLeaderboardData(null);
     setCouponWallet(readCouponWallet(touchId));
   }, [touchId]);
+
+  useEffect(() => () => {
+    if (inlineErrorTimerRef.current) {
+      clearTimeout(inlineErrorTimerRef.current);
+      inlineErrorTimerRef.current = null;
+    }
+  }, []);
 
   const refreshCouponWallet = useCallback(async () => {
     if (!touchId || devScene) return;
@@ -718,18 +730,10 @@ export default function App() {
     applyBrandTheme(nextBrand);
   }, []);
 
-  const syncMagnetBrandParam = useCallback(async (forceRefresh = false) => {
-    if (!forceRefresh) {
-      const cached = readCachedMagnetBrandParam(touchId);
-      if (cached) {
-        magnetBrandParamRef.current = cached;
-        applyMagnetBrandParam(cached);
-      }
-    }
+  const syncMagnetBrandParam = useCallback(async () => {
     try {
-      const param = await fetchMagnetBrandParam(touchId, { refresh: forceRefresh });
+      const param = await fetchMagnetBrandParam(touchId);
       if (param) {
-        writeCachedMagnetBrandParam(touchId, param);
         magnetBrandParamRef.current = param;
         applyMagnetBrandParam(param);
       } else {
@@ -1025,7 +1029,10 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
       }));
     if (!entries.length) return [];
     setCouponWallet(upsertCouponsToWallet(touchId, entries));
-    if (reveal) setGiftReveal({ pack, coupons: entries });
+    if (reveal) {
+      const revealCoupons = selectPackRevealCoupons(pack, entries, { requireCode: true });
+      if (revealCoupons.length) setGiftReveal({ pack, coupons: revealCoupons });
+    }
     void refreshCouponWallet();
     return entries;
   }, [activePlan?.cycleId, countdownSeconds, refreshCouponWallet, rewardPlanId, touchId]);
@@ -1512,6 +1519,8 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     advanceWelcome();
   }, [reloadPlan, shopifyAuthStatus, getMoreOffAuthPromptSeen]);
 
+  const withShellBrand = useCallback((start) => applyShellBrandToGameStart(start, brand), [brand]);
+
   const preloadGameStart = useCallback((challenge) => {
     if (!rewardPlanId || !challenge?.gameInstanceId) return null;
     const key = `${rewardPlanId}:${challenge.gameInstanceId}`;
@@ -1554,15 +1563,17 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
   }, [rewardPlanId]);
 
   useEffect(() => {
-    if (!rewardPlanId) return undefined;
+    if (!rewardPlanId || !touchId) return undefined;
     const gameChallenges = challenges
-      .filter((challenge) => challenge.type !== 'survey' && challenge.gameInstanceId)
-      .slice(0, 1);
+      .filter((challenge) => challenge.type !== 'survey' && challenge.gameInstanceId);
     if (!gameChallenges.length) return undefined;
 
     let cancelled = false;
     const run = () => {
       if (cancelled) return;
+      preloadRuntimeManifest(touchId).catch((err) => {
+        dbgError('[FCDBG][App] manifest preload during warm-up failed', err);
+      });
       gameChallenges.forEach((challenge) => {
         preloadGameStart(challenge)?.catch(() => {
           // Preloading is an optimization; click-time fallback will surface errors.
@@ -1571,8 +1582,8 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     };
 
     const idleId = window.requestIdleCallback
-      ? window.requestIdleCallback(run, { timeout: 1200 })
-      : window.setTimeout(run, 250);
+      ? window.requestIdleCallback(run, { timeout: 600 })
+      : window.setTimeout(run, 120);
 
     return () => {
       cancelled = true;
@@ -1582,7 +1593,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
         window.clearTimeout(idleId);
       }
     };
-  }, [challenges, preloadGameStart, rewardPlanId]);
+  }, [challenges, preloadGameStart, rewardPlanId, touchId]);
 
   useEffect(() => {
     if (!isDevPreviewEnabled()) return;
@@ -1661,21 +1672,19 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
       dbgError('[FCDBG][App] runtime manifest preload failed', err);
     });
 
-    magnetBrandParamRef.current = readCachedMagnetBrandParam(touchId);
-    if (magnetBrandParamRef.current) {
-      applyMagnetBrandParam(magnetBrandParamRef.current);
-    }
+    clearCachedMagnetBrandParam(touchId);
 
     const cached = readCachedRewardPlan(touchId);
-    if (cached && !shopifyOAuthReturn) {
-      syncFromPlan(cached, { fromCache: true });
-      setPlanLoading(false);
-    }
 
     (async () => {
       try {
         await syncMagnetBrandParam();
         if (cancelled) return;
+
+        if (cached && !shopifyOAuthReturn) {
+          syncFromPlan(cached, { fromCache: true });
+          setPlanLoading(false);
+        }
 
         void syncPlayerProfile();
         void syncLeaderboard();
@@ -2620,7 +2629,30 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     setReceiptCoupon(null);
   }
 
+  function clearInlineError() {
+    setInlineError(null);
+    if (inlineErrorTimerRef.current) {
+      clearTimeout(inlineErrorTimerRef.current);
+      inlineErrorTimerRef.current = null;
+    }
+  }
+
+  function showInlineError(title, message, timeoutMs = 3600) {
+    setInlineError({ title, message });
+    if (inlineErrorTimerRef.current) {
+      clearTimeout(inlineErrorTimerRef.current);
+    }
+    inlineErrorTimerRef.current = window.setTimeout(() => {
+      setInlineError(null);
+      inlineErrorTimerRef.current = null;
+    }, timeoutMs);
+  }
+
   function showNotification(title, message, icon = '✨', onConfirm = null) {
+    if (icon === '⚠️') {
+      showInlineError(title, message);
+      return;
+    }
     setNotification({ title, message, icon, onConfirm });
   }
 
@@ -3173,7 +3205,10 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
       : undefined;
     const entries = mockPackWalletEntries(pack, expiresAt);
     setCouponWallet(upsertCouponsToWallet(touchId, entries));
-    if (reveal) setGiftReveal({ pack, coupons: entries });
+    if (reveal) {
+      const revealCoupons = selectPackRevealCoupons(pack, entries, { requireCode: true });
+      if (revealCoupons.length) setGiftReveal({ pack, coupons: revealCoupons });
+    }
     return entries;
   }
 
@@ -3315,8 +3350,9 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     const alreadyIssued = targetPack.coupons.filter((coupon) => coupon?.code);
     if (alreadyIssued.length === targetPack.coupons.length) {
       const entries = upsertIssuedPackCoupons(targetPack, alreadyIssued, { reveal: false });
-      if (optimisticReveal && entries.length) {
-        setGiftReveal({ pack: targetPack, coupons: entries });
+      const revealCoupons = selectPackRevealCoupons(targetPack, entries, { requireCode: true });
+      if (optimisticReveal && revealCoupons.length) {
+        setGiftReveal({ pack: targetPack, coupons: revealCoupons });
       }
       return true;
     }
@@ -3328,8 +3364,8 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     }
 
     if (optimisticReveal) {
-      // 仅展示已出码券，避免弹窗出现“无 code 的占位券”。
-      const codedPreview = targetCoupons.filter((coupon) => coupon?.code);
+      // 仅展示礼包内已出码券，避免无 code 占位券与后续回填重复出现。
+      const codedPreview = selectPackRevealCoupons(targetPack, targetPack.coupons, { requireCode: true });
       if (codedPreview.length) {
         setGiftReveal({ pack: targetPack, coupons: codedPreview });
       }
@@ -3354,8 +3390,9 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
         throw new Error('Target reward pack response was incomplete');
       }
       const entries = upsertIssuedPackCoupons(targetPack, mergedCoupons, { reveal: false });
-      if (entries.length) {
-        setGiftReveal({ pack: targetPack, coupons: entries });
+      const revealCoupons = selectPackRevealCoupons(targetPack, entries, { requireCode: true });
+      if (revealCoupons.length) {
+        setGiftReveal({ pack: targetPack, coupons: revealCoupons });
       }
       clearCachedRewardPlan(touchId);
       void reloadPlan({ background: true, refresh: true }).catch((err) => {
@@ -3623,26 +3660,32 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     activeGameRequestRef.current = requestToken;
     setGameModalTitle(challenge.title);
     setActiveModal('platform-game');
+
+    const key = `${rewardPlanId}:${challenge.gameInstanceId}`;
+    const cachedStart = preloadedGameStartsRef.current.get(key);
+    if (cachedStart) {
+      dbg('[FCDBG][App] using preloaded game start', {
+        key,
+        sessionId: cachedStart.sessionId,
+        templateKey: cachedStart.templateKey,
+      });
+      setGameStart(withShellBrand(cachedStart));
+      setGameLoadingMessage('');
+      preloadRuntimeManifest(touchId).catch((err) => {
+        dbgError('[FCDBG][App] manifest preload on cached start failed', err);
+      });
+      return;
+    }
+
     setGameStart(null);
     setGameLoadingMessage('Loading game…');
 
     try {
-      await preloadRuntimeManifest(touchId);
-
-      const key = `${rewardPlanId}:${challenge.gameInstanceId}`;
-      const preloaded = preloadedGameStartsRef.current.get(key);
-      if (preloaded) {
-        dbg('[FCDBG][App] using preloaded game start', {
-          key,
-          sessionId: preloaded.sessionId,
-          templateKey: preloaded.templateKey,
-        });
-        setGameStart(preloaded);
-        setGameLoadingMessage('');
-        return;
-      }
-
-      const start = await (preloadingGameStartsRef.current.get(key) ?? preloadGameStart(challenge));
+      const inflightStart = preloadingGameStartsRef.current.get(key) ?? preloadGameStart(challenge);
+      const [start] = await Promise.all([
+        inflightStart,
+        preloadRuntimeManifest(touchId),
+      ]);
       if (activeGameRequestRef.current === requestToken) {
         dbg('[FCDBG][App] game start ready for modal', {
           key,
@@ -3650,7 +3693,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
           templateKey: start.templateKey,
           runtimeComponent: start.runtimeComponent,
         });
-        setGameStart(start);
+        setGameStart(withShellBrand(start));
         setGameLoadingMessage('');
       }
     } catch (err) {
@@ -3898,6 +3941,17 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
       {(showRenewWelcomeLoading || (planLoading && !introActive && !returnIntroGate && !showWelcomeRitual && !giftWaitingPlan)) && (
         <div className="reward-sync-status" role="status">
           Refreshing rewards…
+        </div>
+      )}
+      {inlineError && (
+        <div className="inline-error-notice" role="status" aria-live="polite">
+          <div className="inline-error-notice__text">
+            <strong>{inlineError.title}</strong>
+            <span>{inlineError.message}</span>
+          </div>
+          <button type="button" className="inline-error-notice__dismiss" onClick={clearInlineError}>
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -5451,9 +5505,8 @@ function SettlementTicket({ coupon, status }) {
   );
 }
 
-function GiftOpeningHero({ brand, coupons }) {
+function GiftOpeningHero({ brand }) {
   const brandName = brand?.name || 'FridgeChannel';
-  const previewCoupons = (coupons ?? []).slice(0, 3);
   return (
     <div className="gift-opening-hero" aria-hidden="true">
       <div className="gift-opening-brand">
@@ -5467,28 +5520,17 @@ function GiftOpeningHero({ brand, coupons }) {
           src="/rewards/welcome-rewards-hero-final-small.png"
           alt=""
         />
-        <div className="gift-opening-coupons">
-          {previewCoupons.map((coupon, index) => {
-            const headline = couponTicketHeadline(coupon);
-            return (
-              <div
-                className="gift-opening-ticket"
-                key={coupon.code ?? coupon.couponId ?? coupon.value}
-                data-ticket-index={index}
-                {...couponPaletteProps(coupon)}
-              >
-                <span>{headline}</span>
-              </div>
-            );
-          })}
-        </div>
       </div>
     </div>
   );
 }
 
 function GiftRevealModal({ pack, coupons, brand, copiedCode, onCopy, onShop, onOpenWallet, onClose }) {
-  const list = coupons ?? [];
+  const list = useMemo(
+    () => selectPackRevealCoupons(pack, coupons, { requireCode: true }),
+    [pack, coupons],
+  );
+  if (!list.length) return null;
   const count = list.length;
   const label = `${count} coupon${count === 1 ? '' : 's'}`;
   const confetti = Array.from({ length: 42 }, (_, index) => ({
@@ -5518,7 +5560,7 @@ function GiftRevealModal({ pack, coupons, brand, copiedCode, onCopy, onShop, onO
         ))}
       </div>
       <main className="gift-reveal-card" role="dialog" aria-label="Gift unlocked">
-        <GiftOpeningHero brand={brand} coupons={list} />
+        <GiftOpeningHero brand={brand} />
         <h2 className="gift-reveal-title">Gift unlocked!</h2>
         <p className="gift-reveal-desc">
           <b>{pack?.title || 'Your gift'}</b> added {label} to My coupons.
