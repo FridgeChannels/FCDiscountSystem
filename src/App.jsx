@@ -748,6 +748,7 @@ export default function App() {
 
   const [isWelcomeVideoActive, setIsWelcomeVideoActive] = useState(false);
   const [welcomeVideoFading, setWelcomeVideoFading] = useState(false);
+const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
   const welcomeVideoRef = useRef(null);
   const welcomeVideoFadingRef = useRef(false);
   const welcomeVideoFallbackTimerRef = useRef(null);
@@ -860,6 +861,39 @@ export default function App() {
       setIsWelcomeVideoActive((prev) => (welcomeVideoFading ? prev : false));
     }
   }, [welcomeStep, introActive, welcomeVideoFading, giftWaitingPlan]);
+
+  // Freeze gift-video layer height while playing to avoid Android dvh-driven stretching.
+  useEffect(() => {
+    if (!isWelcomeVideoActive) {
+      setGiftVideoLockedHeight(null);
+      return undefined;
+    }
+
+    const viewport = viewportRef.current;
+    const height = Math.round(
+      window.visualViewport?.height
+      || viewport?.clientHeight
+      || window.innerHeight
+      || 0
+    );
+    setGiftVideoLockedHeight(height > 0 ? `${height}px` : null);
+
+    const handleOrientationChange = () => {
+      const nextHeight = Math.round(
+        window.visualViewport?.height
+        || viewport?.clientHeight
+        || window.innerHeight
+        || 0
+      );
+      setGiftVideoLockedHeight(nextHeight > 0 ? `${nextHeight}px` : null);
+    };
+    window.addEventListener('orientationchange', handleOrientationChange);
+
+    return () => {
+      window.removeEventListener('orientationchange', handleOrientationChange);
+      setGiftVideoLockedHeight(null);
+    };
+  }, [isWelcomeVideoActive]);
 
   useEffect(() => {
     if (!isWelcomeVideoActive || welcomeVideoFadingRef.current || !welcomeVideoRef.current) return;
@@ -3817,6 +3851,7 @@ export default function App() {
         <div 
           className="gift-video-container"
           style={{
+            ...(giftVideoLockedHeight ? { '--gift-video-lock-height': giftVideoLockedHeight } : {}),
             opacity: welcomeVideoFading ? 0 : 1,
             pointerEvents: welcomeVideoFading ? 'none' : 'auto',
             cursor: canSkipGiftVideo ? 'pointer' : 'default',
@@ -4599,7 +4634,7 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, onOpen, onO
           const isShopifyConnect = challenge.type === 'shopify_connect';
           const isGame = challenge.type === 'game';
           return (
-            <div className={`challenge-card ${isGame ? 'is-game-card' : ''}`} key={challenge.id} style={isShopifyConnect ? { background: 'linear-gradient(135deg, #f6f9f4 0%, #eaf0e6 100%)', borderColor: 'rgba(94, 128, 62, 0.18)' } : undefined}>
+            <div className={`challenge-card ${isGame ? 'is-game-card' : ''} ${isShopifyConnect ? 'is-shopify-card' : ''}`} key={challenge.id} style={isShopifyConnect ? { background: 'linear-gradient(135deg, #f6f9f4 0%, #eaf0e6 100%)', borderColor: 'rgba(94, 128, 62, 0.18)' } : undefined}>
               <div className="challenge-icon-wrapper">
                 <ChallengeCardIcon challenge={challenge} isShopifyConnect={isShopifyConnect} />
               </div>
@@ -5223,7 +5258,6 @@ function CouponTicket({
   const mode = couponDisplayMode(coupon);
 
   if (featured) {
-    const brandInitial = (brand?.name || 'A').trim().charAt(0).toUpperCase() || 'A';
     return (
       <div className={`cwticket is-colored is-featured is-type-${mode} ${className}`.trim()} {...couponPaletteProps(coupon)}>
         <div className="cwticket-main">
@@ -5263,9 +5297,6 @@ function CouponTicket({
             <span className="cwticket-stub-text">Shop now</span>
           </button>
         )}
-        <span className="cwticket-badge" aria-hidden="true">
-          {brand?.logoUrl ? <img src={brand.logoUrl} alt="" /> : <span>{brandInitial}</span>}
-        </span>
       </div>
     );
   }
@@ -5309,7 +5340,6 @@ function CouponTicket({
           <span className="cwticket-stub-text">Shop now</span>
         </button>
       )}
-      <span className="cwticket-logo" aria-hidden="true" />
     </div>
   );
 }
@@ -5347,7 +5377,6 @@ function InactiveTicket({ coupon, label }) {
       <div className="cwticket-stub is-inactive">
         <span className="cwticket-stub-text">{label}</span>
       </div>
-      <span className="cwticket-logo" aria-hidden="true" />
     </div>
   );
 }
@@ -5374,7 +5403,6 @@ function SettlementTicket({ coupon, status }) {
       <div className="cwticket-stub">
         <span className="cwticket-stub-text">{isUsed ? 'Used' : 'Earned'}</span>
       </div>
-      <span className="cwticket-logo" aria-hidden="true" />
     </div>
   );
 }

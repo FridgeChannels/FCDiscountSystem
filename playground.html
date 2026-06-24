@@ -757,11 +757,18 @@
       z-index: 30;
       transition: opacity 0.5s ease;
       cursor: pointer;
+      overflow: hidden;
     }
-    .gift-video-container video {
+    .gift-video-frame {
+      width: 100%;
+      height: auto;
+      aspect-ratio: 480 / 854;
+      flex: 0 0 auto;
+    }
+    .gift-video-frame video {
+      display: block;
       width: 100%;
       height: 100%;
-      object-fit: cover;
     }
 
     .ticket-value {
@@ -2042,7 +2049,9 @@
         <div class="scene-view" id="view-gift">
           <!-- 视频开场覆盖层 (不删代码，通过JS控制播放与飞入) -->
           <div class="gift-video-container" id="gift-video-wrapper" style="display: flex;">
-            <video id="gift-opening-video" src="gift-opening/opening-intro-2.mp4" playsinline webkit-playsinline muted></video>
+            <div class="gift-video-frame">
+              <video id="gift-opening-video" src="gift-opening/opening-intro-2.mp4" playsinline webkit-playsinline muted></video>
+            </div>
           </div>
 
           <!-- 模拟品牌标题 -->

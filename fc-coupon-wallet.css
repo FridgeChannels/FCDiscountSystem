@@ -859,10 +859,10 @@
 .reward-journey-shell .reward-journey-gift {
   position: absolute;
   z-index: 3;
-  top: -22px;
-  right: -28px;
-  width: 190px;
-  height: 174px;
+  top: clamp(-30px, -8vw, -20px);
+  right: clamp(-18px, -6vw, -30px);
+  width: min(160px, 34vw);
+  height: auto;
   object-fit: contain;
   pointer-events: none;
   transform: rotate(2deg);
@@ -873,13 +873,13 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  min-height: 84px;
+  min-height: clamp(66px, 18vw, 80px);
   margin-bottom: 0;
-  padding-right: 124px;
+  padding-right: min(88px, 24vw);
 }
 
 .target-progress .section-head > div:first-child {
-  max-width: 190px;
+  max-width: min(240px, calc(100% - min(88px, 24vw)));
   min-width: 0;
 }
 
@@ -888,6 +888,7 @@
   align-items: baseline;
   gap: 7px;
   margin-top: 5px;
+  flex-wrap: nowrap;
 }
 
 .tg-countdown-label {
@@ -902,6 +903,7 @@
   font-weight: 850;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.2px;
+  white-space: nowrap;
 }
 
 .tg-countdown-value.is-ticking {
@@ -984,8 +986,8 @@
 }
 
 .challenges-list .challenge-title {
-  font-size: 0.92rem;
-  line-height: 1.25;
+  font-size: 0.88rem;
+  line-height: 1.2;
 }
 
 .challenges-list .challenge-game-meta {
@@ -997,9 +999,9 @@
 
 .challenges-list .challenge-desc {
   margin: 0;
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   color: var(--text-secondary);
-  line-height: 1.35;
+  line-height: 1.32;
 }
 
 .challenges-list .challenge-card .btn {
@@ -1017,6 +1019,31 @@
   border: 1.5px solid var(--brand-primary);
 }
 
+.challenges-list .shopify-connect-btn {
+  min-width: 108px;
+  padding-inline: 9px;
+  gap: 6px;
+}
+
+.challenges-list .shopify-connect-btn .btn-play-reward {
+  padding: 2px 6px;
+  font-size: 0.62rem;
+}
+
+.challenges-list .shopify-connect-btn .btn-play-label {
+  font-size: 0.86rem;
+}
+
+.challenges-list .challenge-card.is-shopify-card .challenge-title {
+  font-size: 0.8rem;
+  line-height: 1.12;
+}
+
+.challenges-list .challenge-card.is-shopify-card .challenge-desc {
+  font-size: 0.68rem;
+  line-height: 1.28;
+}
+
 .tg-card.is-unlocked {
   box-shadow: none;
 }
@@ -1029,13 +1056,13 @@
 .tg-card.is-unlocked .tg-gift-icon { background: var(--brand-primary); color: var(--brand-on-primary, #fff); }
 
 .tg-card-title {
-  max-width: 250px;
+  max-width: 280px;
   font-family: var(--font-serif);
-  font-size: 1.28rem;
+  font-size: clamp(1.08rem, 4.8vw, 1.24rem);
   font-weight: 800;
   color: var(--text-primary);
-  margin-bottom: 16px;
-  line-height: 1.2;
+  margin-bottom: 14px;
+  line-height: 1.16;
 }
 
 .tg-coupon-list {
@@ -1872,9 +1899,9 @@
   left: 50%;
   z-index: 1;
   display: block;
-  width: min(154%, 420px);
-  max-width: calc(100vw - 24px);
-  height: 174px;
+  width: min(100%, calc(100vw - 36px));
+  max-width: 420px;
+  height: auto;
   margin: -4px auto -6px;
   object-fit: contain;
   object-position: center;
@@ -1929,7 +1956,8 @@
 .welcome-pack-list {
   display: grid;
   gap: 14px;
-  width: min(100%, 292px);
+  width: 100%;
+  max-width: 360px;
   margin-inline: auto;
   text-align: left;
 }
@@ -1980,7 +2008,8 @@
 .welcome-pack-actions {
   display: grid;
   grid-template-columns: 1fr;
-  width: min(100%, 292px);
+  width: 100%;
+  max-width: 360px;
   margin-top: 24px;
   margin-inline: auto;
 }
@@ -2022,27 +2051,10 @@
   outline-offset: 2px;
 }
 
-/* Brand logo printed in the bottom-left corner of every coupon ticket. */
-.cwticket-main {
-  padding-bottom: 26px;
-}
-
-.cwticket-logo {
-  position: absolute;
-  left: 12px;
-  bottom: 8px;
-  z-index: 3;
-  width: 52px;
-  height: 15px;
-  background: var(--brand-logo-url) left center / contain no-repeat;
-  opacity: 0.6;
-  pointer-events: none;
-}
-
 /* ============================================================
    Featured coupon ticket (welcome + gift-unlock pages):
    discount | divider | info | art, full-width Shop-now bar,
-   side notches and a brand badge on the seam.
+   side notches on the seam.
    ============================================================ */
 .welcome-pack-list,
 .gift-reveal-coupons {
@@ -2221,36 +2233,6 @@
   letter-spacing: 0.3px;
 }
 
-.cwticket.is-featured .cwticket-badge {
-  position: absolute;
-  left: 14px;
-  bottom: 24px;
-  z-index: 4;
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background: var(--card-bg);
-  border: 2px solid var(--coupon-accent);
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.2);
-}
-
-.cwticket.is-featured .cwticket-badge img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  padding: 5px;
-}
-
-.cwticket.is-featured .cwticket-badge span {
-  font-family: var(--font-serif);
-  font-weight: 800;
-  font-size: 1rem;
-  color: var(--coupon-ink);
-}
-
 .cwticket.is-featured::before,
 .cwticket.is-featured::after {
   content: '';
@@ -2334,16 +2316,23 @@
 
   .welcome-rewards-hero {
     padding-inline: 16px;
+    padding-bottom: 4px;
   }
 
   .welcome-rewards-hero-shell .welcome-rewards-gift {
-    width: min(154%, calc(100vw - 32px));
-    max-width: 400px;
+    width: min(100%, calc(100vw - 32px));
+    max-width: none;
+    margin-bottom: -2px;
   }
 
   .welcome-pack-list,
   .welcome-pack-actions {
-    width: min(100%, 292px);
+    width: 100%;
+    max-width: none;
+  }
+
+  .welcome-pack-card h1 {
+    font-size: clamp(1.5rem, 6.8vw, 1.92rem);
   }
 
   .completed-rewards-shell .completed-rewards-gift {
@@ -2351,6 +2340,92 @@
     height: auto;
     aspect-ratio: 190 / 174;
     right: -10px;
+  }
+
+  .reward-journey-shell .reward-journey-gift {
+    top: -30px;
+    right: -20px;
+    width: min(154px, 40vw);
+  }
+
+  .target-progress .section-head {
+    min-height: 60px;
+    padding-right: min(80px, 22vw);
+  }
+
+  .target-progress .section-head > div:first-child {
+    max-width: min(250px, calc(100% - min(80px, 22vw)));
+  }
+
+  .tg-card-title {
+    max-width: 100%;
+    font-size: 1.03rem;
+    margin-bottom: 12px;
+  }
+
+  .tg-countdown {
+    gap: 6px;
+  }
+
+  .tg-countdown-label {
+    font-size: 0.62rem;
+  }
+
+  .tg-countdown-value {
+    font-size: 0.68rem;
+  }
+
+  .reward-journey .earn-progress-section {
+    padding-top: 16px;
+  }
+
+  .challenges-list .challenge-card {
+    gap: 10px;
+    padding: 12px 13px;
+  }
+
+  .challenges-list .challenge-icon-wrapper {
+    flex-basis: 44px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .challenges-list .challenge-title {
+    font-size: 0.82rem;
+    line-height: 1.16;
+  }
+
+  .challenges-list .challenge-desc {
+    font-size: 0.68rem;
+  }
+
+  .challenges-list .challenge-card .btn {
+    min-width: 84px;
+    padding: 7px 8px;
+    font-size: 0.76rem;
+  }
+
+  .challenges-list .shopify-connect-btn {
+    min-width: 96px;
+    padding-inline: 7px;
+    gap: 4px;
+  }
+
+  .challenges-list .shopify-connect-btn .btn-play-reward {
+    padding: 2px 4px;
+    font-size: 0.54rem;
+  }
+
+  .challenges-list .shopify-connect-btn .btn-play-label {
+    font-size: 0.76rem;
+  }
+
+  .challenges-list .challenge-card.is-shopify-card .challenge-title {
+    font-size: 0.74rem;
+  }
+
+  .challenges-list .challenge-card.is-shopify-card .challenge-desc {
+    font-size: 0.64rem;
   }
 
   .completed-rewards-copy-block {
@@ -2383,5 +2458,73 @@
 
   .cwticket.is-featured .cwticket-disc-text {
     font-size: clamp(1.1rem, 4.8vw, 1.55rem);
+    max-width: none;
+  }
+
+  .cwticket.is-featured .cwticket-cond {
+    font-size: clamp(0.72rem, 3.2vw, 0.8rem);
+  }
+}
+
+@media (max-width: 390px) {
+  .reward-journey-shell .reward-journey-gift {
+    top: -28px;
+    right: -20px;
+    width: min(146px, 39vw);
+  }
+
+  .target-progress .section-head {
+    min-height: 58px;
+    padding-right: min(72px, 20vw);
+  }
+
+  .target-progress .section-head > div:first-child {
+    max-width: calc(100% - min(72px, 20vw));
+  }
+
+  .tg-card-title {
+    font-size: 0.97rem;
+  }
+
+  .tg-countdown-label {
+    font-size: 0.58rem;
+  }
+
+  .tg-countdown-value {
+    font-size: 0.62rem;
+  }
+
+  .challenges-list .challenge-card {
+    gap: 8px;
+    padding: 11px 12px;
+  }
+
+  .challenges-list .challenge-icon-wrapper {
+    flex-basis: 40px;
+    width: 40px;
+    height: 40px;
+  }
+
+  .challenges-list .challenge-card .btn {
+    min-width: 78px;
+    padding: 7px 8px;
+    font-size: 0.72rem;
+  }
+
+  .challenges-list .shopify-connect-btn {
+    min-width: 90px;
+    padding-inline: 6px;
+  }
+
+  .challenges-list .shopify-connect-btn .btn-play-label {
+    font-size: 0.7rem;
+  }
+
+  .challenges-list .challenge-card.is-shopify-card .challenge-title {
+    font-size: 0.7rem;
+  }
+
+  .challenges-list .challenge-card.is-shopify-card .challenge-desc {
+    font-size: 0.62rem;
   }
 }
