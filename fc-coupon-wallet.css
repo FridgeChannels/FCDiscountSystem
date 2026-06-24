@@ -468,6 +468,11 @@
   transition: filter 0.15s ease, transform 0.1s ease;
 }
 
+/* Increase left text spacing on regular coupon body (left panel). */
+.cwticket.is-colored:not(.is-featured) .cwticket-main {
+  padding-left: 14px;
+}
+
 .cwticket-stub:hover { filter: brightness(1.07); }
 .cwticket-stub:active { transform: scale(0.98); }
 .cwticket-stub svg { width: 14px; height: 14px; }
@@ -964,10 +969,15 @@
   text-align: left;
   gap: 13px;
   padding: 12px 14px;
+  cursor: pointer;
 }
 
 .challenges-list .challenge-card:hover {
   transform: none;
+}
+
+.challenges-list .challenge-card.is-disabled {
+  cursor: not-allowed;
 }
 
 .challenges-list .challenge-icon-wrapper {
@@ -995,6 +1005,12 @@
   flex-direction: row;
   gap: 16px;
   margin-top: 1px;
+}
+
+.challenges-list .challenge-reward-range-value {
+  color: var(--brand-primary);
+  font-size: 0.72rem;
+  font-weight: 800;
 }
 
 .challenges-list .challenge-desc {

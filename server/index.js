@@ -684,36 +684,16 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const plan = await getPlanDeduped(touchId, { timeoutMs: ENGINE_REWARD_PLAN_TIMEOUT_MS });
-      const rawCoupons = Array.isArray(plan?.targetRewardPack?.coupons) ? plan.targetRewardPack.coupons : [];
-      if (!rawCoupons.length) {
-        sendJson(res, 400, { error: 'target reward pack not available' });
-        return;
-      }
-
       const packResult = await callEngine('/coupons/redeem-pack', { touchId, rewardPlanId });
-      const issuedById = new Map(
-        (packResult?.coupons ?? [])
-          .filter((coupon) => coupon?.couponId)
-          .map((coupon) => [String(coupon.couponId), coupon]),
-      );
-      const issuedCoupons = rawCoupons.map((coupon) => {
-        const couponId = coupon?.couponId;
-        const issued = couponId ? issuedById.get(String(couponId)) : null;
-        return {
-          couponId: issued?.couponId ?? couponId,
-          couponCode: issued?.couponCode ?? coupon?.couponCode ?? null,
-          discountValue: coupon?.discountValue ?? '',
-          label: coupon?.label ?? '',
-          conditions: coupon?.conditions ?? '',
-          expiresAt: plan?.cycleExpiresAt ?? null,
-        };
-      });
+      const issuedCoupons = (packResult?.coupons ?? []).map((coupon) => ({
+        couponId: coupon?.couponId ?? null,
+        couponCode: coupon?.couponCode ?? null,
+      }));
 
       planCache.delete(touchId);
       sendJson(res, 200, {
         pack: {
-          threshold: plan?.targetRewardPack?.threshold ?? 0,
+          threshold: 0,
           coupons: issuedCoupons,
         },
       });

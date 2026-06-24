@@ -3328,7 +3328,11 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     }
 
     if (optimisticReveal) {
-      setGiftReveal({ pack: targetPack, coupons: targetCoupons });
+      // 仅展示已出码券，避免弹窗出现“无 code 的占位券”。
+      const codedPreview = targetCoupons.filter((coupon) => coupon?.code);
+      if (codedPreview.length) {
+        setGiftReveal({ pack: targetPack, coupons: codedPreview });
+      }
     }
 
     setRedeemingCoupon(true);
@@ -3963,6 +3967,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
                 challenges={challenges}
                 dailyCapReached={dailyCapReached}
                 pointsNeeded={targetUnlocked ? 0 : targetDelta}
+                upgradeMaxPoints={targetUnlocked ? 0 : (targetThreshold ?? 0)}
                 onOpen={openChallenge}
                 onOpenLeaderboard={() => { void syncLeaderboard(true); setLeaderboardOpen(true); }}
               />
@@ -4600,7 +4605,7 @@ function ChallengeCardIcon({ challenge, isShopifyConnect }) {
   return challenge.icon;
 }
 
-function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, onOpen, onOpenLeaderboard }) {
+function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, upgradeMaxPoints, onOpen, onOpenLeaderboard }) {
   return (
     <section className="earn-progress-section" data-screen-label="挑战任务">
       <div className="section-head stacked">
@@ -4633,8 +4638,30 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, onOpen, onO
           const pts = challenge.reward.replace(/[^0-9]/g, '');
           const isShopifyConnect = challenge.type === 'shopify_connect';
           const isGame = challenge.type === 'game';
+          const isDisabled = dailyCapReached && !isShopifyConnect;
+          const gameRewardCap = Number.isFinite(Number(upgradeMaxPoints))
+            ? Math.max(5, Math.round(Number(upgradeMaxPoints)))
+            : 5;
+          const gameRewardText = `5~${gameRewardCap} coins`;
+          const openCurrentChallenge = () => {
+            if (isDisabled) return;
+            onOpen(challenge);
+          };
           return (
-            <div className={`challenge-card ${isGame ? 'is-game-card' : ''} ${isShopifyConnect ? 'is-shopify-card' : ''}`} key={challenge.id} style={isShopifyConnect ? { background: 'linear-gradient(135deg, #f6f9f4 0%, #eaf0e6 100%)', borderColor: 'rgba(94, 128, 62, 0.18)' } : undefined}>
+            <div
+              className={`challenge-card ${isGame ? 'is-game-card' : ''} ${isShopifyConnect ? 'is-shopify-card' : ''} ${isDisabled ? 'is-disabled' : ''}`}
+              key={challenge.id}
+              style={isShopifyConnect ? { background: 'linear-gradient(135deg, #f6f9f4 0%, #eaf0e6 100%)', borderColor: 'rgba(94, 128, 62, 0.18)' } : undefined}
+              onClick={openCurrentChallenge}
+              role="button"
+              tabIndex={isDisabled ? -1 : 0}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  openCurrentChallenge();
+                }
+              }}
+            >
               <div className="challenge-icon-wrapper">
                 <ChallengeCardIcon challenge={challenge} isShopifyConnect={isShopifyConnect} />
               </div>
@@ -4647,9 +4674,9 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, onOpen, onO
                       <span>Difficulty</span>
                       <RatingIcons count={challenge.difficultyLevel} type="difficulty" />
                     </div>
-                    <div className="challenge-rating-row" aria-label={`Reward potential ${challenge.rewardPotentialLevel} of 3`}>
+                    <div className="challenge-rating-row challenge-reward-range" aria-label={`Earn ${gameRewardText}`}>
                       <span>Reward</span>
-                      <RatingIcons count={challenge.rewardPotentialLevel} type="reward" />
+                      <span className="challenge-reward-range-value">{gameRewardText}</span>
                     </div>
                   </div>
                 ) : (
@@ -4659,10 +4686,13 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, onOpen, onO
               <button
                 className={isShopifyConnect ? 'btn btn-play shopify-connect-btn' : 'btn btn-outline btn-play'}
                 id={challenge.type === 'survey' ? 'take-survey-btn' : `play-${challenge.id}-btn`}
-                disabled={dailyCapReached && !isShopifyConnect}
-                onClick={() => onOpen(challenge)}
+                disabled={isDisabled}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openCurrentChallenge();
+                }}
               >
-                {dailyCapReached && !isShopifyConnect ? (
+                {isDisabled ? (
                   <span>Cap Reached</span>
                 ) : isGame ? (
                   <span className="btn-play-label">{challenge.cta}</span>
