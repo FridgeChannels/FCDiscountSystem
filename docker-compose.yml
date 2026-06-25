@@ -23,6 +23,7 @@ services:
       SURVEY_API_BASE_URL: ${SURVEY_API_BASE_URL-}
       SURVEY_API_KEY: ${SURVEY_API_KEY-}
       SURVEY_POINTS_PER_QUESTION: ${SURVEY_POINTS_PER_QUESTION:-10}
+      FC_DEMO_FORCE_RENEW_ENABLED: ${FC_DEMO_FORCE_RENEW_ENABLED:-false}
     networks:
       - default
       - redis_net
@@ -74,6 +75,7 @@ services:
       MANIFEST_TTL_SECONDS: 30
       MANIFEST_SIGNING_KEY_ID: docker-local
       MANIFEST_PRIVATE_KEY_PEM: ${MANIFEST_PRIVATE_KEY_PEM-}
+      FC_DEMO_FORCE_RENEW_ENABLED: ${FC_DEMO_FORCE_RENEW_ENABLED:-false}
     depends_on:
       engine:
         condition: service_healthy
@@ -95,6 +97,7 @@ services:
         VITE_RUNTIME_SHELL_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
         VITE_MANIFEST_PUBLIC_KEY_PEM: ${VITE_MANIFEST_PUBLIC_KEY_PEM-}
         VITE_MANIFEST_REQUIRE_SIGNATURE: ${VITE_MANIFEST_REQUIRE_SIGNATURE-false}
+        VITE_DEMO_FORCE_RENEW_ENABLED: ${VITE_DEMO_FORCE_RENEW_ENABLED:-false}
     container_name: fc-web
     volumes:
       - platform_uploaded_games:/var/www/uploaded-games:ro
