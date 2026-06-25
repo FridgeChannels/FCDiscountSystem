@@ -4,7 +4,6 @@ import {
   readCachedRewardPlan,
   clearCachedMagnetBrandParam,
   readCachedShopifyStatus,
-  readRememberedTouchId,
   rememberTouchId,
   writeCachedRewardPlan,
   patchCachedRewardPlanPoints,
@@ -88,6 +87,7 @@ import {
   parseDisplayCodeFromLeaderboardId,
   sanitizeDisplayCodeInput,
 } from './lib/leaderboardIdentity.js';
+import { getTouchIdErrorMessage, resolveTouchIdFromUrl } from './lib/touchId.js';
 
 // 阶段4:对不依赖每秒倒计时的叶子组件做 memo,
 // 避免倒计时每秒触发它们跟着整棵树一起重渲染。
@@ -148,30 +148,32 @@ function isRecoverableClaimError(err) {
   );
 }
 
-function getTouchId() {
-  const params = new URLSearchParams(window.location.search);
-  const fromQuery = params.get('touchId');
-  if (fromQuery) return fromQuery;
-
-  // NFC / landing paths: /p/:touchId or /t/:touchId (aligned with fc-platform /t/[touchId])
-  const pathMatch = window.location.pathname.match(/^\/(?:p|t)\/([^/]+)\/?$/i);
-  if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]);
-
-  return readRememberedTouchId() || DEFAULT_TOUCH_ID;
+function resolveTouchIdState(allowDevFallback = false) {
+  const parsed = resolveTouchIdFromUrl(window.location, {
+    devFallbackId: allowDevFallback ? DEFAULT_TOUCH_ID : '',
+  });
+  if (parsed.touchId) {
+    return { touchId: parsed.touchId, touchIdValid: true, touchIdError: null };
+  }
+  return {
+    touchId: null,
+    touchIdValid: false,
+    touchIdError: getTouchIdErrorMessage(parsed.reason, parsed.detail),
+  };
 }
 
 const SHOPIFY_TAP_AUTH_BASE = 'https://dtc-dashboard.fridgechannels.com/tap';
 
 function buildShopifyAuthUrl(touchId) {
-  const id = touchId || getTouchId();
+  if (!touchId) return SHOPIFY_TAP_AUTH_BASE;
   const redirectedFrom = encodeURIComponent(window.location.href);
-  return `${SHOPIFY_TAP_AUTH_BASE}/${encodeURIComponent(id)}?redirectedFrom=${redirectedFrom}`;
+  return `${SHOPIFY_TAP_AUTH_BASE}/${encodeURIComponent(touchId)}?redirectedFrom=${redirectedFrom}`;
 }
 
 function buildShopifyUnlinkUrl(touchId) {
-  const id = touchId || getTouchId();
+  if (!touchId) return SHOPIFY_TAP_AUTH_BASE;
   const redirectedFrom = encodeURIComponent(window.location.href);
-  return `${SHOPIFY_TAP_AUTH_BASE}/${encodeURIComponent(id)}?action=unlink&redirectedFrom=${redirectedFrom}`;
+  return `${SHOPIFY_TAP_AUTH_BASE}/${encodeURIComponent(touchId)}?action=unlink&redirectedFrom=${redirectedFrom}`;
 }
 
 function shopifyAuthStatusFromBinding(status) {
@@ -234,15 +236,25 @@ function isReturnVisitor(touchId) {
   );
 }
 
-/** 随 URL /p/:touchId 变化更新(含 bfcache 返回) */
-function useTouchId() {
-  const [touchId, setTouchId] = useState(getTouchId);
+/** 随 URL /p/:touchId 或 /t/:touchId 变化更新(含 bfcache 返回);无效 URL 不进入业务流程 */
+function useTouchIdFromUrl() {
+  const allowDevFallback = isDevPreviewEnabled();
+  const [state, setState] = useState(() => resolveTouchIdState(allowDevFallback));
 
   useEffect(() => {
     clearLegacyMagnetStorage();
     const sync = () => {
-      const next = getTouchId();
-      setTouchId((prev) => (prev === next ? prev : next));
+      setState((prev) => {
+        const next = resolveTouchIdState(allowDevFallback);
+        if (
+          prev.touchId === next.touchId &&
+          prev.touchIdValid === next.touchIdValid &&
+          prev.touchIdError === next.touchIdError
+        ) {
+          return prev;
+        }
+        return next;
+      });
     };
     sync();
     window.addEventListener('popstate', sync);
@@ -251,9 +263,9 @@ function useTouchId() {
       window.removeEventListener('popstate', sync);
       window.removeEventListener('pageshow', sync);
     };
-  }, []);
+  }, [allowDevFallback]);
 
-  return touchId;
+  return state;
 }
 
 const INITIAL_DISCOUNTS = [
@@ -537,7 +549,7 @@ export default function App() {
   const entryTapHomeReadyRef = useRef(false);
   const welcomeAfterEntryFxRef = useRef(false);
 
-  const touchId = useTouchId();
+  const { touchId, touchIdValid, touchIdError } = useTouchIdFromUrl();
   const [devScene, setDevScene] = useState(() => getDevScene());
   const [planLoading, setPlanLoading] = useState(true);
   const [rewardPlanFetched, setRewardPlanFetched] = useState(false);
@@ -586,11 +598,8 @@ export default function App() {
   const closeIntro = useCallback(() => setIntroActive(false), []);
   const [hasInitialDiscount, setHasInitialDiscount] = useState(false);
 
-  const [shopifyAuthStatus, setShopifyAuthStatus] = useState(() => {
-    const cached = readCachedShopifyStatus(getTouchId());
-    return shopifyAuthStatusFromBinding(cached);
-  });
-  const [shopifyBinding, setShopifyBinding] = useState(() => readCachedShopifyStatus(getTouchId()));
+  const [shopifyAuthStatus, setShopifyAuthStatus] = useState('unconnected');
+  const [shopifyBinding, setShopifyBinding] = useState(null);
   const [shopifyAuthSkipCount, setShopifyAuthSkipCount] = useState(0);
   const [shopifyAuthLastSkippedAt, setShopifyAuthLastSkippedAt] = useState(null);
   const [getMoreOffAuthPromptSeen, setGetMoreOffAuthPromptSeen] = useState(false);
@@ -598,14 +607,14 @@ export default function App() {
   const [shopifyAuthOverlay, setShopifyAuthOverlay] = useState(null);
   const [shopifyAccountOpen, setShopifyAccountOpen] = useState(false);
   const [shopifyAuthSuccess, setShopifyAuthSuccess] = useState(false);
-  const [userProfile, setUserProfile] = useState(() => normalizeProfile(readCachedProfile(getTouchId())));
+  const [userProfile, setUserProfile] = useState(() => normalizeProfile(DEFAULT_PROFILE));
   const [playerProfile, setPlayerProfile] = useState(null);
 
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [leaderboardData, setLeaderboardData] = useState(null);
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletNavDirection, setWalletNavDirection] = useState('forward');
-  const [couponWallet, setCouponWallet] = useState(() => readCouponWallet(getTouchId()));
+  const [couponWallet, setCouponWallet] = useState([]);
   const [walletCopiedCode, setWalletCopiedCode] = useState(null);
   // 礼包领取结果:null | { pack, coupons }
   const [giftReveal, setGiftReveal] = useState(null);
@@ -620,10 +629,14 @@ export default function App() {
   const prevLeaderboardRankRef = useRef(FALLBACK_RANK);
 
   useEffect(() => {
+    if (!touchId) return;
     setUserProfile(normalizeProfile(readCachedProfile(touchId)));
     setPlayerProfile(null);
     setLeaderboardData(null);
     setCouponWallet(readCouponWallet(touchId));
+    const cachedShopify = readCachedShopifyStatus(touchId);
+    setShopifyBinding(cachedShopify);
+    setShopifyAuthStatus(shopifyAuthStatusFromBinding(cachedShopify));
   }, [touchId]);
 
   useEffect(() => () => {
@@ -1615,6 +1628,13 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
   useEffect(() => {
     let cancelled = false;
 
+    if (!touchIdValid || !touchId) {
+      setPlanLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     if (isDevPreviewEnabled() && devScene) {
       applyDevPreviewScene(devScene);
       return () => {
@@ -1741,7 +1761,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     return () => {
       cancelled = true;
     };
-  }, [applyDevPreviewScene, applyMagnetBrandParam, clearGameSessionCache, devScene, syncFromPlan, syncMagnetBrandParam, syncShopifyBindingStatus, touchId]);
+  }, [applyDevPreviewScene, applyMagnetBrandParam, clearGameSessionCache, devScene, syncFromPlan, syncMagnetBrandParam, syncShopifyBindingStatus, touchId, touchIdValid]);
 
   useEffect(() => {
     const onPageShow = async () => {
@@ -4006,6 +4026,17 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
   const brandIntroIsWelcome = renewGiftIntro || welcomeStep < 3;
   const showHome = !devScene || devScene === 'home' || devScene === 'completed';
 
+  if (!touchIdValid) {
+    return (
+      <div className="mobile-viewport" data-screen-label="Invalid magnet link">
+        <div className="loading-screen touch-id-error-screen" role="alert">
+          <strong>Unable to open rewards</strong>
+          <p className="loading-hint">{touchIdError}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="mobile-viewport"
@@ -4831,6 +4862,7 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, upgradeMaxP
             ? Math.max(5, Math.round(Number(upgradeMaxPoints)))
             : 5;
           const gameRewardAmount = `5~${gameRewardCap}`;
+          const rewardPillAmount = isShopifyConnect ? gameRewardCap : gameRewardAmount;
           const openCurrentChallenge = () => {
             if (isDisabled) return;
             onOpen(challenge);
@@ -4886,6 +4918,13 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, upgradeMaxP
                   <span className="btn-play-reward game-reward-pill">
                     +{gameRewardAmount}<i className="coin-ic" aria-hidden="true" />
                   </span>
+                ) : isShopifyConnect ? (
+                  <>
+                    <span className="btn-play-reward game-reward-pill">
+                      +{rewardPillAmount}<i className="coin-ic" aria-hidden="true" />
+                    </span>
+                    <span className="btn-play-label">{challenge.cta}</span>
+                  </>
                 ) : (
                   <>
                     {showRewardPill && <span className="btn-play-reward">+{pts}<i className="coin-ic" aria-hidden="true" /></span>}

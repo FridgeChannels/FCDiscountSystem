@@ -1,14 +1,9 @@
-import { readRememberedTouchId } from './cache.js';
+import { parseTouchIdFromUrl } from '../lib/touchId.js';
 import { dbg } from '../lib/debug.js';
 
 function resolveTouchIdForRequest() {
   if (typeof window === 'undefined') return '';
-  const params = new URLSearchParams(window.location.search);
-  const fromQuery = params.get('touchId');
-  if (fromQuery) return fromQuery;
-  const pathMatch = window.location.pathname.match(/^\/(?:p|t)\/([^/]+)\/?$/i);
-  if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]);
-  return readRememberedTouchId();
+  return parseTouchIdFromUrl().touchId ?? '';
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';

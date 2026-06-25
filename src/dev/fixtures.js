@@ -83,7 +83,7 @@ function observedCoupon({ couponCode, couponId, tier, discountValue, status, cla
 function buildTasks({ includeShopify = false, includeSurvey = false, gameCount = 2 } = {}) {
   const tasks = [];
   if (includeShopify) {
-    tasks.push({ type: 'shopify_connect', pointsOffered: 500 });
+    tasks.push({ type: 'shopify_connect', pointsOffered: 100 });
   }
   if (includeSurvey) {
     tasks.push({
