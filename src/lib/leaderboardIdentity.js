@@ -2,16 +2,16 @@
  * Leaderboard identity allocation.
  *
  * When a user first enters a brand challenge the system assigns a unique,
- * stable leaderboard identity in the form `{BrandName} {4-char code}`
- * (e.g. "Ritual 7K9Q").
+ * stable leaderboard identity in the form `{BrandName} {5-char code}`
+ * (e.g. "Ritual 7K9Q2").
  *
  * Rules (V1):
- *  - Code is 4 uppercase chars drawn from CODE_POOL.
+ *  - Code is 5 uppercase chars drawn from CODE_POOL.
  *  - Confusing characters (0/O/1/I/L) are excluded from the pool.
  *  - Codes are case-insensitive and always stored/displayed uppercase.
  *  - The identity is stable across challenge rounds for the same brand,
  *    so it is persisted per brand and never regenerated once assigned.
- *  - The 4-char code suffix is editable in Profile (avatar color too).
+ *  - The 5-char code suffix is editable in Profile (avatar color too).
  *  - The full leaderboard display name is also editable in Profile.
  *
  * NOTE: true cross-user uniqueness ("unique under the same brand_id, never
@@ -21,7 +21,7 @@
 
 // Uppercase letters + digits, excluding the confusing set 0 O 1 I L.
 export const CODE_POOL = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-const CODE_LENGTH = 4;
+const CODE_LENGTH = 5;
 const STORAGE_PREFIX = 'fc.lbid.';
 
 function canUseBrowserStorage() {
@@ -39,7 +39,7 @@ function brandKey(brandName, brandId) {
   return slug || 'default';
 }
 
-/** Generate a random 4-char code from the (confusion-free) pool, uppercase. */
+/** Generate a random 5-char code from the (confusion-free) pool, uppercase. */
 export function generateCode(length = CODE_LENGTH) {
   let code = '';
   for (let i = 0; i < length; i++) {
@@ -54,19 +54,19 @@ export function formatLeaderboardId(brandName, code) {
   return `${name} ${code}`;
 }
 
-/** True when `code` is exactly 4 chars from the allowed pool. */
+/** True when `code` is exactly 5 chars from the allowed pool. */
 export function isValidDisplayCode(code) {
-  return /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/i.test(String(code ?? '').trim());
+  return new RegExp(`^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{${CODE_LENGTH}}$`, 'i').test(String(code ?? '').trim());
 }
 
-/** Keep only allowed pool characters, uppercase, max 4 chars. */
+/** Keep only allowed pool characters, uppercase, max 5 chars. */
 export function sanitizeDisplayCodeInput(raw) {
   return String(raw ?? '')
     .toUpperCase()
     .split('')
     .filter((char) => CODE_POOL.includes(char))
     .join('')
-    .slice(0, 4);
+    .slice(0, CODE_LENGTH);
 }
 
 /** Extract the code suffix from a full leaderboard ID or trailing token. */

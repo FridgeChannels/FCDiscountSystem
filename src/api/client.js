@@ -197,6 +197,13 @@ export function renewCycle(touchId, reason = 'expired') {
   });
 }
 
+export function forceExpireCycle(touchId) {
+  return request('/api/fc/cycle/force-expire', {
+    method: 'POST',
+    body: JSON.stringify({ touchId }),
+  });
+}
+
 export function completeSurvey(touchId, rewardPlanId, answers) {
   return request('/api/fc/survey/complete', {
     method: 'POST',

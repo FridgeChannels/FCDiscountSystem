@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { loadProjectEnv } from './load-env.js';
 import { getRuntimeManifest, validateManifestEntry } from './runtime-manifest.js';
 import { splitCouponsIntoPacks } from '../src/api/splitRewardPacks.js';
 import {
@@ -7,6 +8,8 @@ import {
   isAllowedBrandAssetUrl,
   unwrapBrandAssetProxyUrl,
 } from './brandAssetProxy.js';
+
+loadProjectEnv();
 
 const ENGINE_BASE_URL = process.env.ENGINE_BASE_URL ?? 'http://localhost:8787';
 const PORT = Number(process.env.BFF_PORT ?? 3001);
@@ -806,12 +809,40 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { error: 'touchId required' });
         return;
       }
+      if (body.reason === 'manual' && process.env.FC_DEMO_FORCE_RENEW_ENABLED !== 'true') {
+        emitActionFailed('cycle_renew', { touchId }, { requestId, reason: 'MANUAL_RENEW_DISABLED' });
+        sendJson(res, 403, { error: 'manual cycle renew is disabled' });
+        return;
+      }
       const data = await callEngine('/cycle/renew', body);
       if (touchId) {
         planCache.delete(touchId);
         writePlanCache(touchId, data);
       }
       emitActionEvent('succeeded', 'cycle_renew', { touchId }, { requestId });
+      sendJson(res, 200, data);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/fc/cycle/force-expire') {
+      const body = await readJson(req);
+      const touchId = body.touchId;
+      emitActionEvent('attempted', 'cycle_force_expire', { touchId }, { requestId });
+      if (!touchId) {
+        emitActionFailed('cycle_force_expire', {}, { requestId, reason: 'TOUCH_ID_REQUIRED' });
+        sendJson(res, 400, { error: 'touchId required' });
+        return;
+      }
+      if (process.env.FC_DEMO_FORCE_RENEW_ENABLED !== 'true') {
+        emitActionFailed('cycle_force_expire', { touchId }, { requestId, reason: 'FORCE_EXPIRE_DISABLED' });
+        sendJson(res, 403, { error: 'demo force expire is disabled' });
+        return;
+      }
+      const data = await callEngine('/cycle/force-expire', body);
+      if (touchId) {
+        planCache.delete(touchId);
+      }
+      emitActionEvent('succeeded', 'cycle_force_expire', { touchId }, { requestId });
       sendJson(res, 200, data);
       return;
     }

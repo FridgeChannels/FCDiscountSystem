@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
-import { claimCoupon, claimInitialReward, claimTargetRewardPack, completeSurvey, fetchCouponWallet, fetchMagnetBrandParam, fetchPlayerProfile, fetchRewardPlan, fetchShopifyStatus, fetchSurveyQuestions, fetchTodayLeaderboard, observeCoupon, redeemCoupon, renewCycle, startGameSession, submitSurveyAnswers, updatePlayerProfile, uploadPlayerAvatar } from './api/client.js';
+import { claimCoupon, claimInitialReward, claimTargetRewardPack, completeSurvey, fetchCouponWallet, fetchMagnetBrandParam, fetchPlayerProfile, fetchRewardPlan, fetchShopifyStatus, fetchSurveyQuestions, fetchTodayLeaderboard, observeCoupon, redeemCoupon, renewCycle, forceExpireCycle, startGameSession, submitSurveyAnswers, updatePlayerProfile, uploadPlayerAvatar } from './api/client.js';
 import {
   readCachedRewardPlan,
   clearCachedMagnetBrandParam,
@@ -78,6 +78,7 @@ import {
   MOCK_EXPIRED_COUPONS,
 } from './dev/couponPacks.js';
 import { dbg, dbgError } from './lib/debug.js';
+import { createLogoTapDetector, isDemoForceRenewEnabled } from './lib/demoForceRenew.js';
 import { applyBrandTheme, applyShellBrandToGameStart, brandFromMagnetParam } from './lib/brandTheme.js';
 import { preloadRuntimeManifest } from './lib/runtimeRegistry.js';
 import { normalizeLeaderboardView, FALLBACK_RANK } from './lib/leaderboard.js';
@@ -117,6 +118,9 @@ function formatFcError(err, fallback = 'Please try again') {
   if (!msg) return fallback;
   if (msg.includes('cycle is not expired')) {
     return 'This challenge is still active. Refresh the page to continue.';
+  }
+  if (msg.includes('manual cycle renew is disabled') || msg.includes('demo force expire is disabled')) {
+    return 'Demo cycle reset is not enabled on this environment.';
   }
   if (msg.includes('cycle is not active') || msg.includes('no active cycle')) {
     return 'This challenge has ended. Tap Start New Challenge to begin a fresh round.';
@@ -505,6 +509,10 @@ export default function App() {
   const currentPackClaimedRef = useRef(false);
   const singleCouponOnlyRef = useRef(false);
   const solePackClaimedRef = useRef(false);
+  const startRenewFlowRef = useRef(() => {});
+  const handleDemoForceExpireRef = useRef(() => {});
+  const demoForceExpireActiveRef = useRef(false);
+  const logoTapDetectorRef = useRef(null);
   const newChallengeRenewRef = useRef(null);
   const renewPlanRef = useRef(null);
   const renewFlowActiveRef = useRef(false);
@@ -570,6 +578,7 @@ export default function App() {
   const [introActive, setIntroActive] = useState(true);
   const [returnIntroGate, setReturnIntroGate] = useState(true);
   const [renewGiftIntro, setRenewGiftIntro] = useState(false);
+  const [demoForceExpireLoading, setDemoForceExpireLoading] = useState(false);
   const [renewFlowActive, setRenewFlowActive] = useState(false);
   const [renewPlanReady, setRenewPlanReady] = useState(false);
   const [renewIssueAutoAdvance, setRenewIssueAutoAdvance] = useState(false);
@@ -2195,9 +2204,11 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     setNewChallenge(null);
   }
 
-  // 「新挑战开启页」CTA:先播礼盒,并行 renew → 欢迎流(如需) → 首页 → +5
-  function handleStartNewChallenge() {
-    const promise = renewCycle(touchId, 'expired')
+  // 「新挑战开启页」CTA 或演示隐藏开关：先播礼盒,并行 renew → 欢迎流(如需) → 首页 → +5
+  function startRenewFlow(reason = 'expired') {
+    if (renewFlowActiveRef.current || newChallengeRenewRef.current) return;
+
+    const promise = renewCycle(touchId, reason)
       .then((plan) => {
         clearCachedRewardPlan(touchId);
         writeCachedRewardPlan(touchId, plan);
@@ -2228,7 +2239,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
         );
         throw err;
       });
-    newChallengeRenewRef.current = { promise, reason: 'expired' };
+    newChallengeRenewRef.current = { promise, reason };
     renewPlanRef.current = null;
     renewFlowActiveRef.current = true;
     setRenewFlowActive(true);
@@ -2262,6 +2273,86 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     setReturnIntroGate(true);
     setIntroActive(true);
   }
+
+  startRenewFlowRef.current = startRenewFlow;
+
+  function handleStartNewChallenge() {
+    startRenewFlow('expired');
+  }
+
+  async function handleDemoForceExpire() {
+    if (
+      demoForceExpireActiveRef.current ||
+      renewFlowActiveRef.current ||
+      newChallengeRenewRef.current
+    ) {
+      return;
+    }
+    demoForceExpireActiveRef.current = true;
+    setDemoForceExpireLoading(true);
+    try {
+      const result = await forceExpireCycle(touchId);
+      const basePlan = activePlan ?? readCachedRewardPlan(touchId);
+      if (!basePlan) {
+        throw new Error('reward plan not loaded');
+      }
+      const patchedPlan = {
+        ...basePlan,
+        cycleId: result.cycleId,
+        cycleExpiresAt: result.cycleExpiresAt,
+        cycleStatus: 'expired',
+      };
+      clearCachedRewardPlan(touchId);
+      writeCachedRewardPlan(touchId, patchedPlan);
+      setShowReceipt(false);
+      setZoomActive(false);
+      setIntroActive(false);
+      setReturnIntroGate(false);
+      setRenewGiftIntro(false);
+      const claimRecord = readClaimRecord(touchId);
+      const vm = syncFromPlan(patchedPlan);
+      if (!vm.cycleExpired) {
+        throw new Error('cycle is not expired after force-expire');
+      }
+      const settlementCoupon = resolveSettlementCoupon({
+        discounts: vm.discounts,
+        claimRecord,
+        observedCoupon: patchedPlan.observedCoupon,
+        fallbackCoupon: vm.discounts[vm.currentStepIndex] ?? vm.discounts[vm.discounts.length - 1],
+      });
+      settlementCouponRef.current = settlementCoupon ?? settlementCouponRef.current;
+      setNewChallenge({ reason: 'expired', coupon: settlementCoupon });
+      setPlanLoading(false);
+    } catch (err) {
+      dbgError('[FCDBG][App] demo force expire failed', err);
+      showNotification(
+        'Demo reset failed',
+        formatFcError(err, 'Please check your connection and try again.'),
+        '⚠️',
+      );
+    } finally {
+      demoForceExpireActiveRef.current = false;
+      setDemoForceExpireLoading(false);
+    }
+  }
+
+  handleDemoForceExpireRef.current = handleDemoForceExpire;
+
+  const handleLogoSecretTap = useCallback(() => {
+    logoTapDetectorRef.current?.();
+  }, []);
+
+  useEffect(() => {
+    if (!isDemoForceRenewEnabled()) return undefined;
+    logoTapDetectorRef.current = createLogoTapDetector({
+      onTrigger: () => {
+        void handleDemoForceExpireRef.current();
+      },
+    });
+    return () => {
+      logoTapDetectorRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     // 客户端倒计时归零时的兜底（主路径为 plan.cycleExpired）。
@@ -2756,7 +2847,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     if (!isValidDisplayCode(displayCode)) {
       showNotification(
         'Invalid Leaderboard ID',
-        'Use 4 characters (A–Z, 2–9). Avoid 0, O, 1, I, and L.',
+        'Use 5 characters (A–Z, 2–9). Avoid 0, O, 1, I, and L.',
         '⚠️',
       );
       return;
@@ -3973,7 +4064,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
         </div>
       )}
 
-      {(showRenewWelcomeLoading || (planLoading && !introActive && !returnIntroGate && !showWelcomeRitual && !giftWaitingPlan)) && (
+      {(showRenewWelcomeLoading || demoForceExpireLoading || (planLoading && !introActive && !returnIntroGate && !showWelcomeRitual && !giftWaitingPlan)) && (
         <div className="reward-sync-status" role="status">
           Refreshing rewards…
         </div>
@@ -4008,6 +4099,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
         walletOpen={walletOpen}
         rewardsCompleted={completedMode}
         walletCount={walletBadgeCount}
+        onLogoSecretTap={isDemoForceRenewEnabled() ? handleLogoSecretTap : undefined}
       />
 
       {showRewardsPage ? (
@@ -4437,6 +4529,7 @@ function HeaderBase({
   walletOpen = false,
   rewardsCompleted = false,
   walletCount = 0,
+  onLogoSecretTap,
 }) {
   const connected = shopifyStatus === 'connected';
   const brandName = brand?.name?.trim() || 'FridgeChannel';
@@ -4471,7 +4564,10 @@ function HeaderBase({
 
   return (
     <header className="brand-header">
-      <div className="brand-info">
+      <div
+        className={`brand-info${onLogoSecretTap ? ' brand-info--secret-tap' : ''}`}
+        onClick={onLogoSecretTap}
+      >
         {brand?.logoUrl ? (
           <img className="brand-logo-img" src={brand.logoUrl} alt={`${brandName} logo`} />
         ) : (
