@@ -52,6 +52,7 @@ import {
   dedupeWalletCoupons,
   enrichWalletCoupons,
   selectCompletedAvailableCoupons,
+  selectSettlementCouponsForCycle,
   selectWalletArchiveCoupons,
   isWalletCouponUsable,
   walletHasCouponForCycle,
@@ -599,8 +600,8 @@ export default function App() {
   const [walletCopiedCode, setWalletCopiedCode] = useState(null);
   // 礼包领取结果:null | { pack, coupons }
   const [giftReveal, setGiftReveal] = useState(null);
-  // target 礼包解锁弹窗已确认(Continue / View my coupons)后进入 completed 流。
-  const [targetUnlockAcknowledged, setTargetUnlockAcknowledged] = useState(false);
+  // target 礼包解锁弹窗已确认(Continue / View my coupons)的 cycleId；仅对当前周期生效。
+  const [targetUnlockAckCycleId, setTargetUnlockAckCycleId] = useState(null);
   // 从解锁弹窗进券包时暂存已签发券,避免 wallet state 尚未刷新导致空列表。
   const [walletRevealCoupons, setWalletRevealCoupons] = useState([]);
   const [coinGainSignal, setCoinGainSignal] = useState(0);
@@ -1923,12 +1924,6 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     currentPackIssuedCoupons,
     currentPack,
   ]);
-  const allRewardsClaimed = singleCouponOnlyMode
-    ? solePackClaimed
-    : currentPackClaimed && (!targetPack || targetClaimed);
-  const completedMode = devScene === 'completed'
-    || (!devScene && !giftReveal && (allRewardsClaimed || targetUnlockAcknowledged));
-  const showRewardsPage = walletOpen || completedMode;
   const planBlocksHome = planLoading && !rewardPlanId;
   const welcomePackPending = Boolean(currentPack) && !readWelcomeCompleted(touchId);
   const initialPackPending = singleCouponOnlyMode
@@ -1939,6 +1934,20 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     && !renewGiftIntro
     && !planBlocksHome
     && initialPackPending;
+  const targetUnlockAcknowledged = Boolean(rewardPlanId) && targetUnlockAckCycleId === rewardPlanId;
+  const allRewardsClaimed = singleCouponOnlyMode
+    ? solePackClaimed
+    : currentPackClaimed && (!targetPack || targetClaimed);
+  const completedMode = devScene === 'completed'
+    || (
+      !devScene
+      && !giftReveal
+      && !renewFlowActive
+      && !newChallenge
+      && !showWelcomeRitual
+      && (allRewardsClaimed || targetUnlockAcknowledged)
+    );
+  const showRewardsPage = walletOpen || completedMode;
   const showRenewWelcomeLoading = renewFlowActive && !introActive && welcomeStep < 1;
 
   useEffect(() => {
@@ -2042,14 +2051,6 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     : current;
   const settlementDisplayCoupon = newChallenge?.coupon ?? settlementCouponRef.current ?? (newChallenge?.reason === 'redeemed' ? lockedCoupon : current);
   const settlementDisplayCoupons = useMemo(() => {
-    if (rewardPlanId) {
-      const targetStatus = newChallenge?.reason === 'redeemed' ? 'used' : 'expired';
-      const cycleCoupons = couponWallet.filter(
-        (c) => c.cycleId === rewardPlanId && c.status === targetStatus
-      );
-      if (cycleCoupons.length > 0) return cycleCoupons;
-    }
-
     if (devScene === 'redeemed') {
       return [
         { num: '30', value: '30% OFF', code: 'FC30RITUAL', status: 'used', paletteTier: 3 },
@@ -2064,9 +2065,42 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
       ];
     }
 
+    if (rewardPlanId) {
+      const fromWallet = selectSettlementCouponsForCycle(couponWallet, rewardPlanId, {
+        reason: newChallenge?.reason ?? 'expired',
+      });
+      if (fromWallet.length > 0) {
+        return enrichWalletCoupons(fromWallet, packCouponsForDisplay);
+      }
+    }
+
+    const fromPacks = [
+      ...currentPackIssuedCoupons.filter((coupon) => coupon?.code),
+      ...(targetClaimed
+        ? (targetPack?.coupons ?? []).map((coupon) => {
+            const issued = couponWallet.find(
+              (entry) => entry.couponId === coupon.couponId && entry.code,
+            );
+            return issued
+              ? enrichCouponDisplay({ ...coupon, ...issued, code: issued.code })
+              : enrichCouponDisplay(coupon);
+          }).filter((coupon) => coupon?.code)
+        : []),
+    ];
+    if (fromPacks.length > 0) return fromPacks;
+
     const single = newChallenge?.coupon ?? settlementCouponRef.current;
     return single ? [single] : [];
-  }, [newChallenge, couponWallet, rewardPlanId, devScene]);
+  }, [
+    couponWallet,
+    currentPackIssuedCoupons,
+    devScene,
+    newChallenge,
+    packCouponsForDisplay,
+    rewardPlanId,
+    targetClaimed,
+    targetPack,
+  ]);
   const isCurrentCouponClaimed = showClaimedScreen;
   const isExpired = countdownSeconds <= 0;
   const time = useMemo(() => formatCountdown(countdownSeconds), [countdownSeconds]);
@@ -2150,7 +2184,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     clearCouponWallet(touchId);
     setCouponWallet([]);
     setClaimedCode(null);
-    setTargetUnlockAcknowledged(false);
+    setTargetUnlockAckCycleId(null);
     setWalletRevealCoupons([]);
     resetRound();                       // 刷新折扣档位 / 倒计时 / 清各类卡片
     setPoints(0);                       // 首登从 0 金币开始累积
@@ -2209,6 +2243,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     setZoomActive(false);
     clearClaimedCode(touchId);
     setClaimedCode(null);
+    setTargetUnlockAckCycleId(null);
 
     entryTapFxRequestedRef.current = true;
     entryTapFxPlayedRef.current = false;
@@ -3460,7 +3495,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
 
   function dismissTargetGiftReveal({ openWallet = false } = {}) {
     const coded = (giftReveal?.coupons ?? []).filter((coupon) => coupon?.code);
-    setTargetUnlockAcknowledged(true);
+    if (rewardPlanId) setTargetUnlockAckCycleId(rewardPlanId);
     setGiftReveal(null);
     if (coded.length) setWalletRevealCoupons(coded);
     if (openWallet) {
@@ -4129,7 +4164,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
           onSelectScene={(sceneId) => {
             setGiftReveal(null);
             setWalletOpen(false);
-            setTargetUnlockAcknowledged(false);
+            setTargetUnlockAckCycleId(null);
             setWalletRevealCoupons([]);
             navigateToDevScene(sceneId);
             setDevScene(sceneId);
@@ -4138,14 +4173,14 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
             navigateToDevScene('home');
             setDevScene('home');
             setGiftReveal(null);
-            setTargetUnlockAcknowledged(false);
+            setTargetUnlockAckCycleId(null);
             setWalletRevealCoupons([]);
             setWalletOpen(true);
           }}
           onResetFirstLogin={() => {
             setGiftReveal(null);
             setWalletOpen(false);
-            setTargetUnlockAcknowledged(false);
+            setTargetUnlockAckCycleId(null);
             setWalletRevealCoupons([]);
             clearCouponWallet(touchId);
             setCouponWallet([]);

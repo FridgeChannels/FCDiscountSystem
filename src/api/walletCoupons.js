@@ -109,6 +109,32 @@ export function selectWalletArchiveCoupons(coupons = []) {
   return sortWalletCouponsByAcquiredAt(coupons);
 }
 
+/** 券是否属于指定活动周期（cycleId 或 start/target packId）。 */
+export function couponBelongsToCycle(coupon, cycleId) {
+  if (!cycleId || !coupon?.code) return false;
+  if (coupon.cycleId === cycleId) return true;
+  const packId = String(coupon.packId ?? '');
+  return packId === `start-${cycleId}` || packId === `target-${cycleId}`;
+}
+
+/**
+ * Round Complete 页：本周期获得的全部有码券。
+ * 周期刚结束时 wallet 里常为 active，不能按 expired/used 过滤否则会漏券并回退到单券。
+ */
+export function selectSettlementCouponsForCycle(coupons = [], cycleId, { reason = 'expired' } = {}) {
+  if (!cycleId) return [];
+  const settlementStatus = reason === 'redeemed' ? 'used' : 'expired';
+  const cycleCoupons = dedupeWalletCoupons(
+    (coupons ?? []).filter((coupon) => couponBelongsToCycle(coupon, cycleId)),
+  );
+  return sortWalletCouponsByAcquiredAt(
+    cycleCoupons.map((coupon) => ({
+      ...coupon,
+      status: coupon.status === 'used' ? 'used' : settlementStatus,
+    })),
+  );
+}
+
 /**
  * 解锁页展示券：严格按 pack.coupons 顺序与 couponId 对齐，合并出码数据；
  * 默认剔除礼包外条目与无 code 占位券，避免解锁页出现重复/幽灵券。
