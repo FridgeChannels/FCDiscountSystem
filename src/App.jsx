@@ -5250,10 +5250,7 @@ function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onUploadA
             <button
               className="profile-connect-shopify"
               type="button"
-              onClick={() => {
-                onSave(draft);
-                onConnect();
-              }}
+              onClick={onConnect}
             >
               <img src="/gift-opening/shopify-icon.png" alt="" aria-hidden="true" />
               Connect Shopify
