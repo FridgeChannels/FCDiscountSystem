@@ -199,6 +199,14 @@ export function forceExpireCycle(touchId) {
   });
 }
 
+/** Sample magnet factory reset: clear wallet + open first-round plan (not cycle renew). */
+export function sampleResetCycle(touchId) {
+  return request('/api/fc/cycle/sample-reset', {
+    method: 'POST',
+    body: JSON.stringify({ touchId }),
+  });
+}
+
 export function completeSurvey(touchId, rewardPlanId, answers) {
   return request('/api/fc/survey/complete', {
     method: 'POST',

@@ -79,22 +79,22 @@ function normalizePackCoupon(raw, fallbackTarget = 0, fallbackTier = null) {
 /** 初始礼包是否已在服务端签发（以 plan.initialReward 为准）。 */
 export function isInitialPackIssued(plan, startPack) {
   const initial = plan?.initialReward;
-  if (initial?.issued || initial?.couponCode) return true;
+  if (initial?.issued === true || Boolean(initial?.couponCode)) return true;
   const coupon = startPack?.coupons?.[0];
-  return Boolean(coupon?.issued || coupon?.code);
+  return Boolean(coupon?.issued === true || coupon?.code);
 }
 
-/** 目标礼包是否已全部签发（以 plan.targetRewardPack 为准）。 */
+/** 目标礼包是否已全部释放到用户券包（locked 预占不算已领取）。 */
 export function isTargetPackIssued(plan, targetPack) {
   const target = plan?.targetRewardPack;
-  if (target?.issued) return true;
+  if (target?.issued === true) return true;
   const apiCoupons = target?.coupons ?? [];
   if (apiCoupons.length > 0) {
-    return apiCoupons.every((c) => c.issued || c.couponCode || c.code);
+    return apiCoupons.every((c) => c.issued === true && Boolean(c.couponCode || c.code));
   }
   const packCoupons = targetPack?.coupons ?? [];
   if (!packCoupons.length) return false;
-  return packCoupons.every((c) => c.issued || c.code);
+  return packCoupons.every((c) => c.issued === true && Boolean(c.code));
 }
 
 /** 把 plan 里已签发的礼包券同步进本地券包（无独立 wallet API 时的权威来源）。 */
@@ -109,6 +109,8 @@ export function buildWalletEntriesFromPacks({
   const pushCoupon = (packType, coupon) => {
     const code = coupon?.code ?? coupon?.couponCode;
     if (!code) return;
+    // Skip locked/preissued placeholders that still carry a code by mistake.
+    if (coupon?.issued === false) return;
     entries.push(enrichCouponDisplay({
       packId: `${packType}-${rewardPlanId ?? 'local'}`,
       code,

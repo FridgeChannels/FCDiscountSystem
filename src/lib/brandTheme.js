@@ -97,6 +97,14 @@ export function brandFromMagnetParam(magnetBrandParam) {
   return mergeBrand(null, magnetBrandParam);
 }
 
+/** True when magnet_brand_param marks this magnet as sample/demo. */
+export function isSampleMagnetParam(magnetBrandParam) {
+  if (!magnetBrandParam || typeof magnetBrandParam !== 'object') return false;
+  if (magnetBrandParam.isSample === true) return true;
+  const sample = magnetBrandParam.sample;
+  return sample === 1 || sample === true || sample === '1';
+}
+
 function hexToRgb(hex) {
   if (!hex || typeof hex !== 'string') return null;
   let h = hex.trim().replace(/^#/, '');

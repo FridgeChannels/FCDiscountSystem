@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
-import { claimCoupon, claimInitialReward, claimTargetRewardPack, completeSurvey, fetchCouponWallet, fetchMagnetBrandParam, fetchPlayerProfile, fetchRewardPlan, fetchShopifyStatus, fetchSurveyQuestions, fetchTodayLeaderboard, observeCoupon, redeemCoupon, renewCycle, forceExpireCycle, startGameSession, submitSurveyAnswers, updatePlayerProfile, uploadPlayerAvatar } from './api/client.js';
+import { claimCoupon, claimInitialReward, claimTargetRewardPack, completeSurvey, fetchCouponWallet, fetchMagnetBrandParam, fetchPlayerProfile, fetchRewardPlan, fetchShopifyStatus, fetchSurveyQuestions, fetchTodayLeaderboard, observeCoupon, redeemCoupon, renewCycle, forceExpireCycle, sampleResetCycle, startGameSession, submitSurveyAnswers, updatePlayerProfile, uploadPlayerAvatar } from './api/client.js';
 import {
   readCachedRewardPlan,
   clearCachedMagnetBrandParam,
@@ -78,7 +78,7 @@ import {
 } from './dev/couponPacks.js';
 import { dbg, dbgError } from './lib/debug.js';
 import { createLogoTapDetector, isDemoForceRenewEnabled } from './lib/demoForceRenew.js';
-import { applyBrandTheme, applyShellBrandToGameStart, brandFromMagnetParam } from './lib/brandTheme.js';
+import { applyBrandTheme, applyShellBrandToGameStart, brandFromMagnetParam, isSampleMagnetParam } from './lib/brandTheme.js';
 import { preloadRuntimeManifest } from './lib/runtimeRegistry.js';
 import { normalizeLeaderboardView, FALLBACK_RANK } from './lib/leaderboard.js';
 import {
@@ -556,6 +556,7 @@ export default function App() {
   const [planError, setPlanError] = useState(null);
   const [rewardPlanId, setRewardPlanId] = useState(null);
   const [brand, setBrand] = useState({ name: null, logoUrl: null, primaryColor: null, shopUrl: '#' });
+  const [isSampleMagnet, setIsSampleMagnet] = useState(false);
   const [challenges, setChallenges] = useState(FALLBACK_CHALLENGES);
   const [gameStart, setGameStart] = useState(null);
   const [gameModalTitle, setGameModalTitle] = useState('Play & Earn');
@@ -744,12 +745,16 @@ export default function App() {
   }, [touchId]);
 
   const applyMagnetBrandParam = useCallback((param) => {
-    if (!param) return;
+    if (!param) {
+      setIsSampleMagnet(false);
+      return;
+    }
     const nextBrand = brandFromMagnetParam(param);
     setBrand((prev) => ({
       ...prev,
       ...nextBrand,
     }));
+    setIsSampleMagnet(isSampleMagnetParam(param));
     applyBrandTheme(nextBrand);
   }, []);
 
@@ -761,6 +766,7 @@ export default function App() {
         applyMagnetBrandParam(param);
       } else {
         magnetBrandParamRef.current = null;
+        setIsSampleMagnet(false);
       }
       return param;
     } catch (err) {
@@ -1089,16 +1095,20 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
       const packExpiresAt = vm.countdownSeconds > 0
         ? new Date(Date.now() + vm.countdownSeconds * 1000).toISOString()
         : undefined;
+      // Only sync coupons the user has actually received — never locked target preissues.
       const walletEntries = buildWalletEntriesFromPacks({
         rewardPlanId: vm.rewardPlanId,
         cycleId: plan.cycleId ?? plan.rewardPlanId,
-        startPack: vm.startPack,
-        targetPack: vm.targetPack,
+        startPack: vm.initialPackIssued ? vm.startPack : null,
+        targetPack: vm.targetPackIssued ? vm.targetPack : null,
         expiresAt: packExpiresAt,
       });
       const cycleId = plan.cycleId ?? plan.rewardPlanId;
       if (cycleId) {
-        setCouponWallet(syncWalletForCycle(touchId, cycleId, walletEntries, { pruneOtherCycles: false }));
+        setCouponWallet(syncWalletForCycle(touchId, cycleId, walletEntries, {
+          // Renew/reset opens a fresh round — drop prior-cycle local wallet rows.
+          pruneOtherCycles: fromNewChallengeRenew,
+        }));
       } else if (walletEntries.length) {
         setCouponWallet(upsertCouponsToWallet(touchId, walletEntries));
       }
@@ -1981,22 +1991,23 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
 
   useEffect(() => {
     if (devScene || !singleCouponOnlyMode || !soleRewardPack || solePackClaimed) return;
+    if (renewFlowActive) return;
     const coded = soleRewardPack.coupons.filter((coupon) => coupon?.code);
     if (coded.length) upsertIssuedPackCoupons(soleRewardPack, coded);
-  }, [devScene, singleCouponOnlyMode, solePackClaimed, soleRewardPack, upsertIssuedPackCoupons]);
+  }, [devScene, singleCouponOnlyMode, solePackClaimed, soleRewardPack, upsertIssuedPackCoupons, renewFlowActive]);
 
   useEffect(() => {
-    if (devScene || !allRewardsClaimed) return;
+    if (devScene || renewFlowActive || !allRewardsClaimed) return;
     if (!readWelcomeCompleted(touchId)) writeWelcomeCompleted(touchId);
     setWelcomeStep(3);
     setIntroActive(false);
     setReturnIntroGate(false);
     returnIntroShownRef.current = true;
     returnIntroPendingRef.current = false;
-  }, [allRewardsClaimed, devScene, touchId]);
+  }, [allRewardsClaimed, devScene, touchId, renewFlowActive]);
 
   useEffect(() => {
-    if (devScene || !allRewardsClaimed || !rewardPlanId) return;
+    if (devScene || renewFlowActive || !allRewardsClaimed || !rewardPlanId) return;
     const packExpiresAt = countdownSeconds > 0
       ? new Date(Date.now() + countdownSeconds * 1000).toISOString()
       : undefined;
@@ -2004,14 +2015,14 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     const entries = buildWalletEntriesFromPacks({
       rewardPlanId,
       cycleId,
-      startPack: derivedPacks.startPack,
-      targetPack: derivedPacks.targetPack,
+      startPack: initialPackIssued ? derivedPacks.startPack : null,
+      targetPack: targetPackIssued ? derivedPacks.targetPack : null,
       expiresAt: packExpiresAt,
     });
     if (!entries.length) return;
     setCouponWallet(upsertCouponsToWallet(touchId, entries));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allRewardsClaimed, devScene, activePlan?.cycleId, rewardPlanId, derivedPacks.startPack, derivedPacks.targetPack]);
+  }, [allRewardsClaimed, renewFlowActive, devScene, activePlan?.cycleId, rewardPlanId, derivedPacks.startPack, derivedPacks.targetPack, initialPackIssued, targetPackIssued]);
 
   useEffect(() => {
     if (!targetPack?.id || !walletRevealCoupons.length) return;
@@ -2225,10 +2236,15 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
   }
 
   // 「新挑战开启页」CTA 或演示隐藏开关：先播礼盒,并行 renew → 欢迎流(如需) → 首页 → +5
-  function startRenewFlow(reason = 'expired') {
+  function beginGiftIntroChallengeFlow({
+    promise,
+    reason,
+    onFailTitle,
+    onFailRestoreChallenge = true,
+  }) {
     if (renewFlowActiveRef.current || newChallengeRenewRef.current) return;
 
-    const promise = renewCycle(touchId, reason)
+    const tracked = promise
       .then((plan) => {
         clearCachedRewardPlan(touchId);
         writeCachedRewardPlan(touchId, plan);
@@ -2240,7 +2256,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
         return plan;
       })
       .catch((err) => {
-        dbgError('[FCDBG][App] start new challenge failed', err);
+        dbgError('[FCDBG][App] challenge intro flow failed', { reason, err });
         giftEndedPendingRenewRef.current = false;
         newChallengeRenewRef.current = null;
         renewPlanRef.current = null;
@@ -2249,17 +2265,22 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
         setRenewPlanReady(false);
         setRenewIssueAutoAdvance(false);
         setRenewGiftIntro(false);
-        setNewChallenge({ reason: 'expired', coupon: newChallenge?.coupon ?? null });
+        if (onFailRestoreChallenge) {
+          setNewChallenge({ reason: 'expired', coupon: newChallenge?.coupon ?? null });
+        }
         setIntroActive(false);
         setReturnIntroGate(false);
+        // Recover plan after wiping local state for the intro shell.
+        void reloadPlan({ refresh: true, background: false }).catch(() => {});
         showNotification(
-          'Could not start new challenge',
+          onFailTitle,
           formatFcError(err, 'Please check your connection and try again.'),
           '⚠️',
         );
         throw err;
       });
-    newChallengeRenewRef.current = { promise, reason };
+
+    newChallengeRenewRef.current = { promise: tracked, reason };
     renewPlanRef.current = null;
     renewFlowActiveRef.current = true;
     setRenewFlowActive(true);
@@ -2268,13 +2289,24 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     autoIssuedPackRef.current = null;
     autoClaimInitialRef.current = null;
     renewPlanAppliedRef.current = false;
+    giftEndedPendingRenewRef.current = false;
 
+    // Drop completed/wallet overlays and stale plan so allRewardsClaimed cannot kill the gift intro.
     setNewChallenge(null);
     setShowReceipt(false);
     setZoomActive(false);
+    setGiftReveal(null);
+    setWalletOpen(false);
+    setWalletRevealCoupons([]);
     clearClaimedCode(touchId);
     setClaimedCode(null);
     setTargetUnlockAckCycleId(null);
+    clearCouponWallet(touchId);
+    setCouponWallet([]);
+    setActivePlan(null);
+    setRewardPlanId(null);
+    setRewardPacks({ startPack: null, targetPack: null });
+    setDiscounts([]);
 
     entryTapFxRequestedRef.current = true;
     entryTapFxPlayedRef.current = false;
@@ -2294,10 +2326,34 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     setIntroActive(true);
   }
 
+  function startRenewFlow(reason = 'expired') {
+    beginGiftIntroChallengeFlow({
+      promise: renewCycle(touchId, reason),
+      reason,
+      onFailTitle: 'Could not start new challenge',
+      onFailRestoreChallenge: true,
+    });
+  }
+
   startRenewFlowRef.current = startRenewFlow;
 
   function handleStartNewChallenge() {
     startRenewFlow('expired');
+  }
+
+  /** Sample magnet: clear wallet + first-round plan (same gift/welcome shell as renew). */
+  function startSampleResetFlow() {
+    beginGiftIntroChallengeFlow({
+      promise: sampleResetCycle(touchId),
+      reason: 'sample-reset',
+      onFailTitle: 'Could not reset magnet',
+      // Stay on completed/home if reset fails — do not force settlement overlay.
+      onFailRestoreChallenge: false,
+    });
+  }
+
+  function handleSampleReset() {
+    startSampleResetFlow();
   }
 
   async function handleDemoForceExpire() {
@@ -2528,16 +2584,21 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     const packExpiresAt = vm.countdownSeconds > 0
       ? new Date(Date.now() + vm.countdownSeconds * 1000).toISOString()
       : undefined;
+    // Welcome / first-round wallet: only the initial gift, never the locked target pack.
     const initialWalletEntries = buildWalletEntriesFromPacks({
       rewardPlanId: vm.rewardPlanId,
       cycleId,
-      startPack: vm.startPack,
+      startPack: vm.initialPackIssued ? vm.startPack : null,
       targetPack: null,
       expiresAt: packExpiresAt,
     });
-    if (initialWalletEntries.length) {
+    if (cycleId) {
+      setCouponWallet(syncWalletForCycle(touchId, cycleId, initialWalletEntries, { pruneOtherCycles: true }));
+    } else if (initialWalletEntries.length) {
       setCouponWallet(upsertCouponsToWallet(touchId, initialWalletEntries));
     }
+    // Server wallet is authoritative after sample-reset / renew (cleared + re-issued).
+    void refreshCouponWallet();
 
     if (welcomeNeeded) {
       const tapAwarded = vm.tapReward?.awarded ?? 0;
@@ -2564,7 +2625,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     setRenewIssueAutoAdvance(false);
     setWelcomeStep(3);
     finishRenewFlowToHome(vm);
-  }, [finishRenewFlowToHome, syncFromPlan, touchId]);
+  }, [finishRenewFlowToHome, refreshCouponWallet, syncFromPlan, touchId]);
 
   useEffect(() => {
     applyRenewPlanAfterGiftRef.current = applyRenewPlanAfterGift;
@@ -3565,7 +3626,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
 
   useEffect(() => {
     if (devScene === 'home') return;
-    if (renewGiftIntro) return;
+    if (renewGiftIntro || renewFlowActive) return;
     const pack = singleCouponOnlyMode ? soleRewardPack : currentPack;
     const serverIssued = !devScene && isInitialPackIssued(activePlan, derivedPacks.startPack);
     if (!pack?.id || walletHasPack(couponWallet, pack.id) || serverIssued) {
@@ -3581,6 +3642,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     activePlan,
     derivedPacks.startPack,
     renewGiftIntro,
+    renewFlowActive,
     singleCouponOnlyMode,
     soleRewardPack,
     currentPack,
@@ -3593,6 +3655,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
 
   useEffect(() => {
     if (devScene === 'completed' || devScene === 'home' || singleCouponOnlyMode) return;
+    if (renewFlowActive || renewGiftIntro) return;
     if (pendingPackUnlockAfterSettlementRef.current) return;
     if (!currentPackClaimed || !targetUnlocked || targetClaimed || !targetPack?.id) return;
     if (!devScene && isTargetPackIssued(activePlan, derivedPacks.targetPack)) return;
@@ -3602,7 +3665,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
       if (!issued) autoIssuedPackRef.current = null;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPackClaimed, targetUnlocked, targetClaimed, targetPack?.id, devScene, singleCouponOnlyMode]);
+  }, [currentPackClaimed, targetUnlocked, targetClaimed, targetPack?.id, devScene, singleCouponOnlyMode, renewFlowActive, renewGiftIntro]);
 
   function dismissTargetGiftReveal({ openWallet = false } = {}) {
     const coded = (giftReveal?.coupons ?? []).filter((coupon) => coupon?.code);
@@ -4145,6 +4208,8 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
           time={time}
           isExpired={isExpired}
           urgent={urgent}
+          isSample={isSampleMagnet}
+          onReset={handleSampleReset}
         />
       ) : (
         <>
@@ -4238,7 +4303,9 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
           reason={newChallenge.reason}
           coupon={settlementDisplayCoupon}
           coupons={settlementDisplayCoupons}
+          isSample={isSampleMagnet}
           onStart={handleStartNewChallenge}
+          onReset={handleSampleReset}
           onDismiss={() => setNewChallenge(null)}
         />
       )}
@@ -4641,7 +4708,7 @@ function HeaderBase({
   );
 }
 
-function NewChallengeUnlocked({ reason, onStart, onDismiss, coupon, coupons }) {
+function NewChallengeUnlocked({ reason, onStart, onReset, onDismiss, coupon, coupons, isSample = false }) {
   const redeemed = reason === 'redeemed';
   const expired = reason === 'expired';
 
@@ -4665,7 +4732,11 @@ function NewChallengeUnlocked({ reason, onStart, onDismiss, coupon, coupons }) {
 
         <section className="nc-copy-block">
           <h1>Round Complete</h1>
-          <p>This reward period has ended. Start the next one to unlock fresh offers.</p>
+          <p>
+            {isSample
+              ? 'This sample round has ended. Reset to start again from the first visit.'
+              : 'This reward period has ended. Start the next one to unlock fresh offers.'}
+          </p>
         </section>
 
         {settlementCoupons.length > 0 && (
@@ -4681,13 +4752,23 @@ function NewChallengeUnlocked({ reason, onStart, onDismiss, coupon, coupons }) {
         )}
 
         <div className="nc-footer">
-          <button className="nc-btn-start" type="button" onClick={onStart}>
-            <span>Start Next Challenge</span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.7" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12h14" />
-              <path d="m13 5 7 7-7 7" />
-            </svg>
-          </button>
+          {isSample ? (
+            <button className="nc-btn-start" type="button" onClick={onReset}>
+              <span>Reset</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.7" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 1 0 9-9" />
+                <path d="M3 4v5h5" />
+              </svg>
+            </button>
+          ) : (
+            <button className="nc-btn-start" type="button" onClick={onStart}>
+              <span>Start Next Challenge</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.7" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12h14" />
+                <path d="m13 5 7 7-7 7" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -5797,6 +5878,8 @@ function CouponWalletPage({
   time,
   isExpired = false,
   urgent = false,
+  isSample = false,
+  onReset,
 }) {
   const list = coupons ?? [];
   const active = completed
@@ -5806,6 +5889,7 @@ function CouponWalletPage({
   const expired = completed
     ? []
     : list.filter((coupon) => coupon.status === 'expired' || (coupon.status === 'active' && !isWalletCouponUsable(coupon)));
+  const showSampleReset = completed && isSample && typeof onReset === 'function';
 
   return (
     <main
@@ -5855,6 +5939,17 @@ function CouponWalletPage({
             </>
           )}
         </>
+      )}
+      {showSampleReset && (
+        <div className="completed-rewards-reset">
+          <button className="completed-rewards-reset-btn" type="button" onClick={onReset}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 3-6.7" />
+              <path d="M3 4v5h5" />
+            </svg>
+            <span>Reset</span>
+          </button>
+        </div>
       )}
     </main>
   );

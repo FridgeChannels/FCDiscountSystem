@@ -847,6 +847,33 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === 'POST' && url.pathname === '/api/fc/cycle/sample-reset') {
+      const body = await readJson(req);
+      const touchId = body.touchId;
+      emitActionEvent('attempted', 'cycle_sample_reset', { touchId }, { requestId });
+      if (!touchId) {
+        emitActionFailed('cycle_sample_reset', {}, { requestId, reason: 'TOUCH_ID_REQUIRED' });
+        sendJson(res, 400, { error: 'touchId required' });
+        return;
+      }
+      try {
+        const data = await callEngine('/cycle/sample-reset', { touchId });
+        planCache.delete(touchId);
+        writePlanCache(touchId, data);
+        emitActionEvent('succeeded', 'cycle_sample_reset', { touchId }, { requestId });
+        sendJson(res, 200, data);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'sample reset failed';
+        const forbidden = message.includes('SAMPLE_RESET_FORBIDDEN') || message.includes('sample reset is only allowed');
+        emitActionFailed('cycle_sample_reset', { touchId }, {
+          requestId,
+          reason: forbidden ? 'SAMPLE_RESET_FORBIDDEN' : 'SAMPLE_RESET_FAILED',
+        });
+        sendJson(res, forbidden ? 403 : 400, { error: message });
+      }
+      return;
+    }
+
     sendJson(res, 404, { error: 'not found' });
   } catch (err) {
     emitTelemetryEvent('user_action_failed', {
