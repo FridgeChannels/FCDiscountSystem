@@ -19,23 +19,10 @@ const ENGINE_REWARD_PLAN_TIMEOUT_MS = Number(
   process.env.ENGINE_REWARD_PLAN_TIMEOUT_MS ?? Math.max(ENGINE_TIMEOUT_MS, 120000),
 );
 
-// 阶段5:reward-plan 服务端短缓存 + 在途去重。
-// - 同一 touchId 的并发请求只打一次引擎(去重)
-// - 命中短缓存的请求直接返回,降低引擎压力与首屏延迟
-const PLAN_CACHE_TTL_MS = Number(process.env.PLAN_CACHE_TTL_MS ?? 60000);
-const planCache = new Map(); // touchId -> { data, expiresAt }
+// reward-plan: 在途去重。不再用进程内 TTL 短缓存直接回包——
+// SQL/DB 旁路 reset 清不掉那层 Map，会 6ms 吐旧 plan、页面完全不变。
+// 读路径一律打引擎；引擎 planCache 会校验 active cycle 后再决定命中/重算。
 const planInflight = new Map(); // touchId -> Promise
-
-function readPlanCache(touchId) {
-  const entry = planCache.get(touchId);
-  if (entry && entry.expiresAt > Date.now()) return entry.data;
-  if (entry) planCache.delete(touchId);
-  return null;
-}
-
-function writePlanCache(touchId, data) {
-  planCache.set(touchId, { data, expiresAt: Date.now() + PLAN_CACHE_TTL_MS });
-}
 
 function parseCouponPercent(raw) {
   const parsed = Number.parseInt(String(raw ?? '').replace(/[^\d]/g, ''), 10);
@@ -141,6 +128,20 @@ function getPlanDeduped(touchId, { timeoutMs = ENGINE_REWARD_PLAN_TIMEOUT_MS, sk
   return promise;
 }
 
+function engineErrorMessage(json, status) {
+  const err = json?.error;
+  if (err && typeof err === 'object') {
+    const code = err.code ? String(err.code) : '';
+    const message = err.message ? String(err.message) : '';
+    if (code && message) return `${code}: ${message}`;
+    if (message) return message;
+    if (code) return code;
+  }
+  if (typeof err === 'string' && err.trim()) return err;
+  if (typeof json?.message === 'string' && json.message.trim()) return json.message;
+  return `HTTP ${status}`;
+}
+
 async function callEngine(path, body, timeoutMs = ENGINE_TIMEOUT_MS) {
   const headers = { 'content-type': 'application/json' };
   if (ENGINE_SERVICE_TOKEN) {
@@ -153,10 +154,9 @@ async function callEngine(path, body, timeoutMs = ENGINE_TIMEOUT_MS) {
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
-  const json = await res.json();
+  const json = await res.json().catch(() => ({}));
   if (!res.ok || json.error || json.data === null) {
-    const msg = json.error ? `${json.error.code}: ${json.error.message}` : `HTTP ${res.status}`;
-    throw new Error(msg);
+    throw new Error(engineErrorMessage(json, res.status));
   }
   return json.data;
 }
@@ -524,11 +524,16 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { error: 'touchId, contentType and dataBase64 required' });
         return;
       }
-      const data = await callEngine('/identity/player-profile/avatar', {
-        touchId: body.touchId,
-        contentType: body.contentType,
-        dataBase64: body.dataBase64,
-      });
+      // Storage upload of ~2MB base64 payloads can exceed the default engine timeout.
+      const data = await callEngine(
+        '/identity/player-profile/avatar',
+        {
+          touchId: body.touchId,
+          contentType: body.contentType,
+          dataBase64: body.dataBase64,
+        },
+        Math.max(ENGINE_TIMEOUT_MS, 120000),
+      );
       writePlayerProfileCache(body.touchId, data);
       leaderboardCache.delete(body.touchId);
       sendJson(res, 200, data);
@@ -554,23 +559,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { error: 'touchId required' });
         return;
       }
-      const skipPlanCache = url.searchParams.get('refresh') === '1';
       const skipTapReward = url.searchParams.get('skipTapReward') === '1';
-      if (!skipPlanCache) {
-        const cachedPlan = readPlanCache(touchId);
-        if (cachedPlan) {
-          emitTelemetryEvent('tap_received', {
-            touchId,
-            payload: { requestId, cacheHit: true, skipTapReward },
-          });
-          emitActionEvent('succeeded', 'reward_plan_generate', { touchId }, {
-            requestId,
-            cacheHit: true,
-          });
-          sendJson(res, 200, cachedPlan);
-          return;
-        }
-      }
       emitTelemetryEvent('tap_received', {
         touchId,
         payload: { requestId, cacheHit: false, skipTapReward },
@@ -583,7 +572,6 @@ const server = http.createServer(async (req, res) => {
         timeoutMs: ENGINE_REWARD_PLAN_TIMEOUT_MS,
         skipTapReward,
       });
-      writePlanCache(touchId, data);
       emitActionEvent('succeeded', 'reward_plan_generate', { touchId }, {
         requestId,
         cacheHit: false,
@@ -641,7 +629,6 @@ const server = http.createServer(async (req, res) => {
       emitActionEvent('attempted', 'session_complete', { touchId }, { requestId });
       const { touchId: _omitTouchId, ...engineBody } = body;
       const data = await callEngine('/games/session/complete', engineBody);
-      if (touchId) planCache.delete(touchId);
       emitActionEvent('succeeded', 'session_complete', { touchId }, { requestId });
       sendJson(res, 200, data);
       return;
@@ -676,7 +663,6 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       emitActionEvent('attempted', 'survey_complete', { touchId: body?.touchId }, { requestId });
       const data = await callEngine('/survey/complete', body);
-      if (body.touchId) planCache.delete(body.touchId);
       emitActionEvent('succeeded', 'survey_complete', { touchId: body?.touchId }, { requestId });
       sendJson(res, 200, data);
       return;
@@ -686,7 +672,6 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       emitActionEvent('attempted', 'coupon_redeem', { touchId: body?.touchId }, { requestId });
       const data = await callEngine('/coupons/redeem', body);
-      if (body.touchId) planCache.delete(body.touchId);
       emitActionEvent('succeeded', 'coupon_redeem', { touchId: body?.touchId }, { requestId });
       sendJson(res, 200, data);
       return;
@@ -725,7 +710,6 @@ const server = http.createServer(async (req, res) => {
         couponId,
         campaignId: couponId,
       });
-      planCache.delete(touchId);
       emitActionEvent('succeeded', 'claim_initial', { touchId }, { requestId, rewardPlanId });
       sendJson(res, 200, {
         coupon: {
@@ -761,7 +745,6 @@ const server = http.createServer(async (req, res) => {
         couponCode: coupon?.couponCode ?? null,
       }));
 
-      planCache.delete(touchId);
       emitActionEvent('succeeded', 'claim_target_pack', { touchId }, { requestId, rewardPlanId });
       sendJson(res, 200, {
         pack: {
@@ -776,7 +759,6 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       emitActionEvent('attempted', 'coupon_observe', { touchId: body?.touchId }, { requestId });
       const data = await callEngine('/coupons/observe', body);
-      if (body.touchId) planCache.delete(body.touchId);
       emitActionEvent('succeeded', 'coupon_observe', { touchId: body?.touchId }, { requestId });
       sendJson(res, 200, data);
       return;
@@ -815,10 +797,6 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const data = await callEngine('/cycle/renew', body);
-      if (touchId) {
-        planCache.delete(touchId);
-        writePlanCache(touchId, data);
-      }
       emitActionEvent('succeeded', 'cycle_renew', { touchId }, { requestId });
       sendJson(res, 200, data);
       return;
@@ -839,9 +817,6 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const data = await callEngine('/cycle/force-expire', body);
-      if (touchId) {
-        planCache.delete(touchId);
-      }
       emitActionEvent('succeeded', 'cycle_force_expire', { touchId }, { requestId });
       sendJson(res, 200, data);
       return;
@@ -858,8 +833,6 @@ const server = http.createServer(async (req, res) => {
       }
       try {
         const data = await callEngine('/cycle/sample-reset', { touchId });
-        planCache.delete(touchId);
-        writePlanCache(touchId, data);
         emitActionEvent('succeeded', 'cycle_sample_reset', { touchId }, { requestId });
         sendJson(res, 200, data);
       } catch (err) {

@@ -84,6 +84,10 @@ function welcomeKey(touchId) {
   return `fc.welcome_completed.${touchId}`;
 }
 
+function welcomeCycleKey(touchId) {
+  return `fc.welcome_cycle.${touchId}`;
+}
+
 function claimedKey(touchId) {
   return `fc.claimed_code.${touchId}`;
 }
@@ -225,13 +229,29 @@ export function readWelcomeCompleted(touchId) {
   return window.localStorage.getItem(welcomeKey(touchId)) === 'true';
 }
 
-export function writeWelcomeCompleted(touchId, completed = true) {
+/** Cycle id that the welcome flag was completed for (used after server/SQL reset). */
+export function readWelcomeCycleId(touchId) {
+  if (!canUseBrowserStorage() || !touchId) return '';
+  return window.localStorage.getItem(welcomeCycleKey(touchId)) || '';
+}
+
+export function writeWelcomeCompleted(touchId, completed = true, cycleId) {
   if (!canUseBrowserStorage() || !touchId) return;
   if (completed) {
     window.localStorage.setItem(welcomeKey(touchId), 'true');
+    if (cycleId) {
+      window.localStorage.setItem(welcomeCycleKey(touchId), String(cycleId));
+    }
   } else {
     window.localStorage.removeItem(welcomeKey(touchId));
+    window.localStorage.removeItem(welcomeCycleKey(touchId));
   }
+}
+
+export function clearWelcomeCompleted(touchId) {
+  if (!canUseBrowserStorage() || !touchId) return;
+  window.localStorage.removeItem(welcomeKey(touchId));
+  window.localStorage.removeItem(welcomeCycleKey(touchId));
 }
 
 function parseClaimRecord(raw) {
@@ -294,9 +314,25 @@ export function clearClaimedCode(touchId) {
   window.localStorage.removeItem(claimedKey(touchId));
 }
 
-export function clearWelcomeCompleted(touchId) {
-  if (!canUseBrowserStorage() || !touchId) return;
-  window.localStorage.removeItem(welcomeKey(touchId));
+/**
+ * Clear per-magnet client session so the next open matches a first-round welcome
+ * (needed after server-side / SQL sample-reset which cannot touch localStorage).
+ */
+export function clearMagnetClientSession(touchId) {
+  if (!touchId) return;
+  clearWelcomeCompleted(touchId);
+  clearClaimedCode(touchId);
+  clearCachedRewardPlan(touchId);
+  clearCouponWallet(touchId);
+  clearCachedMagnetBrandParam(touchId);
+  clearCachedShopifyStatus(touchId);
+  if (canUseBrowserStorage()) {
+    try {
+      window.sessionStorage.removeItem(`fc_tap_fx_${touchId}`);
+    } catch {
+      // ignore
+    }
+  }
 }
 
 function profileKey(touchId) {

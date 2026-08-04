@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
-import { claimCoupon, claimInitialReward, claimTargetRewardPack, completeSurvey, fetchCouponWallet, fetchMagnetBrandParam, fetchPlayerProfile, fetchRewardPlan, fetchShopifyStatus, fetchSurveyQuestions, fetchTodayLeaderboard, observeCoupon, redeemCoupon, renewCycle, forceExpireCycle, sampleResetCycle, startGameSession, submitSurveyAnswers, updatePlayerProfile, uploadPlayerAvatar } from './api/client.js';
+import { claimCoupon, claimInitialReward, claimTargetRewardPack, completeSurvey, fetchCouponWallet, fetchMagnetBrandParam, fetchPlayerProfile, fetchRewardPlan, fetchShopifyStatus, fetchSurveyQuestions, fetchTodayLeaderboard, observeCoupon, redeemCoupon, renewCycle, sampleResetCycle, startGameSession, submitSurveyAnswers, updatePlayerProfile, uploadPlayerAvatar } from './api/client.js';
 import {
   readCachedRewardPlan,
   clearCachedMagnetBrandParam,
@@ -21,6 +21,8 @@ import {
   writeClaimRecord,
   clearClaimedCode,
   clearWelcomeCompleted,
+  clearMagnetClientSession,
+  readWelcomeCycleId,
   clearLegacyMagnetStorage,
   readCachedProfile,
   writeCachedProfile,
@@ -28,9 +30,9 @@ import {
   writeCouponWallet,
   upsertCouponsToWallet,
   syncWalletForCycle,
+  clearCouponWallet,
   walletCouponKey,
   setWalletCouponStatus,
-  clearCouponWallet,
 } from './api/cache.js';
 import {
   applyClaimToDiscounts,
@@ -118,6 +120,9 @@ function formatFcError(err, fallback = 'Please try again') {
   if (!msg) return fallback;
   if (msg.includes('cycle is not expired')) {
     return 'This challenge is still active. Refresh the page to continue.';
+  }
+  if (msg.includes('SAMPLE_RESET_FORBIDDEN') || msg.includes('sample reset is only allowed')) {
+    return 'Reset is only available on sample magnets.';
   }
   if (msg.includes('manual cycle renew is disabled') || msg.includes('demo force expire is disabled')) {
     return 'Demo cycle reset is not enabled on this environment.';
@@ -343,16 +348,19 @@ function fallbackCopy(text) {
   });
 }
 
-// 打开外部链接(品牌商店等)。Vite dev/预览的 iframe 沙箱只允许 localhost,跳转外域会被
-// 拦截并提示 "Preview only supports localhost URLs";开发环境下改为打印日志,避免打断测试,
-// 生产环境正常新开标签页。
+// 打开外部链接(品牌商店等)。
 function openExternalLink(url) {
   if (!url) return;
-  if (import.meta.env?.DEV) {
-    console.info('[dev] 外链在预览环境被抑制,生产环境会正常打开:', url);
-    return;
+  try {
+    const opened = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!opened && import.meta.env?.DEV) {
+      console.info('[dev] window.open blocked; navigate manually:', url);
+    }
+  } catch (err) {
+    if (import.meta.env?.DEV) {
+      console.info('[dev] failed to open external link:', url, err);
+    }
   }
-  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 function couponPaletteTier(coupon) {
@@ -522,8 +530,7 @@ export default function App() {
   const singleCouponOnlyRef = useRef(false);
   const solePackClaimedRef = useRef(false);
   const startRenewFlowRef = useRef(() => {});
-  const handleDemoForceExpireRef = useRef(() => {});
-  const demoForceExpireActiveRef = useRef(false);
+  const startSampleResetFlowRef = useRef(() => {});
   const logoTapDetectorRef = useRef(null);
   const newChallengeRenewRef = useRef(null);
   const renewPlanRef = useRef(null);
@@ -555,6 +562,7 @@ export default function App() {
   const [rewardPlanFetched, setRewardPlanFetched] = useState(false);
   const [planError, setPlanError] = useState(null);
   const [rewardPlanId, setRewardPlanId] = useState(null);
+  const rewardPlanIdRef = useRef(rewardPlanId);
   const [brand, setBrand] = useState({ name: null, logoUrl: null, primaryColor: null, shopUrl: '#' });
   const [isSampleMagnet, setIsSampleMagnet] = useState(false);
   const [challenges, setChallenges] = useState(FALLBACK_CHALLENGES);
@@ -591,7 +599,6 @@ export default function App() {
   const [introActive, setIntroActive] = useState(true);
   const [returnIntroGate, setReturnIntroGate] = useState(true);
   const [renewGiftIntro, setRenewGiftIntro] = useState(false);
-  const [demoForceExpireLoading, setDemoForceExpireLoading] = useState(false);
   const [renewFlowActive, setRenewFlowActive] = useState(false);
   const [renewPlanReady, setRenewPlanReady] = useState(false);
   const [renewIssueAutoAdvance, setRenewIssueAutoAdvance] = useState(false);
@@ -778,6 +785,10 @@ export default function App() {
   useEffect(() => {
     welcomeStepRef.current = welcomeStep;
   }, [welcomeStep]);
+
+  useEffect(() => {
+    rewardPlanIdRef.current = rewardPlanId;
+  }, [rewardPlanId]);
 
   const [isWelcomeVideoActive, setIsWelcomeVideoActive] = useState(false);
   const [welcomeVideoFading, setWelcomeVideoFading] = useState(false);
@@ -1066,14 +1077,105 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     return entries;
   }, [activePlan?.cycleId, countdownSeconds, refreshCouponWallet, rewardPlanId, touchId]);
 
-  const syncFromPlan = useCallback((plan, { fromCache = false, devPreview = false, fromNewChallengeRenew = false } = {}) => {
+  const syncFromPlan = useCallback((plan, { fromCache = false, devPreview = false, fromNewChallengeRenew = false, previousCycleId = null } = {}) => {
     const renewInProgress = Boolean(newChallengeRenewRef.current || renewFlowActiveRef.current);
     let claimRecord = readClaimRecord(touchId);
-    if (
-      claimRecord?.cycleId &&
-      plan.cycleId &&
-      claimRecord.cycleId !== plan.cycleId
-    ) {
+    const planCycleId = plan.cycleId ?? plan.rewardPlanId ?? null;
+    const claimCycleMismatch =
+      Boolean(claimRecord?.cycleId) &&
+      Boolean(planCycleId) &&
+      claimRecord.cycleId !== planCycleId;
+    const localWalletHasStaleCycle = readCouponWallet(touchId).some(
+      (row) => row.cycleId && planCycleId && row.cycleId !== planCycleId,
+    );
+    const welcomeDoneEarly = readWelcomeCompleted(touchId);
+    const welcomeCycleId = readWelcomeCycleId(touchId);
+    const cachedCycleId = previousCycleId || null;
+    const cycleChangedFromCache =
+      Boolean(cachedCycleId) &&
+      Boolean(planCycleId) &&
+      cachedCycleId !== planCycleId;
+    const sampleNeedsWelcomeReplay =
+      isSampleMagnetParam(magnetBrandParamRef.current) &&
+      welcomeDoneEarly &&
+      !welcomeCycleId &&
+      typeof window !== 'undefined' &&
+      !window.sessionStorage.getItem(`fc.welcome_replay.${touchId}`);
+    const welcomeBoundToOtherCycle =
+      welcomeDoneEarly &&
+      Boolean(planCycleId) &&
+      (
+        (welcomeCycleId && welcomeCycleId !== planCycleId) ||
+        (!welcomeCycleId && cycleChangedFromCache) ||
+        (!welcomeCycleId && (claimCycleMismatch || localWalletHasStaleCycle)) ||
+        sampleNeedsWelcomeReplay
+      );
+    const mappedPreview = mapPlanToViewModel(plan, claimRecord, magnetBrandParamRef.current);
+    const shouldRestartFirstWelcome =
+      !fromCache &&
+      !devPreview &&
+      !fromNewChallengeRenew &&
+      !renewInProgress &&
+      !mappedPreview.cycleExpired &&
+      !mappedPreview.couponRedeemed &&
+      (mappedPreview.currentStepIndex ?? 0) === 0 &&
+      welcomeBoundToOtherCycle;
+
+    if (shouldRestartFirstWelcome) {
+      dbg('[FCDBG][App] server reset detected — restart first-round welcome', {
+        planCycleId,
+        previousCycleId: cachedCycleId,
+        welcomeCycleId,
+        claimCycleId: claimRecord?.cycleId,
+        welcomeDone: welcomeDoneEarly,
+      });
+      clearMagnetClientSession(touchId);
+      try {
+        window.sessionStorage.setItem(`fc.welcome_replay.${touchId}`, '1');
+      } catch {
+        // ignore
+      }
+      claimRecord = null;
+      setClaimedCode(null);
+      setCouponWallet([]);
+      const vm = mapPlanToViewModel(plan, null, magnetBrandParamRef.current);
+      setActivePlan(plan);
+      setRewardPlanId(vm.rewardPlanId);
+      setDiscounts(vm.discounts.length ? vm.discounts : (import.meta.env.DEV ? INITIAL_DISCOUNTS : []));
+      setPlanCurrentTier(plan.currentTier ?? 0);
+      setRewardPacks(resolveRewardPacks(plan, vm.discounts, vm.rewardPlanId ?? touchId));
+      setCurrentStepIndex(vm.currentStepIndex);
+      setCountdownSeconds(vm.countdownSeconds);
+      setBrand(vm.brand);
+      setChallenges(vm.challenges.length ? vm.challenges : (import.meta.env.DEV ? FALLBACK_CHALLENGES : []));
+      setDailyCapReached(vm.dailyCapReached);
+      setHasInitialDiscount(vm.hasInitialDiscount);
+      setWelcomeTargetPoints(vm.points);
+      setPoints(Math.max(0, (vm.points ?? 0) - (vm.tapReward?.awarded ?? 0) - (vm.shopifyReward?.awarded ?? 0)));
+      setWelcomeCoupon(
+        vm.startPack?.coupons?.[0]
+          ?? vm.discounts?.[vm.currentStepIndex]
+          ?? vm.discounts?.[0]
+          ?? null,
+      );
+      setWelcomeStep(0);
+      setIntroActive(true);
+      setReturnIntroGate(true);
+      setRenewGiftIntro(true);
+      renewFlowActiveRef.current = true;
+      setRenewFlowActive(true);
+      renewPlanRef.current = plan;
+      setRenewPlanReady(true);
+      renewPlanAppliedRef.current = false;
+      giftEndedPendingRenewRef.current = false;
+      newChallengeRenewRef.current = { promise: Promise.resolve(plan), reason: 'server-reset' };
+      returnIntroPendingRef.current = false;
+      returnIntroShownRef.current = true;
+      applyBrandTheme(vm.brand);
+      return vm;
+    }
+
+    if (claimCycleMismatch) {
       clearClaimedCode(touchId);
       claimRecord = null;
     }
@@ -1121,6 +1223,9 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     }
 
     const welcomeDone = readWelcomeCompleted(touchId);
+    if (welcomeDone && planCycleId && !readWelcomeCycleId(touchId)) {
+      writeWelcomeCompleted(touchId, true, planCycleId);
+    }
     const welcomeInProgress = vm.hasInitialDiscount && !welcomeDone;
     const storedClaim = claimRecord?.code ?? null;
     const redeemedMatch =
@@ -1172,7 +1277,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
       if (shopifyAwarded > 0) {
         setShopifyLoginTaskStatus('completed');
       }
-      const sameCycle = !plan.cycleId || !rewardPlanId || plan.cycleId === rewardPlanId;
+      const sameCycle = !plan.cycleId || !rewardPlanIdRef.current || plan.cycleId === rewardPlanIdRef.current;
       const stalePlanPoints = sameCycle && vm.points < pointsRef.current;
       if (shouldDeferEntryFx) {
         pendingRewardKindRef.current = entryKind;
@@ -1232,7 +1337,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
           setIntroActive(welcomeStepRef.current === 0);
         }
       } else if (packRewardFlow && initialRewardIssued) {
-        if (!welcomeDone) writeWelcomeCompleted(touchId);
+        if (!welcomeDone) writeWelcomeCompleted(touchId, true, planCycleId);
         if (!returnIntroPendingRef.current) {
           setWelcomeStep(3);
           setIntroActive(false);
@@ -1241,7 +1346,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
           returnIntroShownRef.current = true;
         }
       } else if (singleCouponPlan && singleCouponIssued) {
-        if (!welcomeDone) writeWelcomeCompleted(touchId);
+        if (!welcomeDone) writeWelcomeCompleted(touchId, true, planCycleId);
         if (!returnIntroPendingRef.current) {
           setWelcomeStep(3);
           setIntroActive(false);
@@ -1253,7 +1358,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
         setIntroActive(welcomeStepRef.current === 0);
       } else if (shouldShowReturnIntro || returnIntroPendingRef.current) {
         // 非首次回访:礼盒与 plan 并行,结束后再进首页
-        if (!welcomeDone) writeWelcomeCompleted(touchId);
+        if (!welcomeDone) writeWelcomeCompleted(touchId, true, planCycleId);
         setWelcomeStep(3);
         setIntroActive(true);
         setReturnIntroGate(true);
@@ -1263,7 +1368,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
         setReturnIntroGate(false);
         if (!vm.hasInitialDiscount) {
           setWelcomeStep(3);
-          if (!welcomeDone) writeWelcomeCompleted(touchId);
+          if (!welcomeDone) writeWelcomeCompleted(touchId, true, planCycleId);
         }
       }
     }
@@ -1751,11 +1856,12 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
         const plan = await fetchRewardPlan(touchId, { refresh: shopifyOAuthReturn });
         if (!cancelled) {
           clearGameSessionCache();
+          const previousCycleId = cached?.cycleId ?? cached?.rewardPlanId ?? null;
           writeCachedRewardPlan(touchId, plan);
           if (newChallengeRenewRef.current || renewFlowActiveRef.current) {
-            syncFromPlan(plan, { fromNewChallengeRenew: true });
+            syncFromPlan(plan, { fromNewChallengeRenew: true, previousCycleId });
           } else {
-            syncFromPlan(plan);
+            syncFromPlan(plan, { previousCycleId });
           }
         }
       } catch (err) {
@@ -1964,10 +2070,10 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     currentPack,
   ]);
   const planBlocksHome = planLoading && !rewardPlanId;
-  const welcomePackPending = Boolean(currentPack) && !readWelcomeCompleted(touchId);
-  const initialPackPending = singleCouponOnlyMode
-    ? Boolean(soleRewardPack && (!solePackClaimed || welcomePackPending))
-    : Boolean(currentPack && (welcomePackPending || !walletHasPack(couponWallet, currentPack?.id)));
+  const welcomePackPending = Boolean(currentPack || soleRewardPack) && !readWelcomeCompleted(touchId);
+  // Keep the welcome ritual only until welcome is completed — do not keep it open
+  // solely because wallet packId sync lagged (that made Get More OFF look dead).
+  const initialPackPending = welcomePackPending;
   const showWelcomeRitual = !introActive
     && !returnIntroGate
     && !renewGiftIntro
@@ -2356,79 +2462,29 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     startSampleResetFlow();
   }
 
-  async function handleDemoForceExpire() {
-    if (
-      demoForceExpireActiveRef.current ||
-      renewFlowActiveRef.current ||
-      newChallengeRenewRef.current
-    ) {
-      return;
-    }
-    demoForceExpireActiveRef.current = true;
-    setDemoForceExpireLoading(true);
-    try {
-      const result = await forceExpireCycle(touchId);
-      const basePlan = activePlan ?? readCachedRewardPlan(touchId);
-      if (!basePlan) {
-        throw new Error('reward plan not loaded');
-      }
-      const patchedPlan = {
-        ...basePlan,
-        cycleId: result.cycleId,
-        cycleExpiresAt: result.cycleExpiresAt,
-        cycleStatus: 'expired',
-      };
-      clearCachedRewardPlan(touchId);
-      writeCachedRewardPlan(touchId, patchedPlan);
-      setShowReceipt(false);
-      setZoomActive(false);
-      setIntroActive(false);
-      setReturnIntroGate(false);
-      setRenewGiftIntro(false);
-      const claimRecord = readClaimRecord(touchId);
-      const vm = syncFromPlan(patchedPlan);
-      if (!vm.cycleExpired) {
-        throw new Error('cycle is not expired after force-expire');
-      }
-      const settlementCoupon = resolveSettlementCoupon({
-        discounts: vm.discounts,
-        claimRecord,
-        observedCoupon: patchedPlan.observedCoupon,
-        fallbackCoupon: vm.discounts[vm.currentStepIndex] ?? vm.discounts[vm.discounts.length - 1],
-      });
-      settlementCouponRef.current = settlementCoupon ?? settlementCouponRef.current;
-      setNewChallenge({ reason: 'expired', coupon: settlementCoupon });
-      setPlanLoading(false);
-    } catch (err) {
-      dbgError('[FCDBG][App] demo force expire failed', err);
-      showNotification(
-        'Demo reset failed',
-        formatFcError(err, 'Please check your connection and try again.'),
-        '⚠️',
-      );
-    } finally {
-      demoForceExpireActiveRef.current = false;
-      setDemoForceExpireLoading(false);
-    }
-  }
+  startSampleResetFlowRef.current = startSampleResetFlow;
 
-  handleDemoForceExpireRef.current = handleDemoForceExpire;
+  const logoSecretEnabled = isDemoForceRenewEnabled() || isSampleMagnet;
 
   const handleLogoSecretTap = useCallback(() => {
     logoTapDetectorRef.current?.();
   }, []);
 
   useEffect(() => {
-    if (!isDemoForceRenewEnabled()) return undefined;
+    if (!logoSecretEnabled) {
+      logoTapDetectorRef.current = null;
+      return undefined;
+    }
+    // 5× logo tap → same sample-reset + gift intro path as the Reset button.
     logoTapDetectorRef.current = createLogoTapDetector({
       onTrigger: () => {
-        void handleDemoForceExpireRef.current();
+        startSampleResetFlowRef.current?.();
       },
     });
     return () => {
       logoTapDetectorRef.current = null;
     };
-  }, []);
+  }, [logoSecretEnabled]);
 
   useEffect(() => {
     // 客户端倒计时归零时的兜底（主路径为 plan.cycleExpired）。
@@ -2933,21 +2989,41 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
       );
       return;
     }
+    const avatarUrl = normalized.avatarImageUrl || '';
+    const isLocalPreview = avatarUrl.startsWith('blob:') || avatarUrl.startsWith('data:');
+    // Explicit clear from Profile (color picker). Do not infer from empty URL — that used to
+    // wipe a just-uploaded avatar when Save raced ahead of the upload response.
+    const clearAvatarImage = Boolean(nextProfile?.clearAvatarImage);
     setUserProfile(normalized);
     void updatePlayerProfile(touchId, {
       displayName,
       displayCode,
       avatarColor: normalized.avatarColor,
-      clearAvatarImage: !normalized.avatarImageUrl,
+      clearAvatarImage,
     })
       .then((updated) => {
-        setPlayerProfile(updated);
+        const avatarImageUrl =
+          isLocalPreview && !updated.avatarImageUrl
+            ? avatarUrl
+            : (updated.avatarImageUrl || '');
+        setPlayerProfile({ ...updated, avatarImageUrl: avatarImageUrl || null });
         writeCachedProfile(touchId, {
           nickname: updated.displayName,
           displayCode: updated.displayCode,
           avatarColor: updated.avatarColor,
-          avatarImageUrl: updated.avatarImageUrl || '',
+          avatarImageUrl,
         });
+        if (!isLocalPreview) {
+          setUserProfile(
+            normalizeProfile({
+              nickname: updated.displayName,
+              displayCode: updated.displayCode,
+              brandName: updated.brandName,
+              avatarColor: updated.avatarColor,
+              avatarImageUrl,
+            }),
+          );
+        }
         void syncLeaderboard(true);
       })
       .catch((err) => {
@@ -2960,6 +3036,10 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
 
   function uploadUserAvatar(file) {
     if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      showNotification('Upload failed', 'Image must be 2MB or smaller.', '⚠️');
+      return;
+    }
     void uploadPlayerAvatar(touchId, file)
       .then((updated) => {
         setPlayerProfile(updated);
@@ -3626,7 +3706,9 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
 
   useEffect(() => {
     if (devScene === 'home') return;
-    if (renewGiftIntro || renewFlowActive) return;
+    // Block only during gift intro; allow claim while renew welcome ritual is showing.
+    if (renewGiftIntro) return;
+    if (renewFlowActive && welcomeStep < 1) return;
     const pack = singleCouponOnlyMode ? soleRewardPack : currentPack;
     const serverIssued = !devScene && isInitialPackIssued(activePlan, derivedPacks.startPack);
     if (!pack?.id || walletHasPack(couponWallet, pack.id) || serverIssued) {
@@ -3643,6 +3725,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     derivedPacks.startPack,
     renewGiftIntro,
     renewFlowActive,
+    welcomeStep,
     singleCouponOnlyMode,
     soleRewardPack,
     currentPack,
@@ -4053,16 +4136,21 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
   }, []);
 
   const handleWelcomeRitualComplete = useCallback(() => {
+    const cycleId = activePlan?.cycleId ?? rewardPlanId;
     setWelcomeStep(3);
-    writeWelcomeCompleted(touchId);
+    writeWelcomeCompleted(touchId, true, cycleId);
     setRenewIssueAutoAdvance(false);
     setWelcomeCoupon(null);
     setPlanLoading(false);
+    setIntroActive(false);
+    setReturnIntroGate(false);
     if (renewFlowActiveRef.current) {
       renewFlowActiveRef.current = false;
       setRenewFlowActive(false);
       setRenewPlanReady(false);
+      setRenewGiftIntro(false);
       renewPlanRef.current = null;
+      newChallengeRenewRef.current = null;
       returnIntroShownRef.current = true;
       returnIntroPendingRef.current = false;
       if (pendingTapRewardRef.current > 0) {
@@ -4071,8 +4159,6 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
       return;
     }
     if (singleCouponOnlyMode || !devScene) {
-      setIntroActive(false);
-      setReturnIntroGate(false);
       return;
     }
     if (pendingTapRewardRef.current > 0) {
@@ -4080,7 +4166,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     } else {
       tweenPointsTo(welcomeTargetPoints);
     }
-  }, [playPendingTapReward, singleCouponOnlyMode, touchId, tweenPointsTo, welcomeTargetPoints]);
+  }, [activePlan?.cycleId, playPendingTapReward, rewardPlanId, singleCouponOnlyMode, touchId, tweenPointsTo, welcomeTargetPoints, devScene]);
 
   const isReturnIntro = introActive && welcomeStep >= 3 && !renewGiftIntro && !renewFlowActive;
   const showBrandIntro =
@@ -4127,7 +4213,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
         >
           <video
             ref={welcomeVideoRef}
-            src="/gift-opening/opening-intro-2.mp4"
+            src="https://amzn-s3-fc-bucket.s3.sa-east-1.amazonaws.com/videos/opening-intro-2.mp4"
             playsInline
             webkit-playsinline="true"
             muted
@@ -4158,7 +4244,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
         </div>
       )}
 
-      {(showRenewWelcomeLoading || demoForceExpireLoading || (planLoading && !introActive && !returnIntroGate && !showWelcomeRitual && !giftWaitingPlan)) && (
+      {(showRenewWelcomeLoading || (planLoading && !introActive && !returnIntroGate && !showWelcomeRitual && !giftWaitingPlan)) && (
         <div className="reward-sync-status" role="status">
           Refreshing rewards…
         </div>
@@ -4193,7 +4279,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
         walletOpen={walletOpen}
         rewardsCompleted={completedMode}
         walletCount={walletBadgeCount}
-        onLogoSecretTap={isDemoForceRenewEnabled() ? handleLogoSecretTap : undefined}
+        onLogoSecretTap={logoSecretEnabled ? handleLogoSecretTap : undefined}
       />
 
       {showRewardsPage ? (
@@ -4411,7 +4497,10 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
               return;
             }
             const welcomeClaimed = singleCouponOnlyMode ? solePackClaimed : currentPackClaimed;
-            if (!welcomeClaimed) return;
+            // Server-preissued / renew paths may show codes before wallet packId sync.
+            // Still allow continue when codes are visible on the ritual.
+            const hasVisibleCodes = welcomeCoupons.some((coupon) => coupon?.code || coupon?.mockCode);
+            if (!welcomeClaimed && !hasVisibleCodes) return;
             setWalletOpen(false);
             handleWelcomeRitualComplete();
           }}
@@ -4601,13 +4690,13 @@ function WelcomeRitual({
               {singleCoupon ? 'View my coupons' : 'Get More OFF'}
             </button>
           )}
-          {autoIssue && claimed && (
+          {autoIssue && (claimed || hasCodes) && (
             <button className="welcome-pack-claim" type="button" onClick={onContinue}>
               {singleCoupon ? 'View my coupons' : 'Get More OFF'}
             </button>
           )}
         </div>
-        {claimed && <p className="welcome-pack-saved">Already saved in My coupons</p>}
+        {(claimed || hasCodes) && <p className="welcome-pack-saved">Already saved in My coupons</p>}
       </section>
     </div>
   );
@@ -5228,6 +5317,7 @@ function Modal({ id, open, title, onClose, textCenter = false, children }) {
 
 function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onUploadAvatar, onClose, onConnect, onDisconnect }) {
   const [draft, setDraft] = useState(() => normalizeProfile({ ...profile, brandName: brand?.name }));
+  const [clearAvatarImage, setClearAvatarImage] = useState(false);
   const avatarInputRef = useRef(null);
   const brandName = brand?.name || 'Your brand';
   const connected = binding?.connected || shopifyStatus === 'connected';
@@ -5236,11 +5326,12 @@ function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onUploadA
 
   useEffect(() => {
     setDraft(normalizeProfile({ ...profile, brandName: brand?.name }));
+    setClearAvatarImage(false);
   }, [profile, brand?.name]);
 
   function handleSubmit(event) {
     event.preventDefault();
-    onSave(draft);
+    onSave({ ...draft, clearAvatarImage });
     onClose();
   }
 
@@ -5284,9 +5375,11 @@ function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onUploadA
               event.target.value = '';
               if (!file) return;
               if (file.size > 2 * 1024 * 1024) {
+                onUploadAvatar?.(file);
                 return;
               }
               const previewUrl = URL.createObjectURL(file);
+              setClearAvatarImage(false);
               setDraft((value) => ({ ...value, avatarImageUrl: previewUrl }));
               onUploadAvatar?.(file);
             }}
@@ -5331,7 +5424,11 @@ function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onUploadA
                   style={{ background: color }}
                   aria-label={`Use avatar color ${color}`}
                   aria-pressed={draft.avatarColor === color}
-                  onClick={() => setDraft((value) => ({ ...value, avatarColor: color, avatarImageUrl: '' }))}
+                  onClick={() => {
+                    if (draft.avatarColor === color && draft.avatarImageUrl) return;
+                    if (draft.avatarImageUrl) setClearAvatarImage(true);
+                    setDraft((value) => ({ ...value, avatarColor: color, avatarImageUrl: '' }));
+                  }}
                 >
                   {draft.avatarColor === color && <span>{draftInitial}</span>}
                 </button>

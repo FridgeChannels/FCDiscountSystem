@@ -114,13 +114,26 @@ function fileToBase64(file) {
   });
 }
 
+function inferImageContentType(file) {
+  if (file?.type && /^image\/(jpeg|png|webp)$/i.test(file.type)) return file.type.toLowerCase();
+  const name = String(file?.name ?? '').toLowerCase();
+  if (name.endsWith('.png')) return 'image/png';
+  if (name.endsWith('.webp')) return 'image/webp';
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+  return '';
+}
+
 export async function uploadPlayerAvatar(touchId, file) {
+  const contentType = inferImageContentType(file);
+  if (!contentType) {
+    throw new Error('Use a JPEG, PNG, or WebP image');
+  }
   const dataBase64 = await fileToBase64(file);
   return request('/api/fc/player-profile/avatar', {
     method: 'POST',
     body: JSON.stringify({
       touchId,
-      contentType: file.type,
+      contentType,
       dataBase64,
     }),
   });
