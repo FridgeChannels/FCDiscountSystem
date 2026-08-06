@@ -837,12 +837,11 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 200, data);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'sample reset failed';
-        const forbidden = message.includes('SAMPLE_RESET_FORBIDDEN') || message.includes('sample reset is only allowed');
         emitActionFailed('cycle_sample_reset', { touchId }, {
           requestId,
-          reason: forbidden ? 'SAMPLE_RESET_FORBIDDEN' : 'SAMPLE_RESET_FAILED',
+          reason: 'SAMPLE_RESET_FAILED',
         });
-        sendJson(res, forbidden ? 403 : 400, { error: message });
+        sendJson(res, 400, { error: message });
       }
       return;
     }

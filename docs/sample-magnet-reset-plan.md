@@ -15,7 +15,7 @@
 | Reset 后落地 | 同会话礼盒 → welcome → 首轮 |
 | 结算页 CTA | sample 仅 Reset |
 | 全部奖励页 | sample 也显示 Reset（活动未结束、催用券） |
-| 鉴权 | `sample = 1` 即可 |
+| 鉴权 | UI：`sample = 1` 才显示 Reset；API：`POST /cycle/sample-reset` 不校验 sample（含 5× logo） |
 
 ## Tasks
 
