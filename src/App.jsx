@@ -108,6 +108,12 @@ const RulesFooter = memo(
 
 const INITIAL_SECONDS = 2 * 24 * 3600 + 4 * 3600 + 55 * 60;
 const DEFAULT_TOUCH_ID = 'A8SQN3V2OW';
+const GIFT_OPENING_VIDEO_SRC = '/gift-opening/opening-intro-2.mp4';
+const GIFT_OPENING_VIDEO_POSTER = '/gift-opening/opening-intro-2-poster.jpg';
+/** Skip if the first decoded frame never arrives (stall / decode failure). */
+const GIFT_VIDEO_FIRST_FRAME_TIMEOUT_MS = 2000;
+/** Hard ceiling slightly above clip length (~6.5s). */
+const GIFT_VIDEO_HARD_FALLBACK_MS = 8500;
 const DEV_SCENE_TAP = {
   intro: { pending: 5, points: 0 },
   welcome: { pending: 5, points: 0 },
@@ -792,16 +798,29 @@ export default function App() {
 
   const [isWelcomeVideoActive, setIsWelcomeVideoActive] = useState(false);
   const [welcomeVideoFading, setWelcomeVideoFading] = useState(false);
-const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
+  const [welcomeVideoHasFrame, setWelcomeVideoHasFrame] = useState(false);
+  const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
   const welcomeVideoRef = useRef(null);
   const welcomeVideoFadingRef = useRef(false);
-  const welcomeVideoFallbackTimerRef = useRef(null);
+  const welcomeVideoFirstFrameTimerRef = useRef(null);
+  const welcomeVideoHardFallbackTimerRef = useRef(null);
   const handleWelcomeVideoEndRef = useRef(() => {});
   const giftEndPendingRef = useRef(false);
   const rewardPlanFetchedRef = useRef(false);
   const renewPlanReadyRef = useRef(false);
 
   const [giftWaitingPlan, setGiftWaitingPlan] = useState(false);
+
+  const clearWelcomeVideoTimers = useCallback(() => {
+    if (welcomeVideoFirstFrameTimerRef.current) {
+      window.clearTimeout(welcomeVideoFirstFrameTimerRef.current);
+      welcomeVideoFirstFrameTimerRef.current = null;
+    }
+    if (welcomeVideoHardFallbackTimerRef.current) {
+      window.clearTimeout(welcomeVideoHardFallbackTimerRef.current);
+      welcomeVideoHardFallbackTimerRef.current = null;
+    }
+  }, []);
 
   const completeGiftVideoTransition = useCallback((fromUserGesture = false) => {
     giftEndPendingRef.current = false;
@@ -833,7 +852,7 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     }
 
     // Vibration API requires a recent user gesture; video onEnded alone is not enough.
-    if (fromUserGesture && navigator.vibrate) {
+    if (fromUserGesture === true && navigator.vibrate) {
       try {
         navigator.vibrate(60);
       } catch {
@@ -844,12 +863,10 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
 
   const handleWelcomeVideoEnd = useCallback((fromUserGesture = false) => {
     if (welcomeVideoFadingRef.current) return;
-    if (welcomeVideoFallbackTimerRef.current) {
-      window.clearTimeout(welcomeVideoFallbackTimerRef.current);
-      welcomeVideoFallbackTimerRef.current = null;
-    }
+    clearWelcomeVideoTimers();
     welcomeVideoFadingRef.current = true;
     welcomeVideoRef.current?.pause();
+    setWelcomeVideoHasFrame(false);
     setWelcomeVideoFading(true);
 
     const planReady = renewFlowActiveRef.current
@@ -861,13 +878,13 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
       welcomeVideoFadingRef.current = false;
       setWelcomeVideoFading(false);
       if (planReady) {
-        completeGiftVideoTransition(fromUserGesture);
+        completeGiftVideoTransition(fromUserGesture === true);
       } else {
         giftEndPendingRef.current = true;
         setGiftWaitingPlan(true);
       }
     }, 500);
-  }, [completeGiftVideoTransition]);
+  }, [clearWelcomeVideoTimers, completeGiftVideoTransition]);
 
   useEffect(() => {
     handleWelcomeVideoEndRef.current = handleWelcomeVideoEnd;
@@ -892,6 +909,19 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     if (!giftEndPendingRef.current || !canSkipGiftVideo) return;
     completeGiftVideoTransition();
   }, [canSkipGiftVideo, giftWaitingPlan, completeGiftVideoTransition]);
+
+  // Keep the gift video mounted so the browser can warm the HTTP cache / decoder early.
+  useEffect(() => {
+    const video = welcomeVideoRef.current;
+    if (!video) return undefined;
+    try {
+      video.preload = 'auto';
+      if (video.readyState < 2) video.load();
+    } catch {
+      // Ignore preload failures; playback path still has timeouts.
+    }
+    return undefined;
+  }, []);
 
   // 同步礼盒视频状态:首登和回访礼盒都直接播放同一段开场动画。
   useEffect(() => {
@@ -939,26 +969,101 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
     };
   }, [isWelcomeVideoActive]);
 
+  // Play only after data is ready; reveal frames on first paint; fail fast on stall.
   useEffect(() => {
-    if (!isWelcomeVideoActive || welcomeVideoFadingRef.current || !welcomeVideoRef.current) return;
+    if (!isWelcomeVideoActive || welcomeVideoFadingRef.current) return undefined;
 
     const video = welcomeVideoRef.current;
-    video.currentTime = 0;
-    welcomeVideoFallbackTimerRef.current = window.setTimeout(() => {
-      handleWelcomeVideoEndRef.current();
-    }, 7000);
-    video.play().catch((e) => {
-      console.log("React welcome video play error:", e);
-      window.setTimeout(() => handleWelcomeVideoEndRef.current(), 600);
-    });
+    if (!video) return undefined;
 
-    return () => {
-      if (welcomeVideoFallbackTimerRef.current) {
-        window.clearTimeout(welcomeVideoFallbackTimerRef.current);
-        welcomeVideoFallbackTimerRef.current = null;
+    let cancelled = false;
+    let playRetryTimer = null;
+    setWelcomeVideoHasFrame(false);
+    clearWelcomeVideoTimers();
+
+    const markFirstFrame = () => {
+      if (cancelled || welcomeVideoFadingRef.current) return;
+      setWelcomeVideoHasFrame(true);
+      if (welcomeVideoFirstFrameTimerRef.current) {
+        window.clearTimeout(welcomeVideoFirstFrameTimerRef.current);
+        welcomeVideoFirstFrameTimerRef.current = null;
       }
     };
-  }, [isWelcomeVideoActive]);
+
+    const onPlaying = () => markFirstFrame();
+    const onTimeUpdate = () => {
+      if (video.currentTime > 0.04) markFirstFrame();
+    };
+    const onLoadedData = () => {
+      if (video.readyState >= 2 && !video.paused && video.currentTime > 0) markFirstFrame();
+    };
+
+    video.addEventListener('playing', onPlaying);
+    video.addEventListener('timeupdate', onTimeUpdate);
+    video.addEventListener('loadeddata', onLoadedData);
+
+    welcomeVideoFirstFrameTimerRef.current = window.setTimeout(() => {
+      handleWelcomeVideoEndRef.current(false);
+    }, GIFT_VIDEO_FIRST_FRAME_TIMEOUT_MS);
+
+    welcomeVideoHardFallbackTimerRef.current = window.setTimeout(() => {
+      handleWelcomeVideoEndRef.current(false);
+    }, GIFT_VIDEO_HARD_FALLBACK_MS);
+
+    const tryPlay = () => {
+      if (cancelled || welcomeVideoFadingRef.current) return;
+      video.play().catch((err) => {
+        console.log('React welcome video play error:', err);
+        if (cancelled) return;
+        playRetryTimer = window.setTimeout(() => {
+          handleWelcomeVideoEndRef.current(false);
+        }, 400);
+      });
+    };
+
+    const seekToStartIfPossible = () => {
+      if (video.readyState < 1) return;
+      try {
+        if (video.currentTime > 0.01) video.currentTime = 0;
+      } catch {
+        // Some WebViews reject seek before enough media is buffered.
+      }
+    };
+
+    let onCanPlay = null;
+    const startPlayback = () => {
+      if (cancelled) return;
+      seekToStartIfPossible();
+      if (video.readyState >= 2) {
+        tryPlay();
+        return;
+      }
+      onCanPlay = () => {
+        video.removeEventListener('canplay', onCanPlay);
+        onCanPlay = null;
+        seekToStartIfPossible();
+        tryPlay();
+      };
+      video.addEventListener('canplay', onCanPlay);
+      try {
+        if (video.readyState === 0) video.load();
+      } catch {
+        // load() can throw on transient network errors; timeouts still cover us.
+      }
+    };
+
+    startPlayback();
+
+    return () => {
+      cancelled = true;
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('timeupdate', onTimeUpdate);
+      video.removeEventListener('loadeddata', onLoadedData);
+      if (onCanPlay) video.removeEventListener('canplay', onCanPlay);
+      if (playRetryTimer) window.clearTimeout(playRetryTimer);
+      clearWelcomeVideoTimers();
+    };
+  }, [clearWelcomeVideoTimers, isWelcomeVideoActive]);
 
   useEffect(() => {
     pointsRef.current = points;
@@ -4200,28 +4305,32 @@ const [giftVideoLockedHeight, setGiftVideoLockedHeight] = useState(null);
       }}
     >
       <canvas id="confetti-canvas" ref={canvasRef} />
-      {isWelcomeVideoActive && (
-        <div 
-          className="gift-video-container"
-          style={{
-            ...(giftVideoLockedHeight ? { '--gift-video-lock-height': giftVideoLockedHeight } : {}),
-            opacity: welcomeVideoFading ? 0 : 1,
-            pointerEvents: welcomeVideoFading ? 'none' : 'auto',
-            cursor: canSkipGiftVideo ? 'pointer' : 'default',
-          }}
-          onClick={handleGiftVideoClick}
-        >
-          <video
-            ref={welcomeVideoRef}
-            src="https://amzn-s3-fc-bucket.s3.sa-east-1.amazonaws.com/videos/opening-intro-2.mp4"
-            playsInline
-            webkit-playsinline="true"
-            muted
-            onEnded={handleWelcomeVideoEnd}
-            onError={handleWelcomeVideoEnd}
-          />
-        </div>
-      )}
+      <div
+        className={[
+          'gift-video-container',
+          isWelcomeVideoActive ? 'is-active' : '',
+          welcomeVideoFading ? 'is-fading' : '',
+          welcomeVideoHasFrame ? 'has-frame' : '',
+        ].filter(Boolean).join(' ')}
+        style={{
+          ...(giftVideoLockedHeight ? { '--gift-video-lock-height': giftVideoLockedHeight } : {}),
+          cursor: isWelcomeVideoActive && canSkipGiftVideo ? 'pointer' : 'default',
+        }}
+        aria-hidden={!isWelcomeVideoActive}
+        onClick={isWelcomeVideoActive ? handleGiftVideoClick : undefined}
+      >
+        <video
+          ref={welcomeVideoRef}
+          src={GIFT_OPENING_VIDEO_SRC}
+          poster={GIFT_OPENING_VIDEO_POSTER}
+          playsInline
+          webkit-playsinline="true"
+          muted
+          preload="auto"
+          onEnded={() => handleWelcomeVideoEnd(false)}
+          onError={() => handleWelcomeVideoEnd(false)}
+        />
+      </div>
       {showBrandIntro && !isWelcomeVideoActive && (
         <BrandIntro 
           onComplete={brandIntroIsWelcome ? closeIntro : finishReturnIntro}
