@@ -320,6 +320,38 @@ const LOCAL_PREVIEW_CHALLENGES = [
   },
 ];
 
+const SURVEY_PREVIEW_CHALLENGE = {
+  id: 'survey-fc-standard-v2',
+  type: 'survey',
+  badge: 'Survey',
+  icon: '📝',
+  iconUrl: '/rewards/survey-task-icon.png',
+  title: 'Preferences',
+  desc: 'Share habits for rewards',
+  reward: '+10 PTS',
+  cta: 'Start',
+  campaignId: 'fc-standard-v2',
+  questionCount: 1,
+  pointsOffered: 10,
+  pointsPerQuestion: 10,
+  allowSkip: true,
+};
+
+function surveyChallengeFromQuestionsPayload(payload) {
+  const questions = payload?.questions ?? [];
+  if (!questions.length) return null;
+
+  const campaignId = payload?.survey_campaign?.id ?? SURVEY_PREVIEW_CHALLENGE.campaignId;
+  return {
+    ...SURVEY_PREVIEW_CHALLENGE,
+    id: `survey-${campaignId}`,
+    campaignId,
+    questionCount: questions.length,
+    pointsOffered: questions.length * SURVEY_PREVIEW_CHALLENGE.pointsPerQuestion,
+    allowSkip: payload?.survey_campaign?.allow_skip ?? SURVEY_PREVIEW_CHALLENGE.allowSkip,
+  };
+}
+
 // 本地设计预览不能因为远端活动尚未配置好就留下整块空白。
 // 生产环境仍以服务端任务为准；若为空，Challenges 会展示明确的空状态。
 const FALLBACK_CHALLENGES = import.meta.env.DEV ? LOCAL_PREVIEW_CHALLENGES : [];
@@ -578,7 +610,10 @@ export default function App() {
   const [surveyAnswers, setSurveyAnswers] = useState([]);
   const [surveyQuestions, setSurveyQuestions] = useState([]);
   const [activeSurveyTask, setActiveSurveyTask] = useState(null);
+  const [testSurveyChallenge, setTestSurveyChallenge] = useState(null);
   const [surveyLoading, setSurveyLoading] = useState(false);
+  const [surveySubmitting, setSurveySubmitting] = useState(false);
+  const [surveyRewardEarned, setSurveyRewardEarned] = useState(0);
   const [welcomeStep, setWelcomeStep] = useState(3);
   const welcomeStepRef = useRef(welcomeStep);
   const [welcomeCoupon, setWelcomeCoupon] = useState(null);
@@ -1663,6 +1698,28 @@ export default function App() {
       if (!background) setPlanLoading(false);
     }
   }, [clearGameSessionCache, syncFromPlan, touchId]);
+
+  const refreshTestSurveyAvailability = useCallback(async () => {
+    if (!touchIdValid || !touchId || !isSurveySequenceTestMode()) {
+      setTestSurveyChallenge(null);
+      return null;
+    }
+
+    try {
+      const payload = await fetchSurveyQuestions(touchId, { testMode: true });
+      const nextChallenge = surveyChallengeFromQuestionsPayload(payload);
+      setTestSurveyChallenge(nextChallenge);
+      return nextChallenge;
+    } catch (err) {
+      dbgError('[FCDBG][App] test survey availability failed', err);
+      setTestSurveyChallenge(null);
+      return null;
+    }
+  }, [touchId, touchIdValid]);
+
+  useEffect(() => {
+    void refreshTestSurveyAvailability();
+  }, [refreshTestSurveyAvailability]);
 
   // 领取:调用 redeem 发券,持久化本周期券码,返回带 code 的 coupon 供 Zoom 展示。
   const issueClaimedCoupon = useCallback(async (coupon) => {
@@ -3685,6 +3742,10 @@ export default function App() {
       return;
     }
     if (devScene) {
+      if (isSurveySequenceTestMode()) {
+        handleWelcomeRitualComplete();
+        return;
+      }
       claimMockPack(packToClaim, { reveal: false });
       handleWelcomeRitualComplete();
       return;
@@ -4017,6 +4078,65 @@ export default function App() {
     });
   }
 
+  function isSurveySequenceTestMode() {
+    return new URLSearchParams(window.location.search).get('scene') === 'survey';
+  }
+
+  function loadSurveyQuestionsForCurrentTouchId(task, { closeOnEmpty = true, testMode = isSurveySequenceTestMode() } = {}) {
+    const fallbackTask = task ?? {
+      id: 'survey-fc-standard-v2',
+      type: 'survey',
+      campaignId: 'fc-standard-v2',
+      pointsOffered: 10,
+      pointsPerQuestion: 10,
+      questionCount: 1,
+      allowSkip: true,
+    };
+
+    setActiveSurveyTask(fallbackTask);
+    setSurveyStep(0);
+    setSurveyAnswers([]);
+    setSurveyQuestions([]);
+    setSurveyRewardEarned(0);
+    setSurveySubmitting(false);
+    setSurveyLoading(true);
+
+    return fetchSurveyQuestions(touchId, { testMode })
+      .then((payload) => {
+        const questions = payload?.questions ?? [];
+        setSurveyQuestions(questions);
+        if (questions.length) {
+          setActiveModal('survey');
+        } else {
+          setActiveModal(null);
+        }
+        setActiveSurveyTask({
+          ...fallbackTask,
+          campaignId: payload?.survey_campaign?.id ?? fallbackTask.campaignId,
+          questionCount: questions.length || fallbackTask.questionCount,
+          pointsOffered: fallbackTask.pointsOffered ?? (questions.length * 10),
+          pointsPerQuestion: fallbackTask.pointsPerQuestion ?? 10,
+          allowSkip: payload?.survey_campaign?.allow_skip ?? fallbackTask.allowSkip,
+        });
+        if (!questions.length && closeOnEmpty) {
+          setActiveModal(null);
+          showNotification('Survey unavailable', 'No questions are available right now.', '⚠️');
+        }
+        return payload;
+      })
+      .catch((err) => {
+        if (closeOnEmpty) {
+          setActiveModal(null);
+          showNotification('Survey unavailable', err instanceof Error ? err.message : 'Could not load survey', '⚠️');
+          throw err;
+        } else {
+          dbgError('[FCDBG][App] dev survey questions failed', err);
+          return null;
+        }
+      })
+      .finally(() => setSurveyLoading(false));
+  }
+
   async function openChallenge(challenge) {
     dbg('[FCDBG][App] openChallenge', challenge);
     if (challenge.type === 'shopify_connect') {
@@ -4025,26 +4145,7 @@ export default function App() {
     }
 
     if (challenge.type === 'survey' || challenge.id?.startsWith('survey')) {
-      setActiveSurveyTask(challenge);
-      setSurveyStep(0);
-      setSurveyAnswers([]);
-      setSurveyQuestions([]);
-      setSurveyLoading(true);
-      setActiveModal('survey');
-      fetchSurveyQuestions(touchId)
-        .then((payload) => {
-          const questions = payload?.questions ?? [];
-          setSurveyQuestions(questions);
-          if (!questions.length) {
-            setActiveModal(null);
-            showNotification('Survey unavailable', 'No questions are available right now.', '⚠️');
-          }
-        })
-        .catch((err) => {
-          setActiveModal(null);
-          showNotification('Survey unavailable', err instanceof Error ? err.message : 'Could not load survey', '⚠️');
-        })
-        .finally(() => setSurveyLoading(false));
+      loadSurveyQuestionsForCurrentTouchId(challenge).catch(() => undefined);
       return;
     }
 
@@ -4164,7 +4265,7 @@ export default function App() {
 
   async function handleSurveyOption(option, meta = {}) {
     const question = surveyQuestions[surveyStep];
-    if (!question) return;
+    if (!question || surveySubmitting) return;
 
     const startedAt = meta.startedAt ?? Date.now();
     const responseTimeMs = Math.max(0, Date.now() - startedAt);
@@ -4188,47 +4289,55 @@ export default function App() {
       response_time_ms: responseTimeMs,
     };
 
-    if (surveyStep < surveyQuestions.length - 1) {
-      try {
-        await submitSurveyAnswers(touchId, { answer: externalAnswer });
-      } catch (err) {
-        dbgError('[FCDBG][App] survey answer submit failed', err);
-      }
-      setSurveyStep((step) => step + 1);
+    setSurveySubmitting(true);
+    try {
+      await submitSurveyAnswers(touchId, { answer: externalAnswer });
+    } catch (err) {
+      dbgError('[FCDBG][App] survey answer submit failed', err);
+      showNotification('Could not save answer', err instanceof Error ? err.message : 'Please try again.', '⚠️');
+      setSurveySubmitting(false);
       return;
     }
 
-    const surveyReward = activeSurveyTask?.pointsOffered ?? 0;
-    const balanceBefore = pointsRef.current;
+    let settlement = null;
+    if (!isSkip && rewardPlanId) {
+      try {
+        settlement = await completeSurvey(touchId, rewardPlanId, [answerRecord]);
+      } catch (err) {
+        dbgError('[FCDBG][App] survey reward settlement failed', err);
+      }
+    }
+
+    const pointsAwarded = settlement?.pointsAwarded ?? 0;
+    const totalRewardEarned = surveyRewardEarned + pointsAwarded;
+    setSurveyRewardEarned(totalRewardEarned);
 
     setActiveModal(null);
     setSurveyStep(0);
     setSurveyAnswers([]);
     setSurveyQuestions([]);
     setActiveSurveyTask(null);
+    setSurveyRewardEarned(0);
+    if (isSurveySequenceTestMode()) setTestSurveyChallenge(null);
 
-    if (surveyReward > 0) {
+    if (totalRewardEarned > 0) {
       window.setTimeout(() => {
-        triggerLoginBonusAnimation(surveyReward, balanceBefore + surveyReward);
+        triggerLoginBonusAnimation(
+          totalRewardEarned,
+          settlement?.pointsBalance ?? (pointsRef.current + totalRewardEarned),
+        );
       }, 260);
+    } else if (settlement?.pointsBalance != null) {
+      setPoints(settlement.pointsBalance);
     }
-
     try {
-      await submitSurveyAnswers(touchId, { answer: externalAnswer });
+      await reloadPlan();
+      await refreshTestSurveyAvailability();
     } catch (err) {
-      dbgError('[FCDBG][App] final survey answer submit failed', err);
+      dbgError('[FCDBG][App] survey post-answer plan reload failed', err);
+    } finally {
+      setSurveySubmitting(false);
     }
-
-    completeSurvey(touchId, rewardPlanId, nextAnswers)
-      .then((settlement) => {
-        if (settlement?.pointsAwarded === 0 && settlement?.pointsBalance != null) {
-          setPoints(settlement.pointsBalance);
-        }
-        return reloadPlan();
-      })
-      .catch((err) => {
-        dbgError('[FCDBG][App] background completeSurvey failed', err);
-      });
   }
 
   playPendingTapRewardRef.current = playPendingTapReward;
@@ -4279,6 +4388,12 @@ export default function App() {
     (renewGiftIntro || (!renewFlowActive && hasInitialDiscount) || isReturnIntro);
   const brandIntroIsWelcome = renewGiftIntro || welcomeStep < 3;
   const showHome = !devScene || devScene === 'home' || devScene === 'completed';
+  const displayedChallenges = isSurveySequenceTestMode()
+    ? [
+        ...(testSurveyChallenge ? [testSurveyChallenge] : []),
+        ...challenges.filter((challenge) => challenge.type !== 'survey'),
+      ]
+    : challenges;
 
   if (!touchIdValid) {
     return (
@@ -4436,7 +4551,7 @@ export default function App() {
               />
 
               <Challenges
-                challenges={challenges}
+                challenges={displayedChallenges}
                 dailyCapReached={dailyCapReached}
                 pointsNeeded={targetUnlocked ? 0 : targetDelta}
                 upgradeMaxPoints={targetUnlocked ? 0 : (targetThreshold ?? 0)}
@@ -4482,11 +4597,14 @@ export default function App() {
         step={surveyStep}
         questions={surveyQuestions}
         loading={surveyLoading}
+        submitting={surveySubmitting}
         reward={activeSurveyTask?.pointsOffered}
         onClose={() => {
           setActiveModal(null);
           setSurveyQuestions([]);
           setActiveSurveyTask(null);
+          setSurveyRewardEarned(0);
+          setSurveySubmitting(false);
         }}
         onOption={handleSurveyOption}
       />
@@ -5097,7 +5215,11 @@ function ChallengeCardIcon({ challenge, isShopifyConnect }) {
     );
   }
 
-  return challenge.icon;
+  return (
+    <span className="challenge-fallback-icon" aria-hidden="true">
+      {challenge.icon}
+    </span>
+  );
 }
 
 function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, upgradeMaxPoints, onOpen, onOpenLeaderboard }) {
@@ -5134,6 +5256,7 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, upgradeMaxP
           const ptsValue = Number.parseInt(pts, 10);
           const showRewardPill = Number.isFinite(ptsValue) && ptsValue > 0;
           const isShopifyConnect = challenge.type === 'shopify_connect';
+          const isSurvey = challenge.type === 'survey';
           const isGame = challenge.type === 'game';
           const badgeLabel = isGame ? 'Game' : challenge.badge;
           const isDisabled = dailyCapReached && !isShopifyConnect;
@@ -5148,7 +5271,7 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, upgradeMaxP
           };
           return (
             <div
-              className={`challenge-card ${isGame ? 'is-game-card' : ''} ${isShopifyConnect ? 'is-shopify-card' : ''} ${isDisabled ? 'is-disabled' : ''}`}
+              className={`challenge-card ${isGame ? 'is-game-card' : ''} ${isSurvey ? 'is-survey-card' : ''} ${isShopifyConnect ? 'is-shopify-card' : ''} ${isDisabled ? 'is-disabled' : ''}`}
               key={challenge.id}
               style={isShopifyConnect ? { background: 'linear-gradient(135deg, #f6f9f4 0%, #eaf0e6 100%)', borderColor: 'rgba(94, 128, 62, 0.18)' } : undefined}
               onClick={openCurrentChallenge}
@@ -5305,14 +5428,19 @@ function SpinModal({ open, active, rotation, onClose, onStart }) {
   );
 }
 
-function SurveyModal({ open, step, questions, loading, reward, onClose, onOption }) {
+function SurveyModal({ open, step, questions, loading, submitting, reward, onClose, onOption }) {
   const currentQuestion = questions?.[step];
-  const total = questions?.length ?? 0;
   const startedAtRef = useRef(Date.now());
   const [confirmExit, setConfirmExit] = useState(false);
+  const [otherOption, setOtherOption] = useState(null);
+  const [otherText, setOtherText] = useState('');
 
   useEffect(() => {
-    if (open) startedAtRef.current = Date.now();
+    if (open) {
+      startedAtRef.current = Date.now();
+      setOtherOption(null);
+      setOtherText('');
+    }
   }, [open, step]);
 
   // 关闭弹窗时重置二次确认状态
@@ -5322,6 +5450,7 @@ function SurveyModal({ open, step, questions, loading, reward, onClose, onOption
 
   // 点击右上角叉:进行中且未完成时先弹二次确认,否则直接关闭
   const requestExit = () => {
+    if (submitting) return;
     if (loading || !currentQuestion) {
       onClose();
     } else {
@@ -5338,9 +5467,9 @@ function SurveyModal({ open, step, questions, loading, reward, onClose, onOption
       ) : currentQuestion ? (
         <>
           <div className="survey-progress-header">
-            <span className="survey-step-indicator">{step + 1}/{total}</span>
+            <span className="survey-step-indicator">Question {step + 1}</span>
             <div className="survey-progress-bar">
-              <div className="survey-progress-fill" style={{ width: `${((step + 1) / Math.max(total, 1)) * 100}%` }} />
+              <div className="survey-progress-fill" style={{ width: '100%' }} />
             </div>
           </div>
           <div className="survey-questions">
@@ -5351,12 +5480,41 @@ function SurveyModal({ open, step, questions, loading, reward, onClose, onOption
                   <button
                     className="survey-option-btn"
                     key={option.id}
-                    onClick={() => onOption(option, { startedAt: startedAtRef.current })}
+                    disabled={submitting}
+                    onClick={() => {
+                      if (option.allow_text_input) {
+                        setOtherOption(option);
+                        return;
+                      }
+                      onOption(option, { startedAt: startedAtRef.current });
+                    }}
                   >
                     {option.label}
                   </button>
                 ))}
               </div>
+              {otherOption && (
+                <div className="survey-other-response">
+                  <textarea
+                    autoFocus
+                    maxLength={otherOption.max_text_length ?? 500}
+                    placeholder={otherOption.text_input_placeholder ?? 'Tell us more'}
+                    value={otherText}
+                    disabled={submitting}
+                    onChange={(event) => setOtherText(event.target.value)}
+                  />
+                  <button
+                    className="btn btn-primary btn-block"
+                    disabled={submitting || (otherOption.other_text_required && !otherText.trim())}
+                    onClick={() => onOption(otherOption, {
+                      startedAt: startedAtRef.current,
+                      otherText: otherText.trim(),
+                    })}
+                  >
+                    {submitting ? 'Saving…' : 'Continue'}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 

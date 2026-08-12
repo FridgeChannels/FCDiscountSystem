@@ -347,6 +347,7 @@ function mapTaskToChallenge(task, gameIndex) {
       type: 'survey',
       badge: 'Survey',
       icon: '📝',
+      iconUrl: '/rewards/survey-task-icon.png',
       title: 'Preferences',
       desc: 'Share habits for rewards',
       reward: `+${task.pointsOffered} PTS`,

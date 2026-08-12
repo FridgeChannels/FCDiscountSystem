@@ -9,7 +9,8 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 function resolveProxyTarget(env, kind) {
   const fallback = kind === 'api' ? 'http://localhost:3001' : 'http://localhost:8789';
   const specific = kind === 'api' ? env.FC_API_PROXY_TARGET : env.FC_WEB_PROXY_TARGET;
-  const target = (env.FC_PLATFORM_HOST || specific || fallback).replace(/\/$/, '');
+  const platformHost = env.FC_USE_LOCAL_PLATFORM === '1' ? '' : env.FC_PLATFORM_HOST;
+  const target = (platformHost || specific || fallback).replace(/\/$/, '');
   return {
     target,
     changeOrigin: true,

@@ -1,4 +1,10 @@
 import { couponPaletteTierFor } from '../api/couponDisplay.js';
+import {
+  clearClaimedCode,
+  clearWelcomeCompleted,
+  writeClaimRecord,
+  writeWelcomeCompleted,
+} from '../api/cache.js';
 import { getSceneConfig } from './scenes.js';
 
 export function isDevPreviewEnabled() {

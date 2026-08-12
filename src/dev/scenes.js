@@ -134,7 +134,6 @@ export const DEV_SCENES = [
       introActive: false,
       setWelcomeCompleted: true,
       clearClaimed: true,
-      activeModal: 'survey',
       surveyStep: 0,
     },
   },

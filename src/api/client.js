@@ -227,8 +227,10 @@ export function completeSurvey(touchId, rewardPlanId, answers) {
   });
 }
 
-export function fetchSurveyQuestions(touchId) {
-  return request(`/api/fc/survey/questions?touchId=${encodeURIComponent(touchId)}`);
+export function fetchSurveyQuestions(touchId, opts = {}) {
+  const params = new URLSearchParams({ touchId });
+  if (opts.testMode) params.set('testMode', '1');
+  return request(`/api/fc/survey/questions?${params.toString()}`);
 }
 
 export function submitSurveyAnswers(touchId, payload) {

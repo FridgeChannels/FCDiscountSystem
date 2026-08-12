@@ -1958,6 +1958,34 @@ body {
   background-color: #f3f6f2;
 }
 
+.survey-option-btn:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.survey-other-response {
+  display: grid;
+  gap: 10px;
+}
+
+.survey-other-response textarea {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--bg-color);
+  color: var(--text-primary);
+  font: inherit;
+  line-height: 1.45;
+}
+
+.survey-other-response textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--brand-primary) 28%, transparent);
+  border-color: var(--brand-primary);
+}
+
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }

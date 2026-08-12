@@ -636,14 +636,17 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/api/fc/survey/questions') {
       const touchId = url.searchParams.get('touchId');
+      const testMode = url.searchParams.get('testMode') === '1';
       if (!touchId) {
         emitActionFailed('survey_questions', {}, { requestId, reason: 'TOUCH_ID_REQUIRED' });
         sendJson(res, 400, { error: 'touchId required' });
         return;
       }
       emitActionEvent('attempted', 'survey_questions', { touchId }, { requestId });
+      const engineParams = new URLSearchParams({ touchId });
+      if (testMode) engineParams.set('testMode', '1');
       const data = await callEngineGet(
-        `/survey/questions?touchId=${encodeURIComponent(touchId)}`,
+        `/survey/questions?${engineParams.toString()}`,
       );
       emitActionEvent('succeeded', 'survey_questions', { touchId }, { requestId });
       sendJson(res, 200, data);

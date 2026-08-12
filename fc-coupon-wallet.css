@@ -1004,6 +1004,25 @@
   height: 48px;
 }
 
+.challenges-list .challenge-fallback-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.challenges-list .challenge-card.is-survey-card .challenge-icon-wrapper {
+  background: linear-gradient(145deg, #f8efd7 0%, #e5d29a 100%);
+  color: #5c4a1e;
+}
+
+.challenges-list .challenge-card.is-survey-card .challenge-fallback-icon {
+  filter: saturate(0.95);
+}
+
 .challenge-card-body {
   flex: 1;
   min-width: 0;
