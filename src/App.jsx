@@ -523,6 +523,7 @@ export default function App() {
   const couponFaceRef = useRef(null);
   const pointsTweenRef = useRef(null);
   const pointsRef = useRef(0);
+  const planCurrentTierRef = useRef(0);
   const lastSettlementBalanceRef = useRef(null);
   const prevCountdownRef = useRef(null);
   const pendingTapRewardRef = useRef(0);
@@ -1102,6 +1103,11 @@ export default function App() {
   const [planCurrentTier, setPlanCurrentTier] = useState(0);
   const [rewardPacks, setRewardPacks] = useState({ startPack: null, targetPack: null });
   const [activePlan, setActivePlan] = useState(null);
+
+  useEffect(() => {
+    planCurrentTierRef.current = planCurrentTier;
+  }, [planCurrentTier]);
+
   // 已领取但后端未核销的券码。存在时,每次登录都强制停留在最低折扣页,直到后端标记核销。
   const [claimedCode, setClaimedCode] = useState(null);
   // 确认领取弹窗:{ onConfirm } —— 点击「确认领取」后执行的领取动作。
@@ -2062,9 +2068,12 @@ export default function App() {
   const targetThreshold = targetPack?.threshold ?? null;
   const targetCoupons = targetPack?.coupons ?? [];
   const targetCouponCount = targetCoupons.length;
+  // UI may optimistically show unlock when local points cross threshold;
+  // claim APIs require backend currentTier >= 1 (see targetClaimEligible).
   const targetUnlocked = !targetPack
     || planCurrentTier >= 1
     || (targetThreshold != null && targetThreshold > 0 && points >= targetThreshold);
+  const targetClaimEligible = !targetPack || devScene || planCurrentTier >= 1;
   const initialPackIssued = devScene
     ? walletHasPack(couponWallet, currentPack?.id)
     : isInitialPackIssued(activePlan, derivedPacks.startPack) || walletHasPack(couponWallet, currentPack?.id);
@@ -3739,6 +3748,7 @@ export default function App() {
     }
     if (!targetPack?.coupons?.length) return false;
     if (targetClaimed) return true;
+    if (!devScene && planCurrentTierRef.current < 1) return false;
     const alreadyIssued = targetPack.coupons.filter((coupon) => coupon?.code);
     if (alreadyIssued.length === targetPack.coupons.length) {
       const entries = upsertIssuedPackCoupons(targetPack, alreadyIssued, { reveal: false });
@@ -3802,6 +3812,7 @@ export default function App() {
 
   function beginTargetPackUnlock() {
     if (!targetPack?.id || singleCouponOnlyMode || targetClaimed) return;
+    if (!devScene && planCurrentTierRef.current < 1) return;
     if (autoIssuedPackRef.current === targetPack.id) return;
     autoIssuedPackRef.current = targetPack.id;
     void issueTargetPack().then((issued) => {
@@ -3845,7 +3856,7 @@ export default function App() {
     if (devScene === 'completed' || devScene === 'home' || singleCouponOnlyMode) return;
     if (renewFlowActive || renewGiftIntro) return;
     if (pendingPackUnlockAfterSettlementRef.current) return;
-    if (!currentPackClaimed || !targetUnlocked || targetClaimed || !targetPack?.id) return;
+    if (!currentPackClaimed || !targetClaimEligible || targetClaimed || !targetPack?.id) return;
     if (!devScene && isTargetPackIssued(activePlan, derivedPacks.targetPack)) return;
     if (autoIssuedPackRef.current === targetPack.id) return;
     autoIssuedPackRef.current = targetPack.id;
@@ -3853,7 +3864,7 @@ export default function App() {
       if (!issued) autoIssuedPackRef.current = null;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPackClaimed, targetUnlocked, targetClaimed, targetPack?.id, devScene, singleCouponOnlyMode, renewFlowActive, renewGiftIntro]);
+  }, [currentPackClaimed, targetClaimEligible, targetClaimed, targetPack?.id, devScene, singleCouponOnlyMode, renewFlowActive, renewGiftIntro]);
 
   function dismissTargetGiftReveal({ openWallet = false } = {}) {
     const coded = (giftReveal?.coupons ?? []).filter((coupon) => coupon?.code);
@@ -3872,7 +3883,9 @@ export default function App() {
     setActiveModal(null);
     setGameStart(null);
     if (Number.isFinite(Number(settlement?.currentTier))) {
-      setPlanCurrentTier(Math.max(0, Number(settlement.currentTier)));
+      const settledTier = Math.max(0, Number(settlement.currentTier));
+      planCurrentTierRef.current = settledTier;
+      setPlanCurrentTier(settledTier);
     }
     const pts = settlement.pointsAwarded ?? 0;
     const balanceAfter = Number.isFinite(Number(settlement?.pointsBalance))
@@ -3895,9 +3908,13 @@ export default function App() {
       });
     };
 
+    const settledTier = Number.isFinite(Number(settlement?.currentTier))
+      ? Math.max(0, Number(settlement.currentTier))
+      : planCurrentTierRef.current;
     const willUnlockTarget = packTargetMode
       && targetThreshold > 0
       && balanceAfter >= targetThreshold
+      && settledTier >= 1
       && !targetClaimed
       && currentPackClaimed;
     if (willUnlockTarget) {
@@ -4198,20 +4215,11 @@ export default function App() {
       return;
     }
 
-    const surveyReward = activeSurveyTask?.pointsOffered ?? 0;
-    const balanceBefore = pointsRef.current;
-
     setActiveModal(null);
     setSurveyStep(0);
     setSurveyAnswers([]);
     setSurveyQuestions([]);
     setActiveSurveyTask(null);
-
-    if (surveyReward > 0) {
-      window.setTimeout(() => {
-        triggerLoginBonusAnimation(surveyReward, balanceBefore + surveyReward);
-      }, 260);
-    }
 
     try {
       await submitSurveyAnswers(touchId, { answer: externalAnswer });
@@ -4219,16 +4227,12 @@ export default function App() {
       dbgError('[FCDBG][App] final survey answer submit failed', err);
     }
 
-    completeSurvey(touchId, rewardPlanId, nextAnswers)
-      .then((settlement) => {
-        if (settlement?.pointsAwarded === 0 && settlement?.pointsBalance != null) {
-          setPoints(settlement.pointsBalance);
-        }
-        return reloadPlan();
-      })
-      .catch((err) => {
-        dbgError('[FCDBG][App] background completeSurvey failed', err);
-      });
+    try {
+      const settlement = await completeSurvey(touchId, rewardPlanId, nextAnswers);
+      handleSettlementComplete(settlement);
+    } catch (err) {
+      dbgError('[FCDBG][App] completeSurvey failed', err);
+    }
   }
 
   playPendingTapRewardRef.current = playPendingTapReward;
