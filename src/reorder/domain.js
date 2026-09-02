@@ -13,6 +13,22 @@ export function isSafeAmazonUrl(value) {
   } catch { return false; }
 }
 
+export function amazonAsin(value) {
+  if (!isSafeAmazonUrl(value)) return '';
+  const pathname = new URL(value).pathname;
+  return pathname.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:\/|$)/i)?.[1]?.toUpperCase() || '';
+}
+
+export function isCouponBoundToProduct(coupon, product) {
+  if (!coupon || !product) return false;
+  const productAsin = String(product.asin || '').toUpperCase();
+  return coupon.sellerId === product.sellerId
+    && coupon.eligibleProductIds?.includes(product.id)
+    && coupon.eligibleAsins?.map((asin) => String(asin).toUpperCase()).includes(productAsin)
+    && amazonAsin(coupon.amazonUrl) === productAsin
+    && amazonAsin(product.amazonUrl) === productAsin;
+}
+
 export function isSurveyConfigured(survey) {
   if (!survey?.enabled || !survey.id || !survey.version) return false;
   const questions = Array.isArray(survey.questions) ? survey.questions : [];
@@ -21,9 +37,8 @@ export function isSurveyConfigured(survey) {
   ));
 }
 
-export function isCouponEligible(coupon, productId, now = new Date()) {
-  if (!coupon || coupon.status !== 'active' || !coupon.eligibleProductIds?.includes(productId)) return false;
-  if (!isSafeAmazonUrl(coupon.amazonUrl)) return false;
+export function isCouponEligible(coupon, product, now = new Date()) {
+  if (!coupon || coupon.status !== 'active' || !isCouponBoundToProduct(coupon, product)) return false;
   if (coupon.requiresCode && (!coupon.codePoolAvailable || !(coupon.codes || []).length)) return false;
   const current = asDate(now);
   const startsAt = asDate(coupon.startsAt);
@@ -31,9 +46,9 @@ export function isCouponEligible(coupon, productId, now = new Date()) {
   return Boolean(current && startsAt && endsAt && current >= startsAt && current <= endsAt);
 }
 
-export function selectEligibleCoupons(coupons, productId, now = new Date()) {
+export function selectEligibleCoupons(coupons, product, now = new Date()) {
   return (coupons || [])
-    .filter((coupon) => isCouponEligible(coupon, productId, now))
+    .filter((coupon) => isCouponEligible(coupon, product, now))
     .sort((left, right) => (left.priority ?? 999) - (right.priority ?? 999));
 }
 
@@ -50,20 +65,22 @@ export function couponMode(coupon, survey) {
   return isSurveyConfigured(survey) ? 'linked' : 'unavailable';
 }
 
-export function composeConsumerModules({ survey, coupons, currentProductId, fallbackToVoluntarySurvey = false, fallbackToDirectCoupon = false, now = new Date() }) {
-  const eligible = selectEligibleCoupons(coupons, currentProductId, now);
+export function composeConsumerModules({ survey, coupons, products = [], currentProductId, fallbackToVoluntarySurvey = false, fallbackToDirectCoupon = false, now = new Date() }) {
+  const product = products.find((item) => item.id === currentProductId);
+  const eligible = selectEligibleCoupons(coupons, product, now);
   const surveyActive = isSurveyConfigured(survey);
-  const hasConfiguredLinkedCoupon = (coupons || []).some((coupon) => coupon.requiresSurvey && coupon.eligibleProductIds?.includes(currentProductId));
+  const hasConfiguredLinkedCoupon = (coupons || []).some((coupon) => coupon.requiresSurvey && isCouponBoundToProduct(coupon, product));
   const directCoupons = eligible.filter((coupon) => couponMode(coupon, survey) === 'direct');
   const linkedCoupons = eligible.filter((coupon) => couponMode(coupon, survey) === 'linked');
   const fallbackCoupons = !surveyActive && fallbackToDirectCoupon
     ? eligible.filter((coupon) => coupon.requiresSurvey)
     : [];
-  const visibleCoupons = [...directCoupons, ...linkedCoupons, ...fallbackCoupons].map((coupon) => (
+  const immediateCoupons = [...directCoupons, ...fallbackCoupons].map((coupon) => (
     fallbackCoupons.includes(coupon) ? { ...coupon, requiresSurvey: false } : coupon
   ));
   return {
-    coupons: visibleCoupons,
+    immediateCoupons,
+    gatedCoupons: linkedCoupons,
     showVoluntarySurvey: surveyActive && (directCoupons.length > 0 || !hasConfiguredLinkedCoupon || fallbackToVoluntarySurvey),
     surveyActive,
   };

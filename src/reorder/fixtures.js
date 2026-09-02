@@ -7,9 +7,9 @@ export const BASE_BRAND = {
 };
 
 export const BASE_PRODUCTS = [
-  { id: 'sea-salt-crackers', sku: 'MSC-SEA-6', asin: 'B0FCSEA001', name: 'Sea Salt Protein Crackers', variant: '6-pack', image: '/reorder/sea-salt-crackers.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCSEA001?tag=fc-reorder-20` },
-  { id: 'smoky-chili-crisps', sku: 'MSC-CHILI-6', asin: 'B0FCCHI002', name: 'Smoky Chili Protein Crisps', variant: '6-pack', image: '/reorder/smoky-chili-crisps.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCCHI002?tag=fc-reorder-20` },
-  { id: 'classic-sea-salt-crisps', sku: 'MSC-CLASSIC-6', asin: 'B0FCCLA003', name: 'Classic Sea Salt Protein Crisps', variant: '6-pack', image: '/reorder/classic-sea-salt-crisps.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCCLA003?tag=fc-reorder-20` },
+  { id: 'sea-salt-crackers', sellerId: 'morrow-foods', sku: 'MSC-SEA-6', asin: 'B0FCSEA001', name: 'Sea Salt Protein Crackers', variant: '6-pack', image: '/reorder/sea-salt-crackers.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCSEA001?tag=fc-reorder-20` },
+  { id: 'smoky-chili-crisps', sellerId: 'morrow-foods', sku: 'MSC-CHILI-6', asin: 'B0FCCHI002', name: 'Smoky Chili Protein Crisps', variant: '6-pack', image: '/reorder/smoky-chili-crisps.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCCHI002?tag=fc-reorder-20` },
+  { id: 'classic-sea-salt-crisps', sellerId: 'morrow-foods', sku: 'MSC-CLASSIC-6', asin: 'B0FCCLA003', name: 'Classic Sea Salt Protein Crisps', variant: '6-pack', image: '/reorder/classic-sea-salt-crisps.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCCLA003?tag=fc-reorder-20` },
 ];
 
 export const BASE_SURVEY = {
@@ -28,31 +28,48 @@ const TERMS = {
   validThrough: 'Sep 30, 2026', usageLimit: 'One use per customer', stackingRule: 'Cannot be combined with other coupons', sellerName: 'MORROW Foods',
 };
 
+/*
+ * Disabled: Survey-gated Coupon.
+ * Do not re-enable until Coupon issuance, eligibility and fraud controls are
+ * managed by a server-side system rather than a client-side fixture.
 const LINKED_COUPON = {
-  id: 'sea-salt-linked-15', title: 'Save 15%', benefit: 'Save 15%', status: 'active',
+  id: 'sea-salt-linked-15', sellerId: 'morrow-foods', title: 'Save 15%', benefit: 'Save 15%', status: 'active',
   startsAt: '2026-01-01T00:00:00.000Z', endsAt: '2027-01-01T00:00:00.000Z',
-  eligibleProductIds: ['sea-salt-crackers'], amazonUrl: `${AMAZON_BASE}/dp/B0FCSEA001?tag=fc-reorder-20`,
+  eligibleProductIds: ['sea-salt-crackers'], eligibleAsins: ['B0FCSEA001'], amazonUrl: `${AMAZON_BASE}/dp/B0FCSEA001?tag=fc-reorder-20`,
   requiresCode: true, codePoolAvailable: true, codes: ['SAVE15NOW', 'SAVE15NEXT'], requiresSurvey: true, priority: 1, terms: TERMS,
 };
+*/
 
 const DIRECT_COUPON = {
-  ...LINKED_COUPON, id: 'sea-salt-direct-10', title: '10% off this product', benefit: '10% off this product',
-  codes: ['MORROW10', 'MORROW10B'], requiresSurvey: false, priority: 1,
+  id: 'sea-salt-direct-10', sellerId: 'morrow-foods', title: '10% off this product', benefit: '10% off this product', status: 'active',
+  startsAt: '2026-01-01T00:00:00.000Z', endsAt: '2027-01-01T00:00:00.000Z',
+  eligibleProductIds: ['sea-salt-crackers'], eligibleAsins: ['B0FCSEA001'], amazonUrl: `${AMAZON_BASE}/dp/B0FCSEA001?tag=fc-reorder-20`,
+  requiresCode: true, codePoolAvailable: true, codes: ['MORROW10', 'MORROW10B'], requiresSurvey: false, priority: 1, terms: TERMS,
 };
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
+export const SCENARIO_NAMES = [
+  'landing',
+  'direct-coupon',
+  'coupon-survey',
+  'survey-only',
+  'multi-coupon',
+  'discontinued',
+  'invalid',
+];
 const baseConfig = () => ({
   status: 'ready', batchId: 'MORROW-2026-08-A', brand: clone(BASE_BRAND), currentProductId: 'sea-salt-crackers',
   products: clone(BASE_PRODUCTS), survey: null, coupons: [], fallbackToVoluntarySurvey: false, fallbackToDirectCoupon: false,
 });
 
-export function buildScenario(name = 'linked') {
+export function buildScenario(name = 'landing') {
   const config = baseConfig();
   config.scenario = name;
   if (name === 'survey-only') config.survey = clone(BASE_SURVEY);
-  else if (name === 'coupon-only' || name === 'direct-coupon' || name === 'single-coupon') config.coupons = [clone(DIRECT_COUPON)];
+  else if (name === 'direct-coupon') config.coupons = [clone(DIRECT_COUPON)];
   else if (name === 'coupon-survey') { config.survey = clone(BASE_SURVEY); config.coupons = [clone(DIRECT_COUPON)]; }
-  else if (name === 'linked' || name === 'coupon-finder') { config.survey = clone(BASE_SURVEY); config.coupons = [clone(LINKED_COUPON)]; }
+  /* Disabled: Survey-gated Coupon scenario. See LINKED_COUPON above. */
+  // else if (name === 'coupon-finder') { config.survey = clone(BASE_SURVEY); config.coupons = [clone(LINKED_COUPON)]; }
   else if (name === 'multi-coupon') {
     config.coupons = [
       clone(DIRECT_COUPON),
@@ -60,10 +77,9 @@ export function buildScenario(name = 'linked') {
       { ...clone(DIRECT_COUPON), id: 'sea-salt-direct-15', benefit: 'Save 15% on 3', codes: ['SAVE15ON3'], priority: 3 },
     ];
   }
-  else if (name === 'linked-fallback-survey') { config.survey = clone(BASE_SURVEY); config.coupons = [{ ...clone(LINKED_COUPON), status: 'ended' }]; config.fallbackToVoluntarySurvey = true; }
-  else if (name === 'linked-fallback-direct') { config.coupons = [clone(LINKED_COUPON)]; config.fallbackToDirectCoupon = true; }
-  else if (name === 'coupon-unavailable') config.couponLoadError = true;
-  else if (name === 'survey-closed') { config.survey = { ...clone(BASE_SURVEY), enabled: false }; }
+  /* Disabled: Survey-gated Coupon fallback scenarios. */
+  // else if (name === 'linked-fallback-survey') { config.survey = clone(BASE_SURVEY); config.coupons = [{ ...clone(LINKED_COUPON), status: 'ended' }]; config.fallbackToVoluntarySurvey = true; }
+  // else if (name === 'linked-fallback-direct') { config.coupons = [clone(LINKED_COUPON)]; config.fallbackToDirectCoupon = true; }
   else if (name === 'discontinued') { config.status = 'discontinued'; config.replacementProductId = 'classic-sea-salt-crisps'; }
   else if (name === 'invalid') return { status: 'invalid', brand: clone(BASE_BRAND) };
   return config;

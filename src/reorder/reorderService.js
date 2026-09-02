@@ -1,4 +1,4 @@
-import { buildScenario } from './fixtures.js';
+import { buildScenario, SCENARIO_NAMES } from './fixtures.js';
 import { surveyProgressKey, surveyResponseKey } from './domain.js';
 
 const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -21,7 +21,12 @@ export function resolveScenario(location = window.location) {
   const legacy = params.get('screen');
   if (legacy === 'invalid') return 'invalid';
   if (legacy === 'replacement') return 'discontinued';
-  return params.get('scenario') || 'coupon-finder';
+  const scenario = params.get('scenario');
+  return SCENARIO_NAMES.includes(scenario) ? scenario : 'landing';
+}
+
+export function isScenarioPreview(location = window.location) {
+  return new URLSearchParams(location.search).has('scenario');
 }
 
 export async function resolveFcConfiguration({ fcId, scenario }) {
@@ -37,6 +42,7 @@ export function emitTelemetry(eventType, payload = {}) {
 }
 
 export const readSurveyProgress = (fcId, surveyId) => readJson(sessionStorage, surveyProgressKey(fcId, surveyId), null);
+export const readSurveyResponse = (fcId, surveyId) => readJson(localStorage, surveyResponseKey(fcId, surveyId), null);
 export const writeSurveyProgress = (fcId, surveyId, progress) => writeJson(sessionStorage, surveyProgressKey(fcId, surveyId), progress);
 export const clearSurveyProgress = (fcId, surveyId) => sessionStorage.removeItem(surveyProgressKey(fcId, surveyId));
 export const writeSurveyResponse = (fcId, surveyId, response) => writeJson(localStorage, surveyResponseKey(fcId, surveyId), response);
