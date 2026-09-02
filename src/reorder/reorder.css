@@ -116,7 +116,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #006b57; outline-offs
 .result-product-name { color: var(--green); font-size: 1.1875rem; }
 
 .reorder-copy { text-align: center; margin-top: var(--space-4); }
-.reorder-copy h1, .coupon-list-heading h1, .state-screen h1 {
+.reorder-copy h1, .state-screen h1 {
   margin: 0;
   font-size: clamp(2.375rem, 10vw, 3rem);
   line-height: 1.06;
@@ -376,9 +376,19 @@ button:focus-visible, a:focus-visible { outline: 3px solid #006b57; outline-offs
 .coupon-summary:active,
 .state-secondary:active { transform: scale(.98); background: var(--surface-pressed); }
 
-.coupon-list-heading { margin-top: var(--space-4); }
-.coupon-list-heading h1 { font-size: clamp(2.25rem, 9vw, 2.625rem); }
+.coupon-list-heading {
+  margin-top: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.coupon-list-heading h1 {
+  margin: 0;
+  font-size: clamp(1.75rem, 7.5vw, 2rem);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -.025em;
+}
 .coupon-list { display: grid; gap: 0; margin-top: 0; }
+.coupon-list > .coupon-choice--direct:first-child { padding-top: 0; }
 .coupon-list-shop { margin-top: var(--space-5); }
 .coupon-card { width: 100%; border: 1px solid var(--tan); border-radius: 10px; background: #fff; overflow: hidden; }
 .coupon-card__toggle { width: 100%; min-height: 180px; padding: 16px; border: 0; background: transparent; display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left; cursor: pointer; }
