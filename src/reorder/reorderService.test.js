@@ -14,5 +14,5 @@ test('only supported scenarios are routable', () => {
 
 test('scenario links are always treated as preview entries', () => {
   assert.equal(isScenarioPreview({ search: '?scenario=survey-only' }), true);
-  assert.equal(isScenarioPreview({ search: '?fc=MORROW-SEA-SALT-001' }), false);
+  assert.equal(isScenarioPreview({ search: '?fc=PURA-SEA-SALT-001' }), false);
 });

@@ -13,7 +13,7 @@ function writeJson(storage, key, value) {
 
 export function resolveFcId(location = window.location) {
   const pathMatch = location.pathname.match(/\/(?:r|p|t)\/([^/?#]+)/i);
-  return decodeURIComponent(pathMatch?.[1] || new URLSearchParams(location.search).get('fc') || 'MORROW-SEA-SALT-001');
+  return decodeURIComponent(pathMatch?.[1] || new URLSearchParams(location.search).get('fc') || 'PURA-SEA-SALT-001');
 }
 
 export function resolveScenario(location = window.location) {

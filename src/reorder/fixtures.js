@@ -1,21 +1,21 @@
 const AMAZON_BASE = 'https://www.amazon.com';
 
 export const BASE_BRAND = {
-  id: 'morrow', name: 'MORROW', logoText: 'MORROW',
-  amazonStoreUrl: `${AMAZON_BASE}/stores/MORROW`, contactUrl: 'mailto:hello@morrow.example',
+  id: 'pura', name: 'PURA JUICE', logoText: 'PURA JUICE', logoImage: '/reorder/pura-juice-logo.svg',
+  amazonStoreUrl: `${AMAZON_BASE}/stores/PURA`, contactUrl: 'mailto:hello@pura.example',
   colors: { primary: '#004d3d', accent: '#ff8a00' },
 };
 
 export const BASE_PRODUCTS = [
-  { id: 'sea-salt-crackers', sellerId: 'morrow-foods', sku: 'MSC-SEA-6', asin: 'B0FCSEA001', name: 'Sea Salt Protein Crackers', variant: '6-pack', image: '/reorder/sea-salt-crackers.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCSEA001?tag=fc-reorder-20` },
-  { id: 'smoky-chili-crisps', sellerId: 'morrow-foods', sku: 'MSC-CHILI-6', asin: 'B0FCCHI002', name: 'Smoky Chili Protein Crisps', variant: '6-pack', image: '/reorder/smoky-chili-crisps.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCCHI002?tag=fc-reorder-20` },
-  { id: 'classic-sea-salt-crisps', sellerId: 'morrow-foods', sku: 'MSC-CLASSIC-6', asin: 'B0FCCLA003', name: 'Classic Sea Salt Protein Crisps', variant: '6-pack', image: '/reorder/classic-sea-salt-crisps.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCCLA003?tag=fc-reorder-20` },
+  { id: 'sea-salt-crackers', sellerId: 'pura-foods', sku: 'MSC-SEA-6', asin: 'B0FCSEA001', name: 'PURA Orange Juice', variant: 'Original Orange · 1 bottle', image: '/reorder/pura-orange-juice.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCSEA001?tag=fc-reorder-20` },
+  { id: 'smoky-chili-crisps', sellerId: 'pura-foods', sku: 'MSC-CHILI-6', asin: 'B0FCCHI002', name: 'Smoky Chili Protein Crisps', variant: '6-pack', image: '/reorder/smoky-chili-crisps.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCCHI002?tag=fc-reorder-20` },
+  { id: 'classic-sea-salt-crisps', sellerId: 'pura-foods', sku: 'MSC-CLASSIC-6', asin: 'B0FCCLA003', name: 'Classic Sea Salt Protein Crisps', variant: '6-pack', image: '/reorder/classic-sea-salt-crisps.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCCLA003?tag=fc-reorder-20` },
 ];
 
 export const BASE_SURVEY = {
-  id: 'morrow-product-feedback', version: '2026-08-v2', enabled: true,
+  id: 'pura-product-feedback', version: '2026-08-v2', enabled: true,
   title: 'Help shape what’s next',
-  description: 'Tell MORROW what matters most when you use this product.',
+  description: 'Tell PURA JUICE what matters most when you use this product.',
   completionMessage: 'Your response will help inform future product decisions.',
   questions: [
     { id: 'usage', title: 'When do you usually use this product?', help: 'Choose the answer that fits you best.', options: [{ id: 'breakfast', label: 'At breakfast' }, { id: 'daytime', label: 'During the day' }, { id: 'exercise', label: 'After exercise' }, { id: 'whenever', label: 'Whenever I need it' }] },
@@ -25,7 +25,7 @@ export const BASE_SURVEY = {
 };
 
 const TERMS = {
-  validThrough: 'Sep 30, 2026', usageLimit: 'One use per customer', stackingRule: 'Cannot be combined with other coupons', sellerName: 'MORROW Foods',
+  validThrough: 'Sep 30, 2026', usageLimit: 'One use per customer', stackingRule: 'Cannot be combined with other coupons', sellerName: 'PURA JUICE',
 };
 
 /*
@@ -33,7 +33,7 @@ const TERMS = {
  * Do not re-enable until Coupon issuance, eligibility and fraud controls are
  * managed by a server-side system rather than a client-side fixture.
 const LINKED_COUPON = {
-  id: 'sea-salt-linked-15', sellerId: 'morrow-foods', title: 'Save 15%', benefit: 'Save 15%', status: 'active',
+  id: 'sea-salt-linked-15', sellerId: 'pura-foods', title: 'Save 15%', benefit: 'Save 15%', status: 'active',
   startsAt: '2026-01-01T00:00:00.000Z', endsAt: '2027-01-01T00:00:00.000Z',
   eligibleProductIds: ['sea-salt-crackers'], eligibleAsins: ['B0FCSEA001'], amazonUrl: `${AMAZON_BASE}/dp/B0FCSEA001?tag=fc-reorder-20`,
   requiresCode: true, codePoolAvailable: true, codes: ['SAVE15NOW', 'SAVE15NEXT'], requiresSurvey: true, priority: 1, terms: TERMS,
@@ -41,10 +41,10 @@ const LINKED_COUPON = {
 */
 
 const DIRECT_COUPON = {
-  id: 'sea-salt-direct-10', sellerId: 'morrow-foods', title: '10% off this product', benefit: '10% off this product', status: 'active',
+  id: 'sea-salt-direct-10', sellerId: 'pura-foods', title: '10% off this product', benefit: '10% off this product', status: 'active',
   startsAt: '2026-01-01T00:00:00.000Z', endsAt: '2027-01-01T00:00:00.000Z',
   eligibleProductIds: ['sea-salt-crackers'], eligibleAsins: ['B0FCSEA001'], amazonUrl: `${AMAZON_BASE}/dp/B0FCSEA001?tag=fc-reorder-20`,
-  requiresCode: true, codePoolAvailable: true, codes: ['MORROW10', 'MORROW10B'], requiresSurvey: false, priority: 1, terms: TERMS,
+  requiresCode: true, codePoolAvailable: true, codes: ['PURA10', 'PURA10B'], requiresSurvey: false, priority: 1, terms: TERMS,
 };
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -58,7 +58,7 @@ export const SCENARIO_NAMES = [
   'invalid',
 ];
 const baseConfig = () => ({
-  status: 'ready', batchId: 'MORROW-2026-08-A', brand: clone(BASE_BRAND), currentProductId: 'sea-salt-crackers',
+  status: 'ready', batchId: 'PURA-2026-08-A', brand: clone(BASE_BRAND), currentProductId: 'sea-salt-crackers',
   products: clone(BASE_PRODUCTS), survey: null, coupons: [], fallbackToVoluntarySurvey: false, fallbackToDirectCoupon: false,
 });
 

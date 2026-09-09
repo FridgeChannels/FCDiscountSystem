@@ -169,7 +169,7 @@ Use coupon on Amazon
 辅助文案：
 
 ```text
-Copies MORROW10 and opens Amazon
+Copies PURA10 and opens Amazon
 ```
 
 点击顺序为复制 Code、显示 `Code copied ✓`、记录事件、打开 Amazon。复制失败时记录 `coupon_copy_failed`，但仍继续打开 Amazon；Coupon 不能成为购买门槛。

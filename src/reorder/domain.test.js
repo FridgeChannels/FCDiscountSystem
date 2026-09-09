@@ -4,8 +4,8 @@ import { amazonAsin, composeConsumerModules, couponMode, getCouponCode, isCoupon
 
 const NOW = new Date('2026-08-31T08:00:00.000Z');
 const survey = { id: 'survey-1', version: 'v1', enabled: true, questions: [{ id: 'one', title: 'One', options: [{ id: 'a' }, { id: 'b' }] }, { id: 'two', title: 'Two', options: [{ id: 'a' }, { id: 'b' }] }] };
-const product = { id: 'original', sellerId: 'seller-morrow', asin: 'B0FCSEA001', amazonUrl: 'https://www.amazon.com/dp/B0FCSEA001?tag=fc' };
-const coupon = (extra = {}) => ({ id: 'coupon-1', sellerId: 'seller-morrow', status: 'active', startsAt: '2026-08-01T00:00:00.000Z', endsAt: '2026-09-30T23:59:59.000Z', eligibleProductIds: ['original'], eligibleAsins: ['B0FCSEA001'], amazonUrl: 'https://www.amazon.com/dp/B0FCSEA001?tag=fc', requiresCode: true, codePoolAvailable: true, codes: ['SAVE10'], requiresSurvey: false, priority: 1, ...extra });
+const product = { id: 'original', sellerId: 'seller-pura', asin: 'B0FCSEA001', amazonUrl: 'https://www.amazon.com/dp/B0FCSEA001?tag=fc' };
+const coupon = (extra = {}) => ({ id: 'coupon-1', sellerId: 'seller-pura', status: 'active', startsAt: '2026-08-01T00:00:00.000Z', endsAt: '2026-09-30T23:59:59.000Z', eligibleProductIds: ['original'], eligibleAsins: ['B0FCSEA001'], amazonUrl: 'https://www.amazon.com/dp/B0FCSEA001?tag=fc', requiresCode: true, codePoolAvailable: true, codes: ['SAVE10'], requiresSurvey: false, priority: 1, ...extra });
 const base = { currentProductId: 'original', products: [product], now: NOW, fallbackToVoluntarySurvey: false, fallbackToDirectCoupon: false };
 
 test('Amazon destination accepts configured Amazon HTTPS URLs only', () => {
