@@ -3,7 +3,8 @@ import { composeConsumerModules, getCouponCode, isSafeAmazonUrl } from './domain
 import { clearSurveyProgress, emitTelemetry, isScenarioPreview, readSurveyProgress, readSurveyResponse, resolveFcConfiguration, resolveFcId, resolveScenario, writeSurveyProgress, writeSurveyResponse } from './reorderService.js';
 import './reorder.css';
 
-const VALID_VIEWS = new Set(['landing', 'coupon-list', 'survey', 'survey-thanks']);
+const VALID_VIEWS = new Set(['landing', 'coupon-list', 'survey', 'survey-thanks', 'amazon-product', 'amazon-success']);
+const PRODUCT_PRICE = 59.99;
 
 function readView() {
   const params = new URLSearchParams(window.location.search);
@@ -27,6 +28,15 @@ function Icon({ name, size = 24 }) {
   return null;
 }
 
+function MarketplaceIcon({ name, size = 24 }) {
+  const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
+  if (name === 'menu') return <svg {...common}><path d="M4 7h16M4 12h16M4 17h16" /></svg>;
+  if (name === 'cart') return <svg {...common}><path d="M3 4h2l2.2 11.2a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 1.9-1.5L20 8H7" /><circle cx="10" cy="20" r="1" /><circle cx="17" cy="20" r="1" /></svg>;
+  if (name === 'search') return <svg {...common}><circle cx="10.5" cy="10.5" r="5.5" /><path d="m15 15 4.5 4.5" /></svg>;
+  if (name === 'star') return <svg {...common} fill="currentColor" stroke="none"><path d="m12 3 2.5 5.1 5.6.8-4.1 4 1 5.6-5-2.7-5 2.7 1-5.6-4.1-4 5.6-.8Z" /></svg>;
+  return null;
+}
+
 function BrandWordmark({ brand }) {
   if (brand.logoImage) return <img className="brand-logo" src={brand.logoImage} alt={brand.name} />;
   return <div className="wordmark">{brand.logoText}</div>;
@@ -43,7 +53,7 @@ function ProductArt({ product, size = 'hero' }) {
   return <div className={`product-art product-art--${size} product-art--${product.id}`}><img src={product.image} alt={`${product.name}, ${product.variant}`} onError={() => setFailed(true)} /></div>;
 }
 
-function AmazonCta({ product, brand, children, onBeforeOpen }) {
+function AmazonCta({ product, brand, children, onBeforeOpen, onOpenDemo }) {
   const [opening, setOpening] = useState(false);
   const valid = isSafeAmazonUrl(product?.amazonUrl);
   const open = async () => {
@@ -51,6 +61,10 @@ function AmazonCta({ product, brand, children, onBeforeOpen }) {
     setOpening(true);
     if (onBeforeOpen) await onBeforeOpen();
     emitTelemetry('amazon_navigation_started', { productId: product.id, destination: product.amazonUrl });
+    if (onOpenDemo) {
+      onOpenDemo();
+      return;
+    }
     window.location.assign(product.amazonUrl);
   };
   if (!valid) return <button className="amazon-button amazon-button--disabled" type="button" disabled>This purchase link is temporarily unavailable</button>;
@@ -115,7 +129,7 @@ function VoluntarySurveyCard({ survey, navigate }) {
 
 function PurchaseBlock({ config, modules, product, navigate }) {
   const immediateCoupons = modules.immediateCoupons;
-  return <section className="purchase-block" aria-label="Purchase options">{immediateCoupons.length === 1 && <ImmediateCouponOffer coupon={immediateCoupons[0]} product={product} fcId={config.fcId} />}{immediateCoupons.length > 1 && <CouponSummary coupons={immediateCoupons} navigate={navigate} />}<AmazonCta product={product} brand={config.brand}>Buy again on Amazon</AmazonCta></section>;
+  return <section className="purchase-block" aria-label="Purchase options">{immediateCoupons.length === 1 && <ImmediateCouponOffer coupon={immediateCoupons[0]} product={product} fcId={config.fcId} />}{immediateCoupons.length > 1 && <CouponSummary coupons={immediateCoupons} navigate={navigate} />}<AmazonCta product={product} brand={config.brand} onOpenDemo={() => navigate('amazon-product')}>Buy again on Amazon</AmazonCta></section>;
 }
 
 function LandingScreen({ config, modules, navigate }) {
@@ -132,7 +146,29 @@ function CouponListItem({ config, coupon, product, navigate }) {
 
 function CouponListScreen({ config, coupons, navigate }) {
   const product = config.products.find((item) => item.id === config.currentProductId);
-  return <main className="screen coupon-list-screen" aria-label={`Available coupons for ${product.name}, ${product.variant}`}><BrandHeader brand={config.brand} onBack={() => navigate('landing')} /><section className="coupon-list-heading"><h1>Available coupons</h1></section><div className="coupon-list">{coupons.map((coupon) => <CouponListItem key={coupon.id} config={config} coupon={coupon} product={product} navigate={navigate} />)}</div><div className="coupon-list-shop"><AmazonCta product={product} brand={config.brand}>Shop on Amazon</AmazonCta><p className="amazon-reassurance"><Icon name="lock" size={18} /> Opens Amazon</p></div></main>;
+  return <main className="screen coupon-list-screen" aria-label={`Available coupons for ${product.name}, ${product.variant}`}><BrandHeader brand={config.brand} onBack={() => navigate('landing')} /><section className="coupon-list-heading"><h1>Available coupons</h1></section><div className="coupon-list">{coupons.map((coupon) => <CouponListItem key={coupon.id} config={config} coupon={coupon} product={product} navigate={navigate} />)}</div><div className="coupon-list-shop"><AmazonCta product={product} brand={config.brand} onOpenDemo={() => navigate('amazon-product')}>Shop on Amazon</AmazonCta><p className="amazon-reassurance"><Icon name="lock" size={18} /> Opens local product demo</p></div></main>;
+}
+
+function AmazonProductScreen({ config, coupons, navigate }) {
+  const product = config.products.find((item) => item.id === config.currentProductId);
+  const coupon = coupons[0];
+  const code = getCouponCode(coupon, config.fcId);
+  const [quantity, setQuantity] = useState(1);
+  const orderTotal = (PRODUCT_PRICE * quantity).toFixed(2);
+  const placeDemoOrder = () => {
+    const order = { orderNumber: 'Demo-114-20260909', quantity, productId: product.id, total: orderTotal };
+    sessionStorage.setItem('fc-reorder:demo-order', JSON.stringify(order));
+    emitTelemetry('demo_order_completed', order);
+    navigate('amazon-success');
+  };
+  return <main className="marketplace-screen" aria-label={`${product.name} product page demo`}><header className="marketplace-header"><button className="marketplace-icon-button" type="button" onClick={() => navigate('landing')} aria-label="Back to reorder page"><Icon name="back" size={25} /></button><span className="marketplace-logo" aria-label="Amazon style storefront">amazon</span><button className="marketplace-icon-button" type="button" aria-label="Cart"><MarketplaceIcon name="cart" size={23} /></button></header><div className="marketplace-search" role="search"><span>Search PURA JUICE</span><MarketplaceIcon name="search" size={20} /></div><p className="marketplace-demo-note">Local product-page demo · no real order will be placed</p><section className="marketplace-product"><div className="marketplace-image"><img src={product.image} alt={`${product.name}, ${product.variant}`} /></div><button className="marketplace-store" type="button">Visit the {config.brand.name} Store</button><h1>{product.name}, {product.variant}</h1><p className="marketplace-variant"><b>Size:</b> 12 Bottles</p><div className="marketplace-rating" aria-label="Rated 4.8 out of 5"><span>4.8</span><span className="marketplace-stars"><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /></span><button type="button">128 ratings</button></div><div className="marketplace-price"><sup>$</sup>59<span>99</span></div>{coupon && <p className="marketplace-coupon">Save with code <b>{code}</b> · {coupon.benefit}</p>}<p className="marketplace-stock">In stock</p><p className="marketplace-delivery">Free delivery available on eligible orders.</p><div className="marketplace-quantity" aria-label="Quantity"><span>Quantity</span><button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))} aria-label="Reduce quantity">−</button><b>{quantity}</b><button type="button" onClick={() => setQuantity((current) => current + 1)} aria-label="Increase quantity">+</button></div><section className="marketplace-details"><p><b>Product details</b></p><p>Bright, refreshing original orange juice in a convenient 12-bottle pack.</p></section></section><footer className="marketplace-action"><p>Local demo checkout · no payment will be collected</p><button type="button" onClick={placeDemoOrder}>Place order · ${orderTotal}</button></footer></main>;
+}
+
+function AmazonOrderSuccessScreen({ config, navigate }) {
+  const product = config.products.find((item) => item.id === config.currentProductId);
+  let order = { orderNumber: 'Demo-114-20260909', quantity: 1, total: PRODUCT_PRICE.toFixed(2) };
+  try { order = { ...order, ...JSON.parse(sessionStorage.getItem('fc-reorder:demo-order') || '{}') }; } catch { /* Keep safe demo defaults. */ }
+  return <main className="marketplace-screen marketplace-success-screen" aria-label="Demo order confirmation"><header className="marketplace-header"><button className="marketplace-icon-button" type="button" onClick={() => navigate('amazon-product')} aria-label="Back to product page"><Icon name="back" size={25} /></button><span className="marketplace-logo" aria-label="Amazon style storefront">amazon</span><button className="marketplace-icon-button" type="button" aria-label="Cart"><MarketplaceIcon name="cart" size={23} /></button></header><p className="marketplace-demo-note">Local demo confirmation · this is not a real Amazon order</p><section className="order-success"><div className="order-success__check"><Icon name="check" size={48} /></div><h1>Thank you, your demo order is confirmed.</h1><p className="order-success__message">We’ll show a delivery update here when your demo order is ready.</p><div className="order-success__meta"><span>Order number</span><b>{order.orderNumber}</b></div><section className="order-success__delivery"><p>Estimated delivery</p><strong>Within 1–2 days</strong><div className="order-success__product"><img src={product.image} alt="" /><span><b>{product.name}</b><small>{product.variant}</small><small>Quantity: {order.quantity}</small></span></div></section><div className="order-success__total"><span>Order total</span><b>${order.total}</b></div><button className="order-success__primary" type="button" onClick={() => navigate('landing')}>Continue shopping</button><button className="order-success__secondary" type="button" onClick={() => navigate('amazon-product')}>View demo product</button></section></main>;
 }
 
 function SurveyScreen({ config, coupon, step, navigate, onComplete }) {
@@ -193,6 +229,8 @@ export default function ReorderApp() {
   const coupons = modules.immediateCoupons;
   const completeSurvey = (answers) => { const response = { fcId: config.fcId, brandId: config.brand.id, productId: config.currentProductId, surveyId: config.survey.id, couponId: null, sessionId: window.crypto?.randomUUID?.() || `${Date.now()}`, answers, completedAt: new Date().toISOString() }; writeSurveyResponse(config.fcId, config.survey.id, response); emitTelemetry('survey_completed', response); navigate('survey-thanks'); };
   if (view.name === 'coupon-list') return <CouponListScreen config={config} coupons={coupons} navigate={navigate} />;
+  if (view.name === 'amazon-product') return <AmazonProductScreen config={config} coupons={coupons} navigate={navigate} />;
+  if (view.name === 'amazon-success') return <AmazonOrderSuccessScreen config={config} navigate={navigate} />;
   // Disabled: coupon-reveal and coupon-survey routes for Survey-gated Coupons.
   // if (view.name === 'coupon-reveal' && selectedCoupon) return <CouponRevealScreen config={config} coupon={selectedCoupon} navigate={navigate} />;
   // if (view.name === 'coupon-survey' && selectedCoupon && selectedCoupon.requiresSurvey && modules.surveyActive && !surveyCompleted) return <SurveyScreen config={config} coupon={selectedCoupon} step={view.step} navigate={navigate} onComplete={completeSurvey(selectedCoupon)} />;

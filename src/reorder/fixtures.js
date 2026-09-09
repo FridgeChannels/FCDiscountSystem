@@ -7,7 +7,7 @@ export const BASE_BRAND = {
 };
 
 export const BASE_PRODUCTS = [
-  { id: 'sea-salt-crackers', sellerId: 'pura-foods', sku: 'MSC-SEA-6', asin: 'B0FCSEA001', name: 'PURA Orange Juice', variant: 'Original Orange · 1 bottle', image: '/reorder/pura-orange-juice.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCSEA001?tag=fc-reorder-20` },
+  { id: 'sea-salt-crackers', sellerId: 'pura-foods', sku: 'MSC-SEA-6', asin: 'B0FCSEA001', name: 'PURA Orange Juice', variant: 'Original Orange, 12 Bottles', image: '/reorder/pura-orange-juice.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCSEA001?tag=fc-reorder-20` },
   { id: 'smoky-chili-crisps', sellerId: 'pura-foods', sku: 'MSC-CHILI-6', asin: 'B0FCCHI002', name: 'Smoky Chili Protein Crisps', variant: '6-pack', image: '/reorder/smoky-chili-crisps.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCCHI002?tag=fc-reorder-20` },
   { id: 'classic-sea-salt-crisps', sellerId: 'pura-foods', sku: 'MSC-CLASSIC-6', asin: 'B0FCCLA003', name: 'Classic Sea Salt Protein Crisps', variant: '6-pack', image: '/reorder/classic-sea-salt-crisps.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCCLA003?tag=fc-reorder-20` },
 ];
