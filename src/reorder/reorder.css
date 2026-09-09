@@ -447,7 +447,6 @@ button:focus-visible, a:focus-visible { outline: 3px solid #006b57; outline-offs
   gap: .75rem;
   font-size: .9375rem;
 }
-.marketplace-demo-note { margin: 0; padding: .625rem 1rem; background: #fff7e6; color: #7a4a00; text-align: center; font-size: .75rem; line-height: 1.35; }
 .marketplace-product { padding: 1.5rem 1rem 2rem; }
 .marketplace-image { height: 268px; display: grid; place-items: center; background: #fff; }
 .marketplace-image img { width: 82%; height: 82%; object-fit: contain; }
