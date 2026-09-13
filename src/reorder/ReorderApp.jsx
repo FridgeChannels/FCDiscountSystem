@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { composeConsumerModules, getCouponCode, isSafeAmazonUrl } from './domain.js';
 import { clearSurveyProgress, emitTelemetry, markClaimCodeCopied, readSurveyProgress, resolveFcConfiguration, resolveFcId, resolveScenario, startReorderSurvey, submitReorderSurvey, writeSurveyProgress, writeSurveyResponse } from './reorderService.js';
 import './reorder.css';
@@ -217,21 +217,48 @@ function SurveyThankYouScreen({ config, navigate }) {
 function LoadingScreen() { return <main className="screen state-screen loading-screen" aria-busy="true"><BrandHeader brand={{ name: 'PURA JUICE', logoText: 'PURA JUICE', logoImage: '/reorder/pura-juice-logo.svg' }} /><div className="skeleton skeleton-product" /><div className="skeleton skeleton-name" /><div className="skeleton skeleton-button" /><p>Loading product…</p></main>; }
 function InvalidScreen({ config }) { const brand = config?.brand || { logoText: 'FC', name: 'Brand' }; return <main className="screen state-screen invalid-screen"><BrandHeader brand={brand} /><h1>We can’t find this product.</h1><p>This FC link may be unavailable.</p><a className="state-secondary" href={brand.amazonStoreUrl}>Visit {brand.name} on Amazon</a></main>; }
 
-export default function ReorderApp({ mode = 'preview', sn = null } = {}) {
+export default function ReorderApp({
+  mode = 'preview',
+  sn = null,
+  initialResolved = null,
+  onEntryReady = null,
+  suppressLocalLoading = false,
+} = {}) {
   const live = mode === 'live';
   const allowedViews = live ? LIVE_VIEWS : PREVIEW_VIEWS;
   const [view, setView] = useState(() => readView(allowedViews));
-  const [resolved, setResolved] = useState({ status: 'resolving', config: null });
+  const [resolved, setResolved] = useState(() => (
+    initialResolved
+      ? { status: initialResolved.status, config: initialResolved.config ?? null }
+      : { status: 'resolving', config: null }
+  ));
+  const entryReadyNotifiedRef = useRef(false);
   const fcId = sn || resolveFcId();
   const scenario = resolveScenario();
   useEffect(() => {
+    if (initialResolved) {
+      setResolved({ status: initialResolved.status, config: initialResolved.config ?? null });
+      return undefined;
+    }
     let active = true;
     setResolved({ status: 'resolving', config: null });
     resolveFcConfiguration({ fcId, scenario, mode: live ? 'live' : 'preview' })
       .then((config) => active && setResolved({ status: config.status, config }))
       .catch(() => active && setResolved({ status: 'invalid', config: null }));
     return () => { active = false; };
-  }, [fcId, scenario, live]);
+  }, [fcId, scenario, live, initialResolved]);
+  useEffect(() => {
+    if (typeof onEntryReady !== 'function' || entryReadyNotifiedRef.current) return;
+    if (resolved.status === 'resolving') return;
+    const frame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (entryReadyNotifiedRef.current) return;
+        entryReadyNotifiedRef.current = true;
+        onEntryReady();
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [onEntryReady, resolved.status]);
   useEffect(() => {
     const sync = () => setView(readView(allowedViews));
     window.addEventListener('popstate', sync);
@@ -247,7 +274,10 @@ export default function ReorderApp({ mode = 'preview', sn = null } = {}) {
     setView(readView(allowedViews));
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, [allowedViews, live]);
-  if (resolved.status === 'resolving') return <LoadingScreen />;
+  if (resolved.status === 'resolving') {
+    if (suppressLocalLoading || typeof onEntryReady === 'function') return null;
+    return <LoadingScreen />;
+  }
   if (resolved.status === 'invalid') return <InvalidScreen config={resolved.config} />;
   const config = resolved.config;
   const modules = composeConsumerModules({ ...config, now: new Date() });
@@ -271,11 +301,15 @@ export default function ReorderApp({ mode = 'preview', sn = null } = {}) {
       completedAt: new Date().toISOString(),
     };
     if (live) {
-      const started = await startReorderSurvey(config.fcId, config.survey.id);
-      await submitReorderSurvey(config.fcId, config.survey.id, {
-        responseId: started?.responseId || started?.id || response.sessionId,
-        answers,
-      });
+      try {
+        const started = await startReorderSurvey(config.fcId, config.survey.id);
+        await submitReorderSurvey(config.fcId, config.survey.id, {
+          responseId: started?.responseId || started?.id || response.sessionId,
+          answers,
+        });
+      } catch {
+        /* Keep local thank-you even if sync fails in demo. */
+      }
     }
     writeSurveyResponse(config.fcId, config.survey.id, response);
     emitTelemetry('survey_completed', response);

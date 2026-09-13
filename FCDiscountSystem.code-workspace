@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../fc-platform"
+		},
+		{
+			"path": "../DTC-Dashboard-2"
 		}
 	],
 	"settings": {}

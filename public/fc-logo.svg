@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 72" role="img" aria-label="FridgeChannel">
+  <defs>
+    <linearGradient id="fc-mark" x1="8" y1="8" x2="56" y2="64" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2F5D50"/>
+      <stop offset="1" stop-color="#1F3F36"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="8" width="56" height="56" rx="14" fill="url(#fc-mark)"/>
+  <path d="M22 28h20M22 36h14M22 44h20" stroke="#F4F0E6" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M34 24v28" stroke="#F4F0E6" stroke-width="3.5" stroke-linecap="round" opacity="0.45"/>
+  <text x="76" y="46" fill="#24352F" font-family="Avenir Next, Segoe UI, Helvetica, Arial, sans-serif" font-size="28" font-weight="700" letter-spacing="-0.04em">FridgeChannel</text>
+</svg>

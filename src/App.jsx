@@ -543,8 +543,9 @@ function getArcPoint(progress) {
   };
 }
 
-export default function App() {
+export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
   const viewportRef = useRef(null);
+  const entryReadyNotifiedRef = useRef(false);
   const targetCouponRef = useRef(null);
   const canvasRef = useRef(null);
   const tearTimerRef = useRef(null);
@@ -1953,8 +1954,17 @@ export default function App() {
 
     const shopifyOAuthReturn = isShopifyOAuthPending(touchId);
 
-    // 每次 Tap 进入都播礼盒视频（OAuth 回流 / renew 流程除外）
-    if (!shopifyOAuthReturn && !renewFlowActiveRef.current && !newChallengeRenewRef.current) {
+    // ExperienceRoot already covers entry loading; skip gift-video / welcome pack ritual.
+    if (skipEntryGiftIntro) {
+      returnIntroShownRef.current = true;
+      returnIntroPendingRef.current = false;
+      entryTapFxRequestedRef.current = false;
+      setReturnIntroGate(false);
+      setWelcomeStep(3);
+      setIntroActive(false);
+      writeWelcomeCompleted(touchId);
+    } else if (!shopifyOAuthReturn && !renewFlowActiveRef.current && !newChallengeRenewRef.current) {
+      // 每次 Tap 进入都播礼盒视频（OAuth 回流 / renew 流程除外）
       if (!readWelcomeCompleted(touchId) && isReturnVisitor(touchId)) {
         writeWelcomeCompleted(touchId);
       }
@@ -2039,7 +2049,25 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [applyDevPreviewScene, applyMagnetBrandParam, clearGameSessionCache, devScene, syncFromPlan, syncMagnetBrandParam, syncShopifyBindingStatus, touchId, touchIdValid]);
+  }, [applyDevPreviewScene, applyMagnetBrandParam, clearGameSessionCache, devScene, skipEntryGiftIntro, syncFromPlan, syncMagnetBrandParam, syncShopifyBindingStatus, touchId, touchIdValid]);
+
+  useEffect(() => {
+    if (!skipEntryGiftIntro || typeof onEntryReady !== 'function' || entryReadyNotifiedRef.current) return;
+    if (!touchIdValid) {
+      entryReadyNotifiedRef.current = true;
+      onEntryReady();
+      return;
+    }
+    if (planLoading || !rewardPlanFetched) return;
+    const frame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (entryReadyNotifiedRef.current) return;
+        entryReadyNotifiedRef.current = true;
+        onEntryReady();
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [onEntryReady, planLoading, rewardPlanFetched, skipEntryGiftIntro, touchIdValid]);
 
   useEffect(() => {
     const onPageShow = async () => {
@@ -2236,7 +2264,8 @@ export default function App() {
   // Keep the welcome ritual only until welcome is completed — do not keep it open
   // solely because wallet packId sync lagged (that made Get More OFF look dead).
   const initialPackPending = welcomePackPending;
-  const showWelcomeRitual = !introActive
+  const showWelcomeRitual = !skipEntryGiftIntro
+    && !introActive
     && !returnIntroGate
     && !renewGiftIntro
     && !planBlocksHome
@@ -4462,13 +4491,13 @@ export default function App() {
         />
       )}
 
-      {giftWaitingPlan && (
+      {giftWaitingPlan && !skipEntryGiftIntro && (
         <div className="gift-plan-loading" role="status">
           Refreshing rewards…
         </div>
       )}
 
-      {(showRenewWelcomeLoading || (planLoading && !introActive && !returnIntroGate && !showWelcomeRitual && !giftWaitingPlan)) && (
+      {(showRenewWelcomeLoading || (planLoading && !skipEntryGiftIntro && !introActive && !returnIntroGate && !showWelcomeRitual && !giftWaitingPlan)) && (
         <div className="reward-sync-status" role="status">
           Refreshing rewards…
         </div>

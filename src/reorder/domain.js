@@ -22,10 +22,12 @@ export function amazonAsin(value) {
 export function isCouponBoundToProduct(coupon, product) {
   if (!coupon || !product) return false;
   const productAsin = String(product.asin || '').toUpperCase();
-  const eligibleAsins = (coupon.eligibleAsins || []).map((asin) => String(asin).toUpperCase());
+  const eligibleAsins = (coupon.eligibleAsins || []).map((asin) => String(asin).toUpperCase()).filter(Boolean);
   if (coupon.sellerId !== product.sellerId) return false;
   if (!coupon.eligibleProductIds?.includes(product.id)) return false;
-  if (!productAsin || !eligibleAsins.includes(productAsin)) return false;
+  // Brand-param path may omit ASIN; bind by product id only.
+  if (!productAsin) return true;
+  if (eligibleAsins.length && !eligibleAsins.includes(productAsin)) return false;
   if (coupon.amazonUrl && !isSafeAmazonUrl(coupon.amazonUrl)) return false;
   if (product.amazonUrl && !isSafeAmazonUrl(product.amazonUrl)) return false;
   const couponAsin = amazonAsin(coupon.amazonUrl);
@@ -45,11 +47,15 @@ export function isSurveyConfigured(survey) {
 
 export function isCouponEligible(coupon, product, now = new Date()) {
   if (!coupon || coupon.status !== 'active' || !isCouponBoundToProduct(coupon, product)) return false;
-  if (coupon.requiresCode && (!coupon.codePoolAvailable || !(coupon.codes || []).length)) return false;
+  if (coupon.requiresCode && (!coupon.codePoolAvailable || !(coupon.codes || []).length) && !coupon.claimCode) return false;
   const current = asDate(now);
+  if (!current) return false;
   const startsAt = asDate(coupon.startsAt);
   const endsAt = asDate(coupon.endsAt);
-  return Boolean(current && startsAt && endsAt && current >= startsAt && current <= endsAt);
+  if (!startsAt && !endsAt) return true;
+  if (startsAt && current < startsAt) return false;
+  if (endsAt && current > endsAt) return false;
+  return true;
 }
 
 export function selectEligibleCoupons(coupons, product, now = new Date()) {

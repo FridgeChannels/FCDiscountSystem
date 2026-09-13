@@ -1,0 +1,48 @@
+.fc-experience-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  margin: 0;
+  padding: 24px;
+  background: #f6f3ec;
+  color: #3d342a;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+}
+
+.fc-experience-loading__logo {
+  width: min(240px, 72vw);
+  height: auto;
+  object-fit: contain;
+  animation: fc-experience-logo-pulse 1.6s ease-in-out infinite;
+}
+
+.fc-experience-loading__copy {
+  margin: 0;
+  font-size: 0.92rem;
+  letter-spacing: 0.01em;
+  color: #6a5f52;
+}
+
+@keyframes fc-experience-logo-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fc-experience-loading__logo {
+    animation: none;
+    opacity: 1;
+  }
+}

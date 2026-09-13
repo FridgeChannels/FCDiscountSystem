@@ -50,13 +50,24 @@ test('maps magnet_brand_param payload without asin to product CTA', () => {
     },
     amazon: { sellerId: null, sellerLabel: 'PURA JUICE', storefrontUrl: 'https://www.amazon.com/stores/PURA' },
     primaryCta: 'https://www.amazon.com/dp/B0FCSEA001?tag=fc',
-    availableSavings: [],
+    availableSavings: [{
+      id: 'magnet-brand-discount-99',
+      benefitSummary: 'Save 10%',
+      title: 'Save 10%',
+      startAt: '2020-01-01T00:00:00.000Z',
+      endAt: '2099-12-31T23:59:59.000Z',
+      eligibleAsins: [],
+      claimCode: 'PURA10',
+      claimCodeMode: 'group',
+      isFeatured: true,
+    }],
     survey: null,
     fallback: { type: 'seller_storefront', url: 'https://www.amazon.com/stores/PURA' },
   }, '15VZQSHR7R');
 
   assert.equal(config.status, 'ready');
-  assert.equal(config.coupons.length, 0);
+  assert.equal(config.coupons.length, 1);
+  assert.equal(config.coupons[0].claimCode, 'PURA10');
   assert.equal(config.products[0].name, 'PURA Orange Juice');
   assert.equal(config.products[0].image, 'https://cdn.example.com/product.png');
   assert.equal(config.products[0].amazonUrl, 'https://www.amazon.com/dp/B0FCSEA001?tag=fc');
