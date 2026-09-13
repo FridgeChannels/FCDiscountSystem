@@ -18,6 +18,12 @@ test('T4/T5 live entry uses ExperienceRoot and dedicated experience API', () => 
   assert.doesNotMatch(root, /\/api\/reorder\/consumer/);
   assert.match(vite, /\/api\/fc\/experience/);
   assert.match(vite, /\/api\/reorder/);
+  const nginx = readFileSync(resolve('docker/nginx.conf'), 'utf8');
+  const bff = readFileSync(resolve('server/index.js'), 'utf8');
+  assert.match(nginx, /\/api\/reorder\//);
+  assert.match(bff, /DASHBOARD_API_BASE_URL/);
+  assert.match(bff, /proxyDashboard/);
+  assert.match(bff, /experienceMatch/);
   assert.match(app, /LIVE_VIEWS/);
   assert.match(app, /initialResolved/);
   assert.match(dtcApp, /skipEntryGiftIntro/);

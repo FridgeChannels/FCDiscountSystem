@@ -76,6 +76,10 @@ services:
       MANIFEST_SIGNING_KEY_ID: docker-local
       MANIFEST_PRIVATE_KEY_PEM: ${MANIFEST_PRIVATE_KEY_PEM-}
       FC_DEMO_FORCE_RENEW_ENABLED: ${FC_DEMO_FORCE_RENEW_ENABLED:-false}
+      # Experience + reorder APIs live on Dashboard.
+      DASHBOARD_API_BASE_URL: ${DASHBOARD_API_BASE_URL-}
+      COUPON_API_BASE_URL: ${COUPON_API_BASE_URL-}
+      DASHBOARD_API_TIMEOUT_MS: ${DASHBOARD_API_TIMEOUT_MS:-15000}
     depends_on:
       engine:
         condition: service_healthy

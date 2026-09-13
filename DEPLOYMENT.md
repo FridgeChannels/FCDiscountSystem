@@ -48,8 +48,11 @@ Services:
 |---------|----------|----------|
 | `web` (nginx + FCDiscountSystem UI) | :80 | `http://localhost:8080` |
 | `platform-web` (fc-platform admin + uploads) | :8789 | via nginx only |
-| `bff` | :3001 | via nginx `/api/fc/` |
+| `bff` | :3001 | via nginx `/api/fc/` and `/api/reorder/` |
 | `engine` | :8787 | internal only |
+
+`/api/fc/experience/{sn}` and `/api/reorder/*` are proxied by BFF to Dashboard
+(`DASHBOARD_API_BASE_URL`, falling back to `COUPON_API_BASE_URL`).
 
 Health checks:
 

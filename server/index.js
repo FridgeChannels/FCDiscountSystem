@@ -18,6 +18,13 @@ const ENGINE_TIMEOUT_MS = Number(process.env.ENGINE_TIMEOUT_MS ?? 30000);
 const ENGINE_REWARD_PLAN_TIMEOUT_MS = Number(
   process.env.ENGINE_REWARD_PLAN_TIMEOUT_MS ?? Math.max(ENGINE_TIMEOUT_MS, 120000),
 );
+// Dashboard hosts /api/fc/experience and /api/reorder/* (not the engine).
+const DASHBOARD_API_BASE_URL = (
+  process.env.DASHBOARD_API_BASE_URL
+  || process.env.COUPON_API_BASE_URL
+  || ''
+).replace(/\/$/, '');
+const DASHBOARD_API_TIMEOUT_MS = Number(process.env.DASHBOARD_API_TIMEOUT_MS ?? 15000);
 
 // reward-plan: 在途去重。不再用进程内 TTL 短缓存直接回包——
 // SQL/DB 旁路 reset 清不掉那层 Map，会 6ms 吐旧 plan、页面完全不变。
@@ -404,6 +411,70 @@ function readJson(req) {
   });
 }
 
+function readRawBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', (chunk) => {
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      resolve(Buffer.concat(chunks));
+    });
+    req.on('error', reject);
+  });
+}
+
+async function proxyDashboard(req, res, pathnameWithSearch) {
+  if (!DASHBOARD_API_BASE_URL) {
+    sendJson(res, 503, {
+      error: 'dashboard_proxy_unconfigured',
+      detail: 'Set DASHBOARD_API_BASE_URL (or COUPON_API_BASE_URL) to the Dashboard origin',
+    });
+    return;
+  }
+
+  const targetUrl = `${DASHBOARD_API_BASE_URL}${pathnameWithSearch}`;
+  const headers = {
+    accept: req.headers.accept || 'application/json',
+  };
+  if (req.headers['content-type']) {
+    headers['content-type'] = req.headers['content-type'];
+  }
+  if (req.headers['x-request-id']) {
+    headers['x-request-id'] = req.headers['x-request-id'];
+  }
+
+  const init = {
+    method: req.method,
+    headers,
+    signal: AbortSignal.timeout(DASHBOARD_API_TIMEOUT_MS),
+  };
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    init.body = await readRawBody(req);
+  }
+
+  let upstream;
+  try {
+    upstream = await fetch(targetUrl, init);
+  } catch (err) {
+    sendJson(res, 502, {
+      error: 'dashboard_proxy_failed',
+      detail: err instanceof Error ? err.message : 'Dashboard request failed',
+    });
+    return;
+  }
+
+  const contentType = upstream.headers.get('content-type') || 'application/json';
+  const body = Buffer.from(await upstream.arrayBuffer());
+  res.writeHead(upstream.status, {
+    'content-type': contentType,
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET,POST,PUT,PATCH,OPTIONS',
+    'access-control-allow-headers': 'content-type,if-none-match,x-request-id',
+  });
+  res.end(body);
+}
+
 function sendJson(res, status, payload, extraHeaders = {}) {
   res.writeHead(status, {
     'content-type': 'application/json',
@@ -437,7 +508,21 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('x-request-id', requestId);
 
     if (req.method === 'GET' && url.pathname === '/api/fc/health') {
-      sendJson(res, 200, { ok: true });
+      sendJson(res, 200, {
+        ok: true,
+        dashboardProxy: Boolean(DASHBOARD_API_BASE_URL),
+      });
+      return;
+    }
+
+    const experienceMatch = /^\/api\/fc\/experience\/([^/]+)$/.exec(url.pathname);
+    if (req.method === 'GET' && experienceMatch) {
+      await proxyDashboard(req, res, `${url.pathname}${url.search}`);
+      return;
+    }
+
+    if (url.pathname === '/api/reorder' || url.pathname.startsWith('/api/reorder/')) {
+      await proxyDashboard(req, res, `${url.pathname}${url.search}`);
       return;
     }
 
