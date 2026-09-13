@@ -7,9 +7,19 @@ import { defineConfig, loadEnv } from 'vite';
 const root = path.dirname(fileURLToPath(import.meta.url));
 
 function resolveProxyTarget(env, kind) {
-  const fallback = kind === 'api' ? 'http://localhost:3001' : 'http://localhost:8789';
-  const specific = kind === 'api' ? env.FC_API_PROXY_TARGET : env.FC_WEB_PROXY_TARGET;
-  const platformHost = env.FC_USE_LOCAL_PLATFORM === '1' ? '' : env.FC_PLATFORM_HOST;
+  const fallback = kind === 'api'
+    ? 'http://localhost:3001'
+    : kind === 'dashboard'
+      ? 'http://localhost:8080'
+      : 'http://localhost:8789';
+  const specific = kind === 'api'
+    ? env.FC_API_PROXY_TARGET
+    : kind === 'dashboard'
+      ? env.FC_REORDER_API_PROXY_TARGET || env.FC_DASHBOARD_PROXY_TARGET
+      : env.FC_WEB_PROXY_TARGET;
+  const platformHost = kind === 'dashboard'
+    ? ''
+    : (env.FC_USE_LOCAL_PLATFORM === '1' ? '' : env.FC_PLATFORM_HOST);
   const target = (platformHost || specific || fallback).replace(/\/$/, '');
   return {
     target,
@@ -79,6 +89,9 @@ export default defineConfig(({ mode }) => {
       allow: [root, fcRoot],
     },
     proxy: {
+      // More specific Dashboard routes before /api/fc → BFF.
+      '/api/fc/experience': resolveProxyTarget(env, 'dashboard'),
+      '/api/reorder': resolveProxyTarget(env, 'dashboard'),
       '/api/fc': resolveProxyTarget(env, 'api'),
       '/api/brand-asset': resolveProxyTarget(env, 'api'),
       '/runtime-shell': resolveProxyTarget(env, 'web'),

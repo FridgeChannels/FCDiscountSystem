@@ -22,11 +22,17 @@ export function amazonAsin(value) {
 export function isCouponBoundToProduct(coupon, product) {
   if (!coupon || !product) return false;
   const productAsin = String(product.asin || '').toUpperCase();
-  return coupon.sellerId === product.sellerId
-    && coupon.eligibleProductIds?.includes(product.id)
-    && coupon.eligibleAsins?.map((asin) => String(asin).toUpperCase()).includes(productAsin)
-    && amazonAsin(coupon.amazonUrl) === productAsin
-    && amazonAsin(product.amazonUrl) === productAsin;
+  const eligibleAsins = (coupon.eligibleAsins || []).map((asin) => String(asin).toUpperCase());
+  if (coupon.sellerId !== product.sellerId) return false;
+  if (!coupon.eligibleProductIds?.includes(product.id)) return false;
+  if (!productAsin || !eligibleAsins.includes(productAsin)) return false;
+  if (coupon.amazonUrl && !isSafeAmazonUrl(coupon.amazonUrl)) return false;
+  if (product.amazonUrl && !isSafeAmazonUrl(product.amazonUrl)) return false;
+  const couponAsin = amazonAsin(coupon.amazonUrl);
+  const productUrlAsin = amazonAsin(product.amazonUrl);
+  if (couponAsin && couponAsin !== productAsin) return false;
+  if (productUrlAsin && productUrlAsin !== productAsin) return false;
+  return true;
 }
 
 export function isSurveyConfigured(survey) {
@@ -53,6 +59,7 @@ export function selectEligibleCoupons(coupons, product, now = new Date()) {
 }
 
 export function getCouponCode(coupon, fcId = '') {
+  if (coupon?.claimCode) return coupon.claimCode;
   if (!coupon?.requiresCode) return '';
   const codes = coupon.codes || [];
   if (!codes.length) return '';

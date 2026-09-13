@@ -1,9 +1,9 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import ReorderApp from './reorder/ReorderApp.jsx';
+import ExperienceRoot from './ExperienceRoot.jsx';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <ReorderApp />
+    <ExperienceRoot />
   </StrictMode>
 );

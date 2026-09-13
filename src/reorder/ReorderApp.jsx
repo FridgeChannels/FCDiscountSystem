@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { composeConsumerModules, getCouponCode, isSafeAmazonUrl } from './domain.js';
-import { clearSurveyProgress, emitTelemetry, isScenarioPreview, readSurveyProgress, readSurveyResponse, resolveFcConfiguration, resolveFcId, resolveScenario, writeSurveyProgress, writeSurveyResponse } from './reorderService.js';
+import { clearSurveyProgress, emitTelemetry, markClaimCodeCopied, readSurveyProgress, resolveFcConfiguration, resolveFcId, resolveScenario, startReorderSurvey, submitReorderSurvey, writeSurveyProgress, writeSurveyResponse } from './reorderService.js';
 import './reorder.css';
 
-const VALID_VIEWS = new Set(['landing', 'coupon-list', 'survey', 'survey-thanks', 'amazon-product', 'amazon-success']);
+const PREVIEW_VIEWS = new Set(['landing', 'coupon-list', 'survey', 'survey-thanks', 'amazon-product', 'amazon-success']);
+const LIVE_VIEWS = new Set(['landing', 'coupon-list', 'survey', 'survey-thanks']);
 const PRODUCT_PRICE = 59.99;
 
-function readView() {
+function readView(allowedViews) {
   const params = new URLSearchParams(window.location.search);
   const name = params.get('view') || 'landing';
-  return { name: VALID_VIEWS.has(name) ? name : 'landing', step: Math.max(0, Number(params.get('step') || 0)), coupon: params.get('coupon') || '' };
+  return { name: allowedViews.has(name) ? name : 'landing', step: Math.max(0, Number(params.get('step') || 0)), coupon: params.get('coupon') || '' };
 }
 
 function Icon({ name, size = 24 }) {
@@ -71,7 +72,7 @@ function AmazonCta({ product, brand, children, onBeforeOpen, onOpenDemo }) {
   return <button className="amazon-button" type="button" onClick={open} disabled={opening}>{opening ? 'Opening Amazon…' : children}</button>;
 }
 
-function useCouponCopy(coupon, fcId, productId) {
+function useCouponCopy(coupon, fcId, productId, { live = false } = {}) {
   const [copied, setCopied] = useState(false);
   const code = getCouponCode(coupon, fcId);
   const copy = async () => {
@@ -84,6 +85,7 @@ function useCouponCopy(coupon, fcId, productId) {
       if (!didCopy) return false;
     }
     setCopied(true); emitTelemetry('coupon_code_copied', { couponId: coupon.id, productId });
+    if (live) markClaimCodeCopied(fcId, coupon.id);
     return true;
   };
   return { code, copied, copy };
@@ -112,9 +114,9 @@ function GatedCouponOffer({ coupon, questionCount, navigate }) {
 }
 */
 
-function ImmediateCouponOffer({ coupon, product, fcId }) {
+function ImmediateCouponOffer({ coupon, product, fcId, live = false }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const { code, copied, copy } = useCouponCopy(coupon, fcId, product.id);
+  const { code, copied, copy } = useCouponCopy(coupon, fcId, product.id, { live });
   return <section className="direct-coupon-card" aria-label="Available coupon"><button className="direct-coupon-card__summary" type="button" aria-expanded={detailsOpen} aria-controls={`coupon-details-${coupon.id}`} onClick={() => setDetailsOpen((open) => !open)}><strong>{coupon.benefit}</strong><span>{detailsOpen ? 'Hide' : 'Details'} <span className={detailsOpen ? 'direct-coupon-card__chevron direct-coupon-card__chevron--open' : 'direct-coupon-card__chevron'}><Icon name="chevron" size={18} /></span></span></button>{code && <div className="direct-coupon-card__code"><span>Code <b>{code}</b></span><CopyIconButton copied={copied} onCopy={copy} /></div>}{detailsOpen && <div className="direct-coupon-card__details" id={`coupon-details-${coupon.id}`}><span className="coupon-claim-card__applies">For this {product.variant} only</span><CouponTerms coupon={coupon} product={product} /></div>}</section>;
 }
 
@@ -127,26 +129,25 @@ function VoluntarySurveyCard({ survey, navigate }) {
   return <button className="voluntary-survey-card" type="button" onClick={() => navigate('survey', { step: 0 })}><span><strong>Quick survey</strong><small>{survey.questions.length} questions · About {seconds} seconds</small></span><Icon name="chevron" size={22} /></button>;
 }
 
-function PurchaseBlock({ config, modules, product, navigate }) {
+function PurchaseBlock({ config, modules, product, live = false }) {
   const immediateCoupons = modules.immediateCoupons;
-  return <section className="purchase-block" aria-label="Purchase options">{immediateCoupons.length === 1 && <ImmediateCouponOffer coupon={immediateCoupons[0]} product={product} fcId={config.fcId} />}{immediateCoupons.length > 1 && <CouponSummary coupons={immediateCoupons} navigate={navigate} />}<AmazonCta product={product} brand={config.brand} onOpenDemo={() => navigate('amazon-product')}>Buy again on Amazon</AmazonCta></section>;
+  return <section className="purchase-block" aria-label="Purchase options">{immediateCoupons.length === 1 && <ImmediateCouponOffer coupon={immediateCoupons[0]} product={product} fcId={config.fcId} live={live} />}{immediateCoupons.length > 1 && <CouponSummary coupons={immediateCoupons} navigate={config.navigate} />}<AmazonCta product={product} brand={config.brand}>Buy again on Amazon</AmazonCta></section>;
 }
 
-function LandingScreen({ config, modules, navigate }) {
+function LandingScreen({ config, modules, navigate, live = false }) {
   const product = config.products.find((item) => item.id === config.currentProductId);
-  return <main className="screen landing-screen"><BrandHeader brand={config.brand} /><ProductArt product={product} /><div className="product-info"><p className="product-name">{product.name}</p><p className="product-variant">{product.variant}</p></div><section className="reorder-copy"><h1>Need more?</h1></section><PurchaseBlock config={config} modules={modules} product={product} navigate={navigate} /><a className="explore-brand-link" href={config.brand.amazonStoreUrl}>Explore more from {config.brand.name}</a>{/* Disabled: Survey-gated Coupon entry point. */}{modules.showVoluntarySurvey && <VoluntarySurveyCard survey={config.survey} navigate={navigate} />}</main>;
+  const blockConfig = { ...config, navigate };
+  return <main className="screen landing-screen"><BrandHeader brand={config.brand} /><ProductArt product={product} /><div className="product-info"><p className="product-name">{product.name}</p><p className="product-variant">{product.variant}</p></div><section className="reorder-copy"><h1>Need more?</h1></section><PurchaseBlock config={blockConfig} modules={modules} product={product} live={live} /><a className="explore-brand-link" href={config.brand.amazonStoreUrl}>Explore more from {config.brand.name}</a>{modules.showVoluntarySurvey && <VoluntarySurveyCard survey={config.survey} navigate={navigate} />}</main>;
 }
 
-function CouponListItem({ config, coupon, product, navigate }) {
-  const { code, copied, copy } = useCouponCopy(coupon, config.fcId, product.id);
-  // Disabled: Survey-gated Coupon choices are not available in the Coupon list.
-  // if (coupon.requiresSurvey) return <button className="coupon-choice" type="button" onClick={() => navigate('coupon-survey', { coupon: coupon.id, step: 0 })}><span><strong>{coupon.benefit}</strong><small>Answer {config.survey.questions.length} questions to get the code</small></span><Icon name="chevron" size={28} /></button>;
+function CouponListItem({ config, coupon, product, live = false }) {
+  const { code, copied, copy } = useCouponCopy(coupon, config.fcId, product.id, { live });
   return <section className="coupon-choice coupon-choice--direct" aria-label={`${coupon.benefit} coupon`}><div className="coupon-choice__heading"><strong>{coupon.benefit}</strong><span>Available now</span></div>{code && <div className="coupon-choice__code"><code>{code}</code><CopyIconButton copied={copied} onCopy={copy} /></div>}<div className="coupon-choice__terms"><CouponTerms coupon={coupon} product={product} /></div></section>;
 }
 
-function CouponListScreen({ config, coupons, navigate }) {
+function CouponListScreen({ config, coupons, navigate, live = false }) {
   const product = config.products.find((item) => item.id === config.currentProductId);
-  return <main className="screen coupon-list-screen" aria-label={`Available coupons for ${product.name}, ${product.variant}`}><BrandHeader brand={config.brand} onBack={() => navigate('landing')} /><section className="coupon-list-heading"><h1>Available coupons</h1></section><div className="coupon-list">{coupons.map((coupon) => <CouponListItem key={coupon.id} config={config} coupon={coupon} product={product} navigate={navigate} />)}</div><div className="coupon-list-shop"><AmazonCta product={product} brand={config.brand} onOpenDemo={() => navigate('amazon-product')}>Shop on Amazon</AmazonCta><p className="amazon-reassurance"><Icon name="lock" size={18} /> Opens local product demo</p></div></main>;
+  return <main className="screen coupon-list-screen" aria-label={`Available coupons for ${product.name}, ${product.variant}`}><BrandHeader brand={config.brand} onBack={() => navigate('landing')} /><section className="coupon-list-heading"><h1>Available coupons</h1></section><div className="coupon-list">{coupons.map((coupon) => <CouponListItem key={coupon.id} config={config} coupon={coupon} product={product} live={live} />)}</div><div className="coupon-list-shop"><AmazonCta product={product} brand={config.brand}>Shop on Amazon</AmazonCta><p className="amazon-reassurance"><Icon name="lock" size={18} /> Opens Amazon</p></div></main>;
 }
 
 function AmazonProductScreen({ config, coupons, navigate }) {
@@ -216,27 +217,77 @@ function SurveyThankYouScreen({ config, navigate }) {
 function LoadingScreen() { return <main className="screen state-screen loading-screen" aria-busy="true"><BrandHeader brand={{ name: 'PURA JUICE', logoText: 'PURA JUICE', logoImage: '/reorder/pura-juice-logo.svg' }} /><div className="skeleton skeleton-product" /><div className="skeleton skeleton-name" /><div className="skeleton skeleton-button" /><p>Loading product…</p></main>; }
 function InvalidScreen({ config }) { const brand = config?.brand || { logoText: 'FC', name: 'Brand' }; return <main className="screen state-screen invalid-screen"><BrandHeader brand={brand} /><h1>We can’t find this product.</h1><p>This FC link may be unavailable.</p><a className="state-secondary" href={brand.amazonStoreUrl}>Visit {brand.name} on Amazon</a></main>; }
 
-export default function ReorderApp() {
-  const [view, setView] = useState(readView);
+export default function ReorderApp({ mode = 'preview', sn = null } = {}) {
+  const live = mode === 'live';
+  const allowedViews = live ? LIVE_VIEWS : PREVIEW_VIEWS;
+  const [view, setView] = useState(() => readView(allowedViews));
   const [resolved, setResolved] = useState({ status: 'resolving', config: null });
-  const fcId = resolveFcId(); const scenario = resolveScenario();
-  useEffect(() => { let active = true; setResolved({ status: 'resolving', config: null }); resolveFcConfiguration({ fcId, scenario }).then((config) => active && setResolved({ status: config.status, config })).catch(() => active && setResolved({ status: 'invalid', config: null })); return () => { active = false; }; }, [fcId, scenario]);
-  useEffect(() => { const sync = () => setView(readView()); window.addEventListener('popstate', sync); return () => window.removeEventListener('popstate', sync); }, []);
-  const navigate = useCallback((name, values = {}) => { const params = new URLSearchParams(window.location.search); if (name === 'landing') params.delete('view'); else params.set('view', name); ['step', 'coupon'].forEach((key) => values[key] != null ? params.set(key, String(values[key])) : params.delete(key)); window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`); setView(readView()); window.scrollTo({ top: 0, behavior: 'instant' }); }, []);
+  const fcId = sn || resolveFcId();
+  const scenario = resolveScenario();
+  useEffect(() => {
+    let active = true;
+    setResolved({ status: 'resolving', config: null });
+    resolveFcConfiguration({ fcId, scenario, mode: live ? 'live' : 'preview' })
+      .then((config) => active && setResolved({ status: config.status, config }))
+      .catch(() => active && setResolved({ status: 'invalid', config: null }));
+    return () => { active = false; };
+  }, [fcId, scenario, live]);
+  useEffect(() => {
+    const sync = () => setView(readView(allowedViews));
+    window.addEventListener('popstate', sync);
+    return () => window.removeEventListener('popstate', sync);
+  }, [allowedViews]);
+  const navigate = useCallback((name, values = {}) => {
+    if (live && !LIVE_VIEWS.has(name) && name !== 'landing') return;
+    const params = new URLSearchParams(window.location.search);
+    if (name === 'landing') params.delete('view');
+    else params.set('view', name);
+    ['step', 'coupon'].forEach((key) => values[key] != null ? params.set(key, String(values[key])) : params.delete(key));
+    window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
+    setView(readView(allowedViews));
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [allowedViews, live]);
   if (resolved.status === 'resolving') return <LoadingScreen />;
   if (resolved.status === 'invalid') return <InvalidScreen config={resolved.config} />;
-  const config = resolved.config; const modules = composeConsumerModules({ ...config, now: new Date() });
-  const surveyCompleted = !isScenarioPreview() && Boolean(config.survey && readSurveyResponse(config.fcId, config.survey.id));
-  const landingModules = surveyCompleted ? { ...modules, gatedCoupons: [], showVoluntarySurvey: false } : modules;
+  const config = resolved.config;
+  const modules = composeConsumerModules({ ...config, now: new Date() });
+  // DEMO: never hide survey after local completion — always show Quick survey on landing.
+  // Restore:
+  // const surveyCompleted = live
+  //   ? Boolean(config.survey && readSurveyResponse(config.fcId, config.survey.id))
+  //   : (!isScenarioPreview() && Boolean(config.survey && readSurveyResponse(config.fcId, config.survey.id)));
+  // const landingModules = surveyCompleted ? { ...modules, gatedCoupons: [], showVoluntarySurvey: false } : modules;
+  const landingModules = modules;
   const coupons = modules.immediateCoupons;
-  const completeSurvey = (answers) => { const response = { fcId: config.fcId, brandId: config.brand.id, productId: config.currentProductId, surveyId: config.survey.id, couponId: null, sessionId: window.crypto?.randomUUID?.() || `${Date.now()}`, answers, completedAt: new Date().toISOString() }; writeSurveyResponse(config.fcId, config.survey.id, response); emitTelemetry('survey_completed', response); navigate('survey-thanks'); };
-  if (view.name === 'coupon-list') return <CouponListScreen config={config} coupons={coupons} navigate={navigate} />;
-  if (view.name === 'amazon-product') return <AmazonProductScreen config={config} coupons={coupons} navigate={navigate} />;
-  if (view.name === 'amazon-success') return <AmazonOrderSuccessScreen config={config} navigate={navigate} />;
-  // Disabled: coupon-reveal and coupon-survey routes for Survey-gated Coupons.
-  // if (view.name === 'coupon-reveal' && selectedCoupon) return <CouponRevealScreen config={config} coupon={selectedCoupon} navigate={navigate} />;
-  // if (view.name === 'coupon-survey' && selectedCoupon && selectedCoupon.requiresSurvey && modules.surveyActive && !surveyCompleted) return <SurveyScreen config={config} coupon={selectedCoupon} step={view.step} navigate={navigate} onComplete={completeSurvey(selectedCoupon)} />;
-  if (view.name === 'survey' && modules.showVoluntarySurvey && !surveyCompleted) return <SurveyScreen config={config} step={view.step} navigate={navigate} onComplete={completeSurvey} />;
+  const completeSurvey = async (answers) => {
+    const response = {
+      fcId: config.fcId,
+      brandId: config.brand.id,
+      productId: config.currentProductId,
+      surveyId: config.survey.id,
+      couponId: null,
+      sessionId: window.crypto?.randomUUID?.() || `${Date.now()}`,
+      answers,
+      completedAt: new Date().toISOString(),
+    };
+    if (live) {
+      const started = await startReorderSurvey(config.fcId, config.survey.id);
+      await submitReorderSurvey(config.fcId, config.survey.id, {
+        responseId: started?.responseId || started?.id || response.sessionId,
+        answers,
+      });
+    }
+    writeSurveyResponse(config.fcId, config.survey.id, response);
+    emitTelemetry('survey_completed', response);
+    navigate('survey-thanks');
+  };
+  if (view.name === 'coupon-list') return <CouponListScreen config={config} coupons={coupons} navigate={navigate} live={live} />;
+  if (!live && view.name === 'amazon-product') return <AmazonProductScreen config={config} coupons={coupons} navigate={navigate} />;
+  if (!live && view.name === 'amazon-success') return <AmazonOrderSuccessScreen config={config} navigate={navigate} />;
+  // DEMO: allow re-entering survey even after a prior completion.
+  if (view.name === 'survey' && modules.showVoluntarySurvey) {
+    return <SurveyScreen config={config} step={view.step} navigate={navigate} onComplete={completeSurvey} />;
+  }
   if (view.name === 'survey-thanks' && config.survey) return <SurveyThankYouScreen config={config} navigate={navigate} />;
-  return <LandingScreen config={config} modules={landingModules} navigate={navigate} />;
+  return <LandingScreen config={config} modules={landingModules} navigate={navigate} live={live} />;
 }
