@@ -2,27 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchFcExperience, resolveSnFromUrl } from './lib/fcExperience.js';
 import { resolveFcConfiguration, resolveScenario } from './reorder/reorderService.js';
 import ReorderApp from './reorder/ReorderApp.jsx';
-import './experience-loading.css';
+import ExperienceLoading from './ExperienceLoading.jsx';
 
 function bootDtcApp() {
   return import('./App.jsx').then((mod) => mod.default);
-}
-
-function ExperienceLoading({ detail = 'Preparing your experience…' }) {
-  return (
-    <main className="fc-experience-loading" aria-busy="true" aria-live="polite">
-      <img
-        className="fc-experience-loading__logo"
-        src="/fc-logo.svg"
-        alt="FridgeChannel"
-        width={220}
-        height={50}
-        decoding="async"
-        fetchPriority="high"
-      />
-      <p className="fc-experience-loading__copy">{detail}</p>
-    </main>
-  );
 }
 
 function ErrorScreen({ title, detail, onRetry }) {
