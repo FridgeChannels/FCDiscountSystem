@@ -6,7 +6,7 @@ const LOADING_VIDEO_SRC = 'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViG
 // Replace only with a background-removed transparent PNG so the video stays visible.
 const LOADING_LOGO_SRC = '/loading/logo-cutout.png';
 
-export default function ExperienceLoading({ detail = 'Preparing your experience…' }) {
+export default function ExperienceLoading({ detail = 'Preparing your experience…', onSkip }) {
   const [isLogoReady, setIsLogoReady] = useState(false);
   const shouldReduceMotion = useReducedMotion();
   const logoHidden = shouldReduceMotion
@@ -54,6 +54,17 @@ export default function ExperienceLoading({ detail = 'Preparing your experience�
           />
         </motion.div>
       </div>
+      {onSkip ? (
+        <motion.button
+          className="fc-experience-loading__skip"
+          type="button"
+          onClick={onSkip}
+          whileTap={shouldReduceMotion ? undefined : { scale: 0.96 }}
+          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+        >
+          Skip
+        </motion.button>
+      ) : null}
       <span className="fc-experience-loading__status">{detail}</span>
     </main>
   );

@@ -45,6 +45,7 @@ function PendingShell({ ready, children }) {
 export default function ExperienceRoot() {
   const [phase, setPhase] = useState({ status: 'resolving' });
   const [contentReady, setContentReady] = useState(false);
+  const [skipRequested, setSkipRequested] = useState(false);
   const contentReadyRef = useRef(false);
   const resolveSeqRef = useRef(0);
 
@@ -58,6 +59,7 @@ export default function ExperienceRoot() {
     const seq = ++resolveSeqRef.current;
     contentReadyRef.current = false;
     setContentReady(false);
+    setSkipRequested(false);
 
     const params = new URLSearchParams(window.location.search);
     if (params.has('scenario')) {
@@ -130,8 +132,10 @@ export default function ExperienceRoot() {
     resolve();
   }, []);
 
-  const waitingForDestination = (phase.status === 'dtc' || phase.status === 'asin_plus') && !contentReady;
-  const showLoading = phase.status === 'resolving' || waitingForDestination;
+  const hasDestination = phase.status === 'dtc' || phase.status === 'asin_plus';
+  const skipToDestination = skipRequested && hasDestination;
+  const waitingForDestination = hasDestination && !contentReady;
+  const showLoading = !skipToDestination && (phase.status === 'resolving' || waitingForDestination);
 
   if (phase.status === 'error') {
     return (
@@ -155,14 +159,14 @@ export default function ExperienceRoot() {
 
   return (
     <>
-      {showLoading ? <ExperienceLoading /> : null}
+      {showLoading ? <ExperienceLoading onSkip={() => setSkipRequested(true)} /> : null}
 
       {phase.status === 'asin_plus_preview' ? (
         <ReorderApp mode="preview" />
       ) : null}
 
       {phase.status === 'asin_plus' ? (
-        <PendingShell ready={contentReady}>
+        <PendingShell ready={contentReady || skipToDestination}>
           <ReorderApp
             mode="live"
             sn={phase.sn}
@@ -175,7 +179,7 @@ export default function ExperienceRoot() {
       ) : null}
 
       {phase.status === 'dtc' && phase.App ? (
-        <PendingShell ready={contentReady}>
+        <PendingShell ready={contentReady || skipToDestination}>
           <DtcApp
             App={phase.App}
             onEntryReady={markContentReady}
