@@ -44,29 +44,6 @@
   filter: drop-shadow(0 12px 18px rgba(20, 39, 23, 0.2));
 }
 
-.fc-experience-loading__skip {
-  position: absolute;
-  right: 16px;
-  bottom: max(16px, env(safe-area-inset-bottom));
-  z-index: 2;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 10px 12px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.94);
-  font: 600 14px/1 system-ui, sans-serif;
-  text-shadow: 0 1px 10px rgba(14, 26, 15, 0.5);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.fc-experience-loading__skip:focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.96);
-  outline-offset: 2px;
-}
-
 .fc-experience-loading__status {
   position: absolute;
   width: 1px;
@@ -76,16 +53,6 @@
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   clip-path: inset(50%);
-}
-
-.fc-loading-preview-skipped {
-  display: grid;
-  min-height: 100dvh;
-  place-items: center;
-  margin: 0;
-  background: #1e241d;
-  color: #f6f3ec;
-  font: 600 16px/1.4 system-ui, sans-serif;
 }
 
 .fc-loading-preview-hint {

@@ -1,11 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchFcExperience, resolveSnFromUrl } from './lib/fcExperience.js';
+import { normalizeLogoUrl } from './lib/brandTheme.js';
 import { resolveFcConfiguration, resolveScenario } from './reorder/reorderService.js';
 import ReorderApp from './reorder/ReorderApp.jsx';
 import ExperienceLoading from './ExperienceLoading.jsx';
 
 function bootDtcApp() {
   return import('./App.jsx').then((mod) => mod.default);
+}
+
+function brandFromExperience(result) {
+  const raw = typeof result?.brandLogo === 'string' ? result.brandLogo.trim() : '';
+  // Loading shell uses <img> — prefer the absolute CDN URL (no brand-asset proxy hop).
+  const logoUrl = raw
+    ? (/^https?:\/\//i.test(raw) ? raw : normalizeLogoUrl(raw))
+    : null;
+  return {
+    logoUrl,
+    brandName: result?.brandName ?? null,
+  };
+}
+
+/** Warm the brand logo as soon as experience returns so loading can swap quickly. */
+function preloadLogo(url) {
+  if (!url || typeof window === 'undefined') return;
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = url;
 }
 
 function ErrorScreen({ title, detail, onRetry }) {
@@ -45,7 +66,8 @@ function PendingShell({ ready, children }) {
 export default function ExperienceRoot() {
   const [phase, setPhase] = useState({ status: 'resolving' });
   const [contentReady, setContentReady] = useState(false);
-  const [skipRequested, setSkipRequested] = useState(false);
+  const [loadingBrand, setLoadingBrand] = useState({ logoUrl: null, brandName: null });
+  const [logoSettled, setLogoSettled] = useState(true);
   const contentReadyRef = useRef(false);
   const resolveSeqRef = useRef(0);
 
@@ -55,11 +77,16 @@ export default function ExperienceRoot() {
     setContentReady(true);
   }, []);
 
+  const markLogoSettled = useCallback(() => {
+    setLogoSettled(true);
+  }, []);
+
   const resolve = () => {
     const seq = ++resolveSeqRef.current;
     contentReadyRef.current = false;
     setContentReady(false);
-    setSkipRequested(false);
+    setLoadingBrand({ logoUrl: null, brandName: null });
+    setLogoSettled(true);
 
     const params = new URLSearchParams(window.location.search);
     if (params.has('scenario')) {
@@ -80,6 +107,17 @@ export default function ExperienceRoot() {
     fetchFcExperience(sn)
       .then(async (result) => {
         if (seq !== resolveSeqRef.current) return;
+
+        // Experience API already loaded magnet_brand_param — apply logo before destination boot.
+        const brand = brandFromExperience(result);
+        if (brand.logoUrl) {
+          setLogoSettled(false);
+          setLoadingBrand(brand);
+          preloadLogo(brand.logoUrl);
+        } else {
+          setLoadingBrand(brand);
+          setLogoSettled(true);
+        }
 
         if (result.experience === 'asin_plus') {
           const resolvedSn = result.sn || sn;
@@ -133,9 +171,11 @@ export default function ExperienceRoot() {
   }, []);
 
   const hasDestination = phase.status === 'dtc' || phase.status === 'asin_plus';
-  const skipToDestination = skipRequested && hasDestination;
   const waitingForDestination = hasDestination && !contentReady;
-  const showLoading = !skipToDestination && (phase.status === 'resolving' || waitingForDestination);
+  const waitingForLogo = Boolean(loadingBrand.logoUrl) && !logoSettled;
+  const showLoading = phase.status === 'resolving'
+    || waitingForDestination
+    || waitingForLogo;
 
   if (phase.status === 'error') {
     return (
@@ -159,14 +199,21 @@ export default function ExperienceRoot() {
 
   return (
     <>
-      {showLoading ? <ExperienceLoading onSkip={() => setSkipRequested(true)} /> : null}
+      {showLoading ? (
+        <ExperienceLoading
+          logoUrl={loadingBrand.logoUrl}
+          brandName={loadingBrand.brandName}
+          onLogoReady={markLogoSettled}
+          onLogoError={markLogoSettled}
+        />
+      ) : null}
 
       {phase.status === 'asin_plus_preview' ? (
         <ReorderApp mode="preview" />
       ) : null}
 
       {phase.status === 'asin_plus' ? (
-        <PendingShell ready={contentReady || skipToDestination}>
+        <PendingShell ready={contentReady}>
           <ReorderApp
             mode="live"
             sn={phase.sn}
@@ -179,7 +226,7 @@ export default function ExperienceRoot() {
       ) : null}
 
       {phase.status === 'dtc' && phase.App ? (
-        <PendingShell ready={contentReady || skipToDestination}>
+        <PendingShell ready={contentReady}>
           <DtcApp
             App={phase.App}
             onEntryReady={markContentReady}
