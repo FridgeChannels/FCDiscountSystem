@@ -607,8 +607,10 @@ body {
 }
 
 .brand-logo-img {
-  display: block;
-  object-fit: cover;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  object-position: center;
 }
 
 .brand-logo-fallback {

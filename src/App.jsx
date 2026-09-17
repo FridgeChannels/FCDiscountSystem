@@ -546,6 +546,8 @@ function getArcPoint(progress) {
 export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
   const viewportRef = useRef(null);
   const entryReadyNotifiedRef = useRef(false);
+  const skipEntryGiftIntroRef = useRef(skipEntryGiftIntro);
+  skipEntryGiftIntroRef.current = skipEntryGiftIntro;
   const targetCouponRef = useRef(null);
   const canvasRef = useRef(null);
   const tearTimerRef = useRef(null);
@@ -638,8 +640,8 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
   const [forceWalletView, setForceWalletView] = useState(false);
   const [pendingPoints, setPendingPoints] = useState(0);
   const [redeemingCoupon, setRedeemingCoupon] = useState(false);
-  const [introActive, setIntroActive] = useState(true);
-  const [returnIntroGate, setReturnIntroGate] = useState(true);
+  const [introActive, setIntroActive] = useState(!skipEntryGiftIntro);
+  const [returnIntroGate, setReturnIntroGate] = useState(!skipEntryGiftIntro);
   const [renewGiftIntro, setRenewGiftIntro] = useState(false);
   const [renewFlowActive, setRenewFlowActive] = useState(false);
   const [renewPlanReady, setRenewPlanReady] = useState(false);
@@ -961,6 +963,10 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
 
   // 同步礼盒视频状态:首登和回访礼盒都直接播放同一段开场动画。
   useEffect(() => {
+    if (skipEntryGiftIntro) {
+      setIsWelcomeVideoActive(false);
+      return;
+    }
     if (giftWaitingPlan) return;
     if ((welcomeStep === 0 || welcomeStep >= 3) && introActive) {
       welcomeVideoFadingRef.current = false;
@@ -970,7 +976,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
       // 如果是非渐淡退出的切换，立即关闭视频
       setIsWelcomeVideoActive((prev) => (welcomeVideoFading ? prev : false));
     }
-  }, [welcomeStep, introActive, welcomeVideoFading, giftWaitingPlan]);
+  }, [welcomeStep, introActive, welcomeVideoFading, giftWaitingPlan, skipEntryGiftIntro]);
 
   // Freeze gift-video layer height while playing to avoid Android dvh-driven stretching.
   useEffect(() => {
@@ -1299,6 +1305,25 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
           ?? vm.discounts?.[0]
           ?? null,
       );
+      // Gift-drop intro is globally cancelled: land on home after server-reset sync.
+      if (skipEntryGiftIntroRef.current) {
+        writeWelcomeCompleted(touchId, true, planCycleId);
+        setWelcomeStep(3);
+        setIntroActive(false);
+        setReturnIntroGate(false);
+        setRenewGiftIntro(false);
+        renewFlowActiveRef.current = false;
+        setRenewFlowActive(false);
+        renewPlanRef.current = null;
+        setRenewPlanReady(false);
+        renewPlanAppliedRef.current = false;
+        giftEndedPendingRenewRef.current = false;
+        newChallengeRenewRef.current = null;
+        returnIntroPendingRef.current = false;
+        returnIntroShownRef.current = true;
+        applyBrandTheme(vm.brand);
+        return vm;
+      }
       setWelcomeStep(0);
       setIntroActive(true);
       setReturnIntroGate(true);
@@ -1467,7 +1492,16 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
       Boolean(vm.claimedCouponCode);
 
     if (!fromNewChallengeRenew && !renewInProgress) {
-      if (packRewardFlow && !initialRewardIssued) {
+      if (skipEntryGiftIntroRef.current) {
+        // Global gift-drop cancel: never reopen intro from plan sync.
+        if (!welcomeDone) writeWelcomeCompleted(touchId, true, planCycleId);
+        setWelcomeStep(3);
+        setIntroActive(false);
+        setReturnIntroGate(false);
+        setRenewGiftIntro(false);
+        returnIntroPendingRef.current = false;
+        returnIntroShownRef.current = true;
+      } else if (packRewardFlow && !initialRewardIssued) {
         if (welcomeDone) {
           setWelcomeStep(1);
           setIntroActive(false);
@@ -2525,11 +2559,18 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     setWalletRevealCoupons([]);
     resetRound();                       // 刷新折扣档位 / 倒计时 / 清各类卡片
     setPoints(0);                       // 首登从 0 金币开始累积
-    setWelcomeStep(0);                  // 回到欢迎流起点
-    setIntroActive(true);               // 重新播放开场礼盒
     giftEndPendingRef.current = false;
     setGiftWaitingPlan(false);
     setNewChallenge(null);
+    if (skipEntryGiftIntroRef.current) {
+      setWelcomeStep(3);
+      setIntroActive(false);
+      setReturnIntroGate(false);
+      setRenewGiftIntro(false);
+      return;
+    }
+    setWelcomeStep(0);                  // 回到欢迎流起点
+    setIntroActive(true);               // 重新播放开场礼盒
   }
 
   // 「新挑战开启页」CTA 或演示隐藏开关：先播礼盒,并行 renew → 欢迎流(如需) → 首页 → +5
@@ -2547,7 +2588,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
         writeCachedRewardPlan(touchId, plan);
         renewPlanRef.current = plan;
         setRenewPlanReady(true);
-        if (giftEndedPendingRenewRef.current) {
+        if (giftEndedPendingRenewRef.current || skipEntryGiftIntroRef.current) {
           void applyRenewPlanAfterGiftRef.current?.();
         }
         return plan;
@@ -2613,11 +2654,23 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     returnIntroShownRef.current = true;
     returnIntroPendingRef.current = false;
 
-    setWelcomeStep(0);
-    setPoints(0);
     setWelcomeCoupon(null);
     giftEndPendingRef.current = false;
     setGiftWaitingPlan(false);
+
+    // Gift-drop intro cancelled globally: apply renew plan as soon as it returns.
+    if (skipEntryGiftIntroRef.current) {
+      setPoints(0);
+      setWelcomeStep(3);
+      setRenewGiftIntro(false);
+      setReturnIntroGate(false);
+      setIntroActive(false);
+      giftEndedPendingRenewRef.current = true;
+      return;
+    }
+
+    setWelcomeStep(0);
+    setPoints(0);
     setRenewGiftIntro(true);
     setReturnIntroGate(true);
     setIntroActive(true);
@@ -2862,9 +2915,16 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
         ?? vm.discounts[0]
         ?? null;
       setWelcomeCoupon(displayCoupon);
-      setWelcomeStep(1);
       setIntroActive(false);
       setRenewGiftIntro(false);
+      // Gift-drop / welcome ritual cancelled: go straight home after renew.
+      if (skipEntryGiftIntroRef.current) {
+        writeWelcomeCompleted(touchId);
+        setWelcomeStep(3);
+        finishRenewFlowToHome(vm);
+        return;
+      }
+      setWelcomeStep(1);
       return;
     }
 
@@ -4411,10 +4471,15 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     }
   }, [activePlan?.cycleId, playPendingTapReward, rewardPlanId, singleCouponOnlyMode, touchId, tweenPointsTo, welcomeTargetPoints, devScene]);
 
-  const isReturnIntro = introActive && welcomeStep >= 3 && !renewGiftIntro && !renewFlowActive;
+  const isReturnIntro = !skipEntryGiftIntro
+    && introActive
+    && welcomeStep >= 3
+    && !renewGiftIntro
+    && !renewFlowActive;
   const showBrandIntro =
-    (introActive || renewGiftIntro) &&
-    (renewGiftIntro || (!renewFlowActive && hasInitialDiscount) || isReturnIntro);
+    !skipEntryGiftIntro
+    && (introActive || renewGiftIntro)
+    && (renewGiftIntro || (!renewFlowActive && hasInitialDiscount) || isReturnIntro);
   const brandIntroIsWelcome = renewGiftIntro || welcomeStep < 3;
   const showHome = !devScene || devScene === 'home' || devScene === 'completed';
   const displayedChallenges = isSurveySequenceTestMode()
