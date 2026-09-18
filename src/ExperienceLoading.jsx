@@ -93,8 +93,8 @@ export default function ExperienceLoading({
               className="fc-experience-loading__logo"
               src={resolvedLogo}
               alt={logoAlt}
-              width={1254}
-              height={1254}
+              width={198}
+              height={127}
               decoding="async"
               fetchPriority="high"
               onLoad={markReady}

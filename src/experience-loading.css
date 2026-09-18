@@ -23,7 +23,8 @@
   top: 28%;
   left: 50%;
   width: clamp(188px, 52vw, 240px);
-  aspect-ratio: 1;
+  /* Match typical wordmark aspect; avoid 1:1 box that Safari paints under filters. */
+  aspect-ratio: 198 / 127;
   pointer-events: none;
   transform: translate(-50%, -50%);
 }
@@ -39,9 +40,12 @@
   z-index: 1;
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
   object-fit: contain;
-  filter: drop-shadow(0 12px 18px rgba(20, 39, 23, 0.2));
+  /* No CSS drop-shadow: Safari paints a rectangular backdrop on SVG <img>.
+     Rello (and most brand) SVGs already embed their own shadow filter. */
+  filter: none;
+  -webkit-filter: none;
 }
 
 .fc-experience-loading__status {
