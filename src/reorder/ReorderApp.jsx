@@ -54,6 +54,32 @@ function ProductArt({ product, size = 'hero' }) {
   return <div className={`product-art product-art--${size} product-art--${product.id}`}><img src={product.image} alt={`${product.name}, ${product.variant}`} onError={() => setFailed(true)} /></div>;
 }
 
+/**
+ * Amazon refuses iframe embedding (X-Frame-Options: sameorigin).
+ * When this app is framed (e.g. sample.fridgechannels.com live demo), open Amazon
+ * in a new tab. Standalone NFC taps keep same-tab navigation.
+ */
+function openAmazonUrl(url) {
+  if (!url) return;
+  let inIframe = false;
+  try {
+    inIframe = window.self !== window.top;
+  } catch {
+    inIframe = true;
+  }
+  if (!inIframe) {
+    window.location.assign(url);
+    return;
+  }
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.target = '_blank';
+  anchor.rel = 'noopener noreferrer';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
 function AmazonCta({ product, brand, children, onBeforeOpen, onOpenDemo }) {
   const [opening, setOpening] = useState(false);
   const valid = isSafeAmazonUrl(product?.amazonUrl);
@@ -64,9 +90,11 @@ function AmazonCta({ product, brand, children, onBeforeOpen, onOpenDemo }) {
     emitTelemetry('amazon_navigation_started', { productId: product.id, destination: product.amazonUrl });
     if (onOpenDemo) {
       onOpenDemo();
+      setOpening(false);
       return;
     }
-    window.location.assign(product.amazonUrl);
+    openAmazonUrl(product.amazonUrl);
+    setOpening(false);
   };
   if (!valid) return <button className="amazon-button amazon-button--disabled" type="button" disabled>This purchase link is temporarily unavailable</button>;
   return <button className="amazon-button" type="button" onClick={open} disabled={opening}>{opening ? 'Opening Amazon…' : children}</button>;
@@ -137,7 +165,7 @@ function PurchaseBlock({ config, modules, product, live = false }) {
 function LandingScreen({ config, modules, navigate, live = false }) {
   const product = config.products.find((item) => item.id === config.currentProductId);
   const blockConfig = { ...config, navigate };
-  return <main className="screen landing-screen"><BrandHeader brand={config.brand} /><ProductArt product={product} /><div className="product-info"><p className="product-name">{product.name}</p><p className="product-variant">{product.variant}</p></div><section className="reorder-copy"><h1>Need more?</h1></section><PurchaseBlock config={blockConfig} modules={modules} product={product} live={live} /><a className="explore-brand-link" href={config.brand.amazonStoreUrl}>Explore more from {config.brand.name}</a>{modules.showVoluntarySurvey && <VoluntarySurveyCard survey={config.survey} navigate={navigate} />}</main>;
+  return <main className="screen landing-screen"><BrandHeader brand={config.brand} /><ProductArt product={product} /><div className="product-info"><p className="product-name">{product.name}</p><p className="product-variant">{product.variant}</p></div><section className="reorder-copy"><h1>Need more?</h1></section><PurchaseBlock config={blockConfig} modules={modules} product={product} live={live} /><a className="explore-brand-link" href={config.brand.amazonStoreUrl} target="_blank" rel="noopener noreferrer">Explore more from {config.brand.name}</a>{modules.showVoluntarySurvey && <VoluntarySurveyCard survey={config.survey} navigate={navigate} />}</main>;
 }
 
 function CouponListItem({ config, coupon, product, live = false }) {
@@ -215,7 +243,7 @@ function SurveyThankYouScreen({ config, navigate }) {
 }
 
 function LoadingScreen() { return <main className="screen state-screen loading-screen" aria-busy="true"><BrandHeader brand={{ name: 'PURA JUICE', logoText: 'PURA JUICE', logoImage: '/reorder/pura-juice-logo.svg' }} /><div className="skeleton skeleton-product" /><div className="skeleton skeleton-name" /><div className="skeleton skeleton-button" /><p>Loading product…</p></main>; }
-function InvalidScreen({ config }) { const brand = config?.brand || { logoText: 'FC', name: 'Brand' }; return <main className="screen state-screen invalid-screen"><BrandHeader brand={brand} /><h1>We can’t find this product.</h1><p>This FC link may be unavailable.</p><a className="state-secondary" href={brand.amazonStoreUrl}>Visit {brand.name} on Amazon</a></main>; }
+function InvalidScreen({ config }) { const brand = config?.brand || { logoText: 'FC', name: 'Brand' }; return <main className="screen state-screen invalid-screen"><BrandHeader brand={brand} /><h1>We can’t find this product.</h1><p>This FC link may be unavailable.</p><a className="state-secondary" href={brand.amazonStoreUrl} target="_blank" rel="noopener noreferrer">Visit {brand.name} on Amazon</a></main>; }
 
 export default function ReorderApp({
   mode = 'preview',
