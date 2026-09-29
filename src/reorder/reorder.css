@@ -79,14 +79,33 @@ button:focus-visible, a:focus-visible { outline: 3px solid #006b57; outline-offs
 
 .product-art { display: grid; place-items: center; overflow: hidden; background: #fff; }
 .product-art img { display: block; width: 100%; height: 100%; object-fit: contain; }
-.product-art--hero { width: 100%; height: clamp(252px, 34svh, 288px); margin-top: 0; padding: .5rem 0 .875rem; overflow: visible; }
-.product-art--hero img { width: 82%; height: 82%; object-fit: contain; object-position: center; }
+.product-art--hero {
+  width: 100%;
+  /* Leave space for the product details and purchase content on short screens. */
+  height: clamp(152px, calc(100svh - 356px), 288px);
+  margin-top: 0;
+  padding: .5rem 0 .875rem;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.product-art--hero img {
+  width: auto;
+  height: auto;
+  max-width: 82%;
+  max-height: 82%;
+  min-width: 0;
+  min-height: 0;
+  object-fit: contain;
+  object-position: center;
+}
 .product-art--result { width: 100%; height: clamp(260px, 36svh, 304px); }
 .product-art--thumb { width: 70px; height: 94px; flex: 0 0 auto; }
 .product-art--discontinued { width: 118px; height: 126px; margin: 8px auto 12px; opacity: .55; }
 .product-art--replacement { width: 100%; height: 390px; }
 .product-art--smoky-chili-crisps img,
-.product-art--classic-sea-salt-crisps img { width: 114%; filter: contrast(1.08) brightness(1.03); }
+.product-art--classic-sea-salt-crisps img { width: 114%; max-width: 114%; filter: contrast(1.08) brightness(1.03); }
 .product-art--result.product-art--smoky-chili-crisps img {
   width: 100%;
   clip-path: polygon(13% 6%, 87% 6%, 88% 81%, 83% 86%, 17% 86%, 12% 81%);
@@ -531,7 +550,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid #006b57; outline-offs
 @media (max-width: 360px) {
   :root { --page-gutter: 1.125rem; }
   .wordmark { font-size: 1.125rem; }
-  .product-art--hero { height: clamp(236px, 33svh, 268px); }
+  .product-art--hero { height: clamp(140px, calc(100svh - 334px), 268px); }
   .answer-option { min-height: 60px; font-size: 1.125rem; }
   .code-panel__main { align-items: stretch; flex-direction: column; }
   .code-panel button { justify-content: center; }
