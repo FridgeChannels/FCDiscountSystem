@@ -13,8 +13,20 @@ export function resolveSnFromUrl(location = window.location) {
 /**
  * Dedicated experience router. Must not call /api/reorder/consumer.
  */
-export async function fetchFcExperience(sn, { fetchImpl = fetch } = {}) {
-  const response = await fetchImpl(`/api/fc/experience/${encodeURIComponent(sn)}`);
+function preferredExperienceFromSearch(search) {
+  const wanted = new URLSearchParams(search || '').get('experience');
+  return wanted === 'dtc' || wanted === 'asin_plus' ? wanted : null;
+}
+
+export async function fetchFcExperience(sn, { fetchImpl = fetch, experience } = {}) {
+  const params = new URLSearchParams();
+  const wanted = experience
+    || preferredExperienceFromSearch(typeof window !== 'undefined' ? window.location.search : '');
+  if (wanted) params.set('experience', wanted);
+  const query = params.toString();
+  const response = await fetchImpl(
+    `/api/fc/experience/${encodeURIComponent(sn)}${query ? `?${query}` : ''}`,
+  );
   if (!response.ok) {
     const error = new Error(`experience_http_${response.status}`);
     error.status = response.status;
