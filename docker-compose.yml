@@ -24,6 +24,8 @@ services:
       SURVEY_API_KEY: ${SURVEY_API_KEY-}
       SURVEY_POINTS_PER_QUESTION: ${SURVEY_POINTS_PER_QUESTION:-10}
       FC_DEMO_FORCE_RENEW_ENABLED: ${FC_DEMO_FORCE_RENEW_ENABLED:-false}
+      # 演示加速：true 时引擎不调用券系统，改用内置 10/15/20% 券。演示后改回 false。
+      FC_DEMO_SKIP_COUPON_API: ${FC_DEMO_SKIP_COUPON_API:-true}
     networks:
       - default
       - redis_net
