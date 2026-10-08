@@ -18,15 +18,23 @@ function preferredExperienceFromSearch(search) {
   return wanted === 'dtc' || wanted === 'asin_plus' ? wanted : null;
 }
 
+/** One-shot: a Response body can only be read once, so retries fall back to a fresh fetch. */
+function takePrefetchedExperience(url, fetchImpl) {
+  if (typeof window === 'undefined' || fetchImpl !== fetch) return null;
+  const prefetch = window.__FC_EXPERIENCE_PREFETCH__;
+  if (!prefetch || prefetch.url !== url) return null;
+  window.__FC_EXPERIENCE_PREFETCH__ = null;
+  return prefetch.response.catch(() => fetchImpl(url));
+}
+
 export async function fetchFcExperience(sn, { fetchImpl = fetch, experience } = {}) {
   const params = new URLSearchParams();
   const wanted = experience
     || preferredExperienceFromSearch(typeof window !== 'undefined' ? window.location.search : '');
   if (wanted) params.set('experience', wanted);
   const query = params.toString();
-  const response = await fetchImpl(
-    `/api/fc/experience/${encodeURIComponent(sn)}${query ? `?${query}` : ''}`,
-  );
+  const url = `/api/fc/experience/${encodeURIComponent(sn)}${query ? `?${query}` : ''}`;
+  const response = await (takePrefetchedExperience(url, fetchImpl) ?? fetchImpl(url));
   if (!response.ok) {
     const error = new Error(`experience_http_${response.status}`);
     error.status = response.status;

@@ -1903,7 +1903,9 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
   }, [rewardPlanId]);
 
   useEffect(() => {
-    if (!rewardPlanId || !touchId) return undefined;
+    // A cached plan is replaced (and the session cache cleared) once the fresh plan lands,
+    // so sessions started from it would be thrown away.
+    if (!rewardPlanId || !touchId || !rewardPlanFetched) return undefined;
     const gameChallenges = challenges
       .filter((challenge) => challenge.type !== 'survey' && challenge.gameInstanceId);
     if (!gameChallenges.length) return undefined;
@@ -1933,7 +1935,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
         window.clearTimeout(idleId);
       }
     };
-  }, [challenges, preloadGameStart, rewardPlanId, touchId]);
+  }, [challenges, preloadGameStart, rewardPlanFetched, rewardPlanId, touchId]);
 
   useEffect(() => {
     if (!isDevPreviewEnabled()) return;
@@ -2035,8 +2037,11 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     (async () => {
       try {
         const brandParamPromise = syncMagnetBrandParam();
-        // Plan generation reads the refreshed Shopify binding, so reward-plan still waits for it below.
         const shopifyStatusPromise = syncShopifyBindingStatus(true);
+        // Plan generation does not read the Shopify binding cache; only the OAuth-return path
+        // must wait for the refreshed status before deciding how to load the plan.
+        const earlyPlanPromise = shopifyOAuthReturn ? null : fetchRewardPlan(touchId, { refresh: false });
+        earlyPlanPromise?.catch(() => {});
         void syncPlayerProfile();
         void syncLeaderboard();
 
@@ -2067,7 +2072,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
 
         if (!cached || shopifyOAuthReturn) setPlanLoading(true);
         setPlanError(null);
-        const plan = await fetchRewardPlan(touchId, { refresh: shopifyOAuthReturn });
+        const plan = await (earlyPlanPromise ?? fetchRewardPlan(touchId, { refresh: shopifyOAuthReturn }));
         if (!cancelled) {
           clearGameSessionCache();
           const previousCycleId = cached?.cycleId ?? cached?.rewardPlanId ?? null;

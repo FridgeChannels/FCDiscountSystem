@@ -120,6 +120,9 @@ export default function ExperienceRoot() {
 
     setPhase({ status: 'resolving', sn });
 
+    // DTC is the common destination; warm its JS while experience resolves (stylesheets wait for the result).
+    import('./App.jsx').catch(() => {});
+
     fetchFcExperience(sn)
       .then(async (result) => {
         if (seq !== resolveSeqRef.current) return;

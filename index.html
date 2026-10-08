@@ -9,6 +9,22 @@
     <title>FC Reorder</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Non-blocking: as a CSS @import it held the DTC stylesheet (and app mount) until Google responded. -->
+    <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Dancing+Script:wght@400..700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Pinyon+Script&display=swap" />
+    <script>
+      // Start the entry-gating experience request before the app bundle downloads.
+      (function () {
+        try {
+          var match = location.pathname.match(/\/(?:r|p|t)\/([^/?#]+)/i);
+          if (!match || !window.fetch) return;
+          var sn = decodeURIComponent(match[1]).trim().toUpperCase();
+          var wanted = new URLSearchParams(location.search).get('experience');
+          var query = wanted === 'dtc' || wanted === 'asin_plus' ? '?experience=' + wanted : '';
+          var url = '/api/fc/experience/' + encodeURIComponent(sn) + query;
+          window.__FC_EXPERIENCE_PREFETCH__ = { url: url, response: fetch(url) };
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

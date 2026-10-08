@@ -475,6 +475,75 @@ async function proxyDashboard(req, res, pathnameWithSearch) {
   res.end(body);
 }
 
+// Experience (dtc / asin_plus + brand) rarely changes per SN, and it gates the whole entry screen.
+const EXPERIENCE_FRESH_MS = Number(process.env.EXPERIENCE_CACHE_FRESH_MS ?? 30_000);
+const EXPERIENCE_STALE_MS = Number(process.env.EXPERIENCE_CACHE_STALE_MS ?? 6 * 60 * 60_000);
+const EXPERIENCE_CACHE_MAX = 2000;
+const experienceCache = new Map(); // pathnameWithSearch -> { contentType, body, fetchedAt }
+const experienceInflight = new Map();
+
+function refreshExperience(pathnameWithSearch) {
+  const existing = experienceInflight.get(pathnameWithSearch);
+  if (existing) return existing;
+  const promise = fetch(`${DASHBOARD_API_BASE_URL}${pathnameWithSearch}`, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(DASHBOARD_API_TIMEOUT_MS),
+  })
+    .then(async (upstream) => {
+      const entry = {
+        status: upstream.status,
+        contentType: upstream.headers.get('content-type') || 'application/json',
+        body: Buffer.from(await upstream.arrayBuffer()),
+        fetchedAt: Date.now(),
+      };
+      if (entry.status === 200) {
+        if (experienceCache.size >= EXPERIENCE_CACHE_MAX) {
+          experienceCache.delete(experienceCache.keys().next().value);
+        }
+        experienceCache.set(pathnameWithSearch, entry);
+      }
+      return entry;
+    })
+    .finally(() => {
+      experienceInflight.delete(pathnameWithSearch);
+    });
+  experienceInflight.set(pathnameWithSearch, promise);
+  return promise;
+}
+
+async function serveExperience(req, res, pathnameWithSearch) {
+  if (!DASHBOARD_API_BASE_URL) {
+    await proxyDashboard(req, res, pathnameWithSearch);
+    return;
+  }
+  const cached = experienceCache.get(pathnameWithSearch);
+  const age = cached ? Date.now() - cached.fetchedAt : Infinity;
+  let entry = cached && age < EXPERIENCE_STALE_MS ? cached : null;
+  if (entry && age >= EXPERIENCE_FRESH_MS) {
+    refreshExperience(pathnameWithSearch).catch((err) => {
+      console.warn('[bff] experience background refresh failed', err?.message ?? err);
+    });
+  }
+  if (!entry) {
+    try {
+      entry = await refreshExperience(pathnameWithSearch);
+    } catch (err) {
+      sendJson(res, 502, {
+        error: 'dashboard_proxy_failed',
+        detail: err instanceof Error ? err.message : 'Dashboard request failed',
+      });
+      return;
+    }
+  }
+  res.writeHead(entry.status, {
+    'content-type': entry.contentType,
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET,POST,PUT,PATCH,OPTIONS',
+    'access-control-allow-headers': 'content-type,if-none-match,x-request-id',
+  });
+  res.end(entry.body);
+}
+
 function sendJson(res, status, payload, extraHeaders = {}) {
   res.writeHead(status, {
     'content-type': 'application/json',
@@ -517,7 +586,7 @@ const server = http.createServer(async (req, res) => {
 
     const experienceMatch = /^\/api\/fc\/experience\/([^/]+)$/.exec(url.pathname);
     if (req.method === 'GET' && experienceMatch) {
-      await proxyDashboard(req, res, `${url.pathname}${url.search}`);
+      await serveExperience(req, res, `${url.pathname}${url.search}`);
       return;
     }
 
