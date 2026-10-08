@@ -475,12 +475,24 @@ async function proxyDashboard(req, res, pathnameWithSearch) {
   res.end(body);
 }
 
-// Experience (dtc / asin_plus + brand) rarely changes per SN, and it gates the whole entry screen.
-const EXPERIENCE_FRESH_MS = Number(process.env.EXPERIENCE_CACHE_FRESH_MS ?? 30_000);
-const EXPERIENCE_STALE_MS = Number(process.env.EXPERIENCE_CACHE_STALE_MS ?? 6 * 60 * 60_000);
+// Experience gates the entry screen, but ops can switch an SN between dtc and asin_plus at any
+// time, so keep this short: it mainly dedupes bursts (outer page + iframe + reloads).
+// Raising STALE above FRESH serves the previous channel once after a switch.
+const EXPERIENCE_FRESH_MS = Number(process.env.EXPERIENCE_CACHE_FRESH_MS ?? 10_000);
+const EXPERIENCE_STALE_MS = Number(process.env.EXPERIENCE_CACHE_STALE_MS ?? EXPERIENCE_FRESH_MS);
+const CACHEABLE_EXPERIENCES = new Set(['dtc', 'asin_plus']);
 const EXPERIENCE_CACHE_MAX = 2000;
 const experienceCache = new Map(); // pathnameWithSearch -> { contentType, body, fetchedAt }
 const experienceInflight = new Map();
+
+// `unknown` (e.g. magnet not provisioned yet) must not stick once the magnet is created.
+function isCacheableExperience(body) {
+  try {
+    return CACHEABLE_EXPERIENCES.has(JSON.parse(body.toString('utf8'))?.experience);
+  } catch {
+    return false;
+  }
+}
 
 function refreshExperience(pathnameWithSearch) {
   const existing = experienceInflight.get(pathnameWithSearch);
@@ -496,7 +508,7 @@ function refreshExperience(pathnameWithSearch) {
         body: Buffer.from(await upstream.arrayBuffer()),
         fetchedAt: Date.now(),
       };
-      if (entry.status === 200) {
+      if (entry.status === 200 && isCacheableExperience(entry.body)) {
         if (experienceCache.size >= EXPERIENCE_CACHE_MAX) {
           experienceCache.delete(experienceCache.keys().next().value);
         }
