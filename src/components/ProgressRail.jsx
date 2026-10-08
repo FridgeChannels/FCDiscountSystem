@@ -58,7 +58,7 @@ export default function ProgressRail({
           className={`progress-rail-gift${isUnlockPulse ? ' is-unlock-pulse' : ''}`}
           aria-label={`${couponCount} coupon${couponCount === 1 ? '' : 's'} in gift pack`}
         >
-          <img src="/rewards/target-gift.png" alt="" aria-hidden="true" />
+          <img src="/rewards/target-gift.webp" alt="" aria-hidden="true" />
           {couponCount > 1 ? (
             <span className="progress-rail-gift-badge">{couponCount}</span>
           ) : null}

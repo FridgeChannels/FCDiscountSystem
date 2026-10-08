@@ -1,12 +1,28 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { fetchFcExperience, resolveSnFromUrl } from './lib/fcExperience.js';
 import { normalizeLogoUrl } from './lib/brandTheme.js';
-import { resolveFcConfiguration, resolveScenario } from './reorder/reorderService.js';
-import ReorderApp from './reorder/ReorderApp.jsx';
 import ExperienceLoading from './ExperienceLoading.jsx';
 
+const ReorderApp = lazy(() => import('./reorder/ReorderApp.jsx'));
+
 function bootDtcApp() {
-  return import('./App.jsx').then((mod) => mod.default);
+  // Stylesheet <link>s are inserted in call order; keep this order for the cascade.
+  return Promise.all([
+    import('../fc-style.css'),
+    import('../fc-coupons.css'),
+    import('../fc-tiers.css'),
+    import('../fc-leaderboard.css'),
+    import('../fc-coupon-wallet.css'),
+    import('./App.jsx'),
+  ]).then((mods) => mods[mods.length - 1].default);
+}
+
+async function resolveAsinConfiguration(fcId) {
+  const [{ resolveFcConfiguration, resolveScenario }] = await Promise.all([
+    import('./reorder/reorderService.js'),
+    import('./reorder/ReorderApp.jsx'),
+  ]);
+  return resolveFcConfiguration({ fcId, scenario: resolveScenario(), mode: 'live' });
 }
 
 function brandFromExperience(result) {
@@ -121,11 +137,7 @@ export default function ExperienceRoot() {
 
         if (result.experience === 'asin_plus') {
           const resolvedSn = result.sn || sn;
-          const config = await resolveFcConfiguration({
-            fcId: resolvedSn,
-            scenario: resolveScenario(),
-            mode: 'live',
-          });
+          const config = await resolveAsinConfiguration(resolvedSn);
           if (seq !== resolveSeqRef.current) return;
           setPhase({
             status: 'asin_plus',
@@ -137,11 +149,6 @@ export default function ExperienceRoot() {
         }
 
         if (result.experience === 'dtc') {
-          await import('../fc-style.css');
-          await import('../fc-coupons.css');
-          await import('../fc-tiers.css');
-          await import('../fc-leaderboard.css');
-          await import('../fc-coupon-wallet.css');
           const App = await bootDtcApp();
           if (seq !== resolveSeqRef.current) return;
           setPhase({ status: 'dtc', sn: result.sn || sn, App });
@@ -209,19 +216,23 @@ export default function ExperienceRoot() {
       ) : null}
 
       {phase.status === 'asin_plus_preview' ? (
-        <ReorderApp mode="preview" />
+        <Suspense fallback={<ExperienceLoading />}>
+          <ReorderApp mode="preview" />
+        </Suspense>
       ) : null}
 
       {phase.status === 'asin_plus' ? (
         <PendingShell ready={contentReady}>
-          <ReorderApp
-            mode="live"
-            sn={phase.sn}
-            experienceMeta={phase.experience}
-            initialResolved={phase.resolved}
-            onEntryReady={markContentReady}
-            suppressLocalLoading
-          />
+          <Suspense fallback={null}>
+            <ReorderApp
+              mode="live"
+              sn={phase.sn}
+              experienceMeta={phase.experience}
+              initialResolved={phase.resolved}
+              onEntryReady={markContentReady}
+              suppressLocalLoading
+            />
+          </Suspense>
         </PendingShell>
       ) : null}
 

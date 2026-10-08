@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import './experience-loading.css';
 
-const LOADING_VIDEO_SRC = 'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260328_083109_283f3553-e28f-428b-a723-d639c617eb2b.mp4';
+const LOADING_VIDEO_SRC = '/loading/loading-bg.mp4';
+const LOADING_VIDEO_POSTER = '/loading/loading-bg-poster.webp';
 
 export default function ExperienceLoading({
   detail = 'Preparing your experience…',
@@ -75,6 +76,7 @@ export default function ExperienceLoading({
         muted
         playsInline
         preload="auto"
+        poster={LOADING_VIDEO_POSTER}
         aria-hidden="true"
       >
         <source src={LOADING_VIDEO_SRC} type="video/mp4" />

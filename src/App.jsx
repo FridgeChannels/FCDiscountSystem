@@ -325,7 +325,7 @@ const SURVEY_PREVIEW_CHALLENGE = {
   type: 'survey',
   badge: 'Survey',
   icon: '📝',
-  iconUrl: '/rewards/survey-task-icon.png',
+  iconUrl: '/rewards/survey-task-icon.webp',
   title: 'Preferences',
   desc: 'Share habits for rewards',
   reward: '+10 PTS',
@@ -949,9 +949,14 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
   }, [canSkipGiftVideo, giftWaitingPlan, completeGiftVideoTransition]);
 
   // Keep the gift video mounted so the browser can warm the HTTP cache / decoder early.
+  // Without the entry intro it is only needed for renew, so warm it after first content.
+  const giftVideoWarmedRef = useRef(false);
   useEffect(() => {
+    if (giftVideoWarmedRef.current) return undefined;
+    if (skipEntryGiftIntro && !rewardPlanFetched) return undefined;
     const video = welcomeVideoRef.current;
     if (!video) return undefined;
+    giftVideoWarmedRef.current = true;
     try {
       video.preload = 'auto';
       if (video.readyState < 2) video.load();
@@ -959,7 +964,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
       // Ignore preload failures; playback path still has timeouts.
     }
     return undefined;
-  }, []);
+  }, [skipEntryGiftIntro, rewardPlanFetched]);
 
   // 同步礼盒视频状态:首登和回访礼盒都直接播放同一段开场动画。
   useEffect(() => {
@@ -2029,7 +2034,13 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
 
     (async () => {
       try {
-        await syncMagnetBrandParam();
+        const brandParamPromise = syncMagnetBrandParam();
+        // Plan generation reads the refreshed Shopify binding, so reward-plan still waits for it below.
+        const shopifyStatusPromise = syncShopifyBindingStatus(true);
+        void syncPlayerProfile();
+        void syncLeaderboard();
+
+        await brandParamPromise;
         if (cancelled) return;
 
         if (cached && !shopifyOAuthReturn) {
@@ -2037,10 +2048,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
           setPlanLoading(false);
         }
 
-        void syncPlayerProfile();
-        void syncLeaderboard();
-
-        const status = await syncShopifyBindingStatus(true);
+        const status = await shopifyStatusPromise;
         if (cancelled) return;
 
         if (status?.connected && shopifyOAuthReturn && consumeShopifyOAuthPending(touchId)) {
@@ -4535,7 +4543,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
           playsInline
           webkit-playsinline="true"
           muted
-          preload="auto"
+          preload={skipEntryGiftIntro ? 'none' : 'auto'}
           onEnded={() => handleWelcomeVideoEnd(false)}
           onError={() => handleWelcomeVideoEnd(false)}
         />
@@ -4621,7 +4629,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
             <div className="reward-journey-shell">
               <img
                 className="reward-journey-gift"
-                src="/rewards/target-gift.png"
+                src="/rewards/target-gift.webp"
                 alt=""
                 aria-hidden="true"
               />
@@ -4966,7 +4974,7 @@ function WelcomeRitual({
             </div>
             <img
               className="welcome-rewards-gift"
-              src="/rewards/welcome-rewards-hero-final-small.png"
+              src="/rewards/welcome-rewards-hero-final-small.webp"
               alt=""
               aria-hidden="true"
             />
@@ -5288,7 +5296,7 @@ function ChallengeCardIcon({ challenge, isShopifyConnect }) {
     return (
       <img
         className="challenge-card-icon"
-        src="/gift-opening/shopify-icon.png"
+        src="/gift-opening/shopify-icon.webp"
         alt=""
         aria-hidden="true"
       />
@@ -5806,7 +5814,7 @@ function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onUploadA
 
           <div className="profile-shopify-row">
             <div className="profile-shopify-icon" aria-hidden="true">
-              <img src="/gift-opening/shopify-icon.png" alt="" />
+              <img src="/gift-opening/shopify-icon.webp" alt="" />
             </div>
             <div className="profile-shopify-copy">
               <strong>{connected ? accountLabel : 'Connect Shopify'}</strong>
@@ -5830,7 +5838,7 @@ function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onUploadA
               type="button"
               onClick={onConnect}
             >
-              <img src="/gift-opening/shopify-icon.png" alt="" aria-hidden="true" />
+              <img src="/gift-opening/shopify-icon.webp" alt="" aria-hidden="true" />
               Connect Shopify
             </button>
           )}
@@ -5865,7 +5873,7 @@ function ShopifyAuthorizationPage({ brand, source, onContinue, onSkip }) {
         </p>
 
         <button className="shopify-auth-cta" type="button" onClick={onContinue}>
-          <img className="shopify-auth-cta-icon" src="/gift-opening/shopify-icon.png" alt="" aria-hidden="true" />
+          <img className="shopify-auth-cta-icon" src="/gift-opening/shopify-icon.webp" alt="" aria-hidden="true" />
           Connect your Shopify
         </button>
 
@@ -6223,7 +6231,7 @@ function GiftOpeningHero({ brand }) {
         <div className="gift-opening-glow" />
         <img
           className="gift-opening-box"
-          src="/rewards/welcome-rewards-hero-final-small.png"
+          src="/rewards/welcome-rewards-hero-final-small.webp"
           alt=""
         />
       </div>
@@ -6301,7 +6309,7 @@ function CompletedRewardsIntro({ couponCount, time, isExpired, urgent }) {
     <div className={`completed-rewards-shell ${urgent ? 'is-urgent' : ''}`}>
       <img
         className="completed-rewards-gift"
-        src="/rewards/target-gift.png"
+        src="/rewards/target-gift.webp"
         alt=""
         aria-hidden="true"
       />
