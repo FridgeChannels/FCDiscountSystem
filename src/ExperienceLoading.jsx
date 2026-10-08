@@ -7,6 +7,7 @@ const LOADING_VIDEO_POSTER = '/loading/loading-bg-poster.webp';
 
 export default function ExperienceLoading({
   detail = 'Preparing your experience…',
+  videoEnabled = true,
   logoUrl = null,
   brandName = null,
   onLogoReady,
@@ -77,10 +78,10 @@ export default function ExperienceLoading({
         playsInline
         preload="auto"
         poster={LOADING_VIDEO_POSTER}
+        // Poster only until the destination code has downloaded, so the video doesn't compete for bandwidth.
+        src={videoEnabled ? LOADING_VIDEO_SRC : undefined}
         aria-hidden="true"
-      >
-        <source src={LOADING_VIDEO_SRC} type="video/mp4" />
-      </video>
+      />
       {resolvedLogo ? (
         <div className="fc-experience-loading__logo-stage">
           <motion.div

@@ -21,6 +21,38 @@ function buildApiUrl(path) {
 // 或多个组件同时拉取 reward-plan)会复用同一个网络请求,
 // 从根上消除“接口同时请求两次”的问题。
 const inflightGets = new Map();
+// 入口预取的 GET:每个只复用一次,过期丢弃,避免拿到旧数据。
+const PREFETCH_MAX_AGE_MS = 30_000;
+const prefetchedGets = new Map();
+
+function takePrefetchedGet(key) {
+  const entry = prefetchedGets.get(key);
+  if (!entry) return null;
+  prefetchedGets.delete(key);
+  return Date.now() - entry.at <= PREFETCH_MAX_AGE_MS ? entry.promise : null;
+}
+
+function prefetchGet(path) {
+  const key = `GET ${buildApiUrl(path)}`;
+  if (prefetchedGets.has(key)) return;
+  const promise = request(path);
+  promise.catch(() => {});
+  prefetchedGets.set(key, { promise, at: Date.now() });
+}
+
+/**
+ * Start the DTC entry requests (same URLs App's bootstrap issues) while the App chunk and
+ * stylesheets are still downloading. Call only after experience resolved to dtc.
+ */
+export function prefetchDtcEntry(touchId, { includeRewardPlan = true } = {}) {
+  if (!touchId) return;
+  prefetchGet(`/api/fc/magnet-brand-param?touchId=${encodeURIComponent(touchId)}`);
+  prefetchGet(`/api/fc/shopify-status?touchId=${encodeURIComponent(touchId)}&refresh=1`);
+  if (includeRewardPlan) prefetchGet(`/api/fc/reward-plan?touchId=${encodeURIComponent(touchId)}`);
+  prefetchGet(`/api/fc/player-profile?touchId=${encodeURIComponent(touchId)}`);
+  prefetchGet(`/api/fc/leaderboard/today?touchId=${encodeURIComponent(touchId)}`);
+}
+
 /** touchId -> { document, etag } */
 const manifestCacheByTouch = new Map();
 
@@ -60,6 +92,11 @@ async function request(path, options = {}) {
   // 只对 GET 去重:POST 是带副作用的变更,不合并。
   if (method === 'GET') {
     const key = `GET ${buildApiUrl(path)}`;
+    const prefetched = takePrefetchedGet(key);
+    if (prefetched) {
+      dbg('[FCDBG][API] reuse prefetched GET', { path });
+      return prefetched;
+    }
     const existing = inflightGets.get(key);
     if (existing) {
       dbg('[FCDBG][API] reuse in-flight GET', { path });

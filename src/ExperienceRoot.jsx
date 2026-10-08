@@ -1,6 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { fetchFcExperience, resolveSnFromUrl } from './lib/fcExperience.js';
 import { normalizeLogoUrl } from './lib/brandTheme.js';
+import { parseTouchIdFromUrl } from './lib/touchId.js';
+import { prefetchDtcEntry } from './api/client.js';
+import { isShopifyOAuthPending } from './api/cache.js';
 import ExperienceLoading from './ExperienceLoading.jsx';
 
 const ReorderApp = lazy(() => import('./reorder/ReorderApp.jsx'));
@@ -84,6 +87,7 @@ export default function ExperienceRoot() {
   const [contentReady, setContentReady] = useState(false);
   const [loadingBrand, setLoadingBrand] = useState({ logoUrl: null, brandName: null });
   const [logoSettled, setLogoSettled] = useState(true);
+  const [loadingVideoEnabled, setLoadingVideoEnabled] = useState(false);
   const contentReadyRef = useRef(false);
   const resolveSeqRef = useRef(0);
 
@@ -139,6 +143,7 @@ export default function ExperienceRoot() {
         }
 
         if (result.experience === 'asin_plus') {
+          setLoadingVideoEnabled(true);
           const resolvedSn = result.sn || sn;
           const config = await resolveAsinConfiguration(resolvedSn);
           if (seq !== resolveSeqRef.current) return;
@@ -152,8 +157,12 @@ export default function ExperienceRoot() {
         }
 
         if (result.experience === 'dtc') {
+          const { touchId } = parseTouchIdFromUrl();
+          // OAuth return must load the plan only after the refreshed Shopify status (see App bootstrap).
+          prefetchDtcEntry(touchId, { includeRewardPlan: !isShopifyOAuthPending(touchId) });
           const App = await bootDtcApp();
           if (seq !== resolveSeqRef.current) return;
+          setLoadingVideoEnabled(true);
           setPhase({ status: 'dtc', sn: result.sn || sn, App });
           return;
         }
@@ -211,6 +220,7 @@ export default function ExperienceRoot() {
     <>
       {showLoading ? (
         <ExperienceLoading
+          videoEnabled={loadingVideoEnabled}
           logoUrl={loadingBrand.logoUrl}
           brandName={loadingBrand.brandName}
           onLogoReady={markLogoSettled}
