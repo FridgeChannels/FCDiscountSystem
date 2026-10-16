@@ -114,6 +114,7 @@ const GIFT_OPENING_VIDEO_POSTER = '/gift-opening/opening-intro-2-poster.jpg';
 const GIFT_VIDEO_FIRST_FRAME_TIMEOUT_MS = 2000;
 /** Hard ceiling slightly above clip length (~6.5s). */
 const GIFT_VIDEO_HARD_FALLBACK_MS = 8500;
+const SURVEY_PREFETCH_MAX_AGE_MS = 5 * 60 * 1000;
 const DEV_SCENE_TAP = {
   intro: { pending: 5, points: 0 },
   welcome: { pending: 5, points: 0 },
@@ -554,6 +555,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
   const activeGameRequestRef = useRef(0);
   const preloadedGameStartsRef = useRef(new Map());
   const preloadingGameStartsRef = useRef(new Map());
+  const surveyPrefetchRef = useRef(null);
   const confettiRef = useRef({ ctx: null, particles: [], frame: null });
   const couponFaceRef = useRef(null);
   const pointsTweenRef = useRef(null);
@@ -1901,6 +1903,17 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     preloadingGameStartsRef.current.set(key, promise);
     return promise;
   }, [rewardPlanId]);
+
+  const surveyCampaignId = challenges.find((challenge) => challenge.type === 'survey')?.campaignId ?? null;
+
+  useEffect(() => {
+    if (!touchId || !rewardPlanFetched || !surveyCampaignId || isSurveySequenceTestMode()) return;
+    const key = `${touchId}:${surveyCampaignId}`;
+    if (surveyPrefetchRef.current?.key === key) return;
+    const promise = fetchSurveyQuestions(touchId);
+    promise.catch(() => {});
+    surveyPrefetchRef.current = { key, promise, at: Date.now() };
+  }, [rewardPlanFetched, surveyCampaignId, touchId]);
 
   useEffect(() => {
     // A cached plan is replaced (and the session cache cleared) once the fresh plan lands,
@@ -4184,6 +4197,15 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     return new URLSearchParams(window.location.search).get('scene') === 'survey';
   }
 
+  /** One-shot: questions advance as answers are saved, so a prefetch is only valid for the next open. */
+  function takePrefetchedSurveyQuestions(campaignId) {
+    const entry = surveyPrefetchRef.current;
+    if (!entry?.promise) return null;
+    surveyPrefetchRef.current = { ...entry, promise: null };
+    const fresh = Date.now() - entry.at <= SURVEY_PREFETCH_MAX_AGE_MS;
+    return fresh && entry.key === `${touchId}:${campaignId}` ? entry.promise : null;
+  }
+
   function loadSurveyQuestionsForCurrentTouchId(task, { closeOnEmpty = true, testMode = isSurveySequenceTestMode() } = {}) {
     const fallbackTask = task ?? {
       id: 'survey-fc-standard-v2',
@@ -4202,8 +4224,11 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     setSurveyRewardEarned(0);
     setSurveySubmitting(false);
     setSurveyLoading(true);
+    setActiveModal('survey');
 
-    return fetchSurveyQuestions(touchId, { testMode })
+    const prefetched = testMode ? null : takePrefetchedSurveyQuestions(fallbackTask.campaignId);
+    const loadQuestions = () => fetchSurveyQuestions(touchId, { testMode });
+    return (prefetched ? prefetched.catch(loadQuestions) : loadQuestions())
       .then((payload) => {
         const questions = payload?.questions ?? [];
         setSurveyQuestions(questions);
