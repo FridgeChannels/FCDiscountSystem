@@ -5,6 +5,7 @@ import { parseTouchIdFromUrl } from './lib/touchId.js';
 import { prefetchDtcEntry } from './api/client.js';
 import { isShopifyOAuthPending } from './api/cache.js';
 import ExperienceLoading from './ExperienceLoading.jsx';
+import { notifyEmbedReady, trackEmbed } from './lib/investorEmbed.js';
 
 const ReorderApp = lazy(() => import('./reorder/ReorderApp.jsx'));
 
@@ -191,6 +192,13 @@ export default function ExperienceRoot() {
 
   const hasDestination = phase.status === 'dtc' || phase.status === 'asin_plus';
   const waitingForDestination = hasDestination && !contentReady;
+
+  useEffect(() => {
+    if (hasDestination && contentReady) notifyEmbedReady(phase.status);
+    else if (phase.status === 'error' || phase.status === 'unknown') {
+      trackEmbed('experience_error', { status: phase.status, reason: phase.reason || phase.detail || null });
+    }
+  }, [hasDestination, contentReady, phase.status, phase.reason, phase.detail]);
   const waitingForLogo = Boolean(loadingBrand.logoUrl) && !logoSettled;
   const showLoading = phase.status === 'resolving'
     || waitingForDestination

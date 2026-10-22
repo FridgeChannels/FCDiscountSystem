@@ -1,5 +1,6 @@
 import { buildScenario, SCENARIO_NAMES } from './fixtures.js';
 import { surveyProgressKey, surveyResponseKey } from './domain.js';
+import { trackEmbed } from '../lib/investorEmbed.js';
 
 const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
@@ -166,6 +167,11 @@ export async function markClaimCodeCopied(fcId, discountId, { fetchImpl = fetch 
 }
 
 export function emitTelemetry(eventType, payload = {}) {
+  // Primitive fields only: survey answers and order objects stay out of analytics.
+  const primitives = Object.fromEntries(
+    Object.entries(payload && typeof payload === 'object' ? payload : {}).filter(([, value]) => value == null || typeof value !== 'object'),
+  );
+  trackEmbed(`asin_${eventType}`, primitives);
   const key = 'fc-reorder:telemetry';
   const events = readJson(sessionStorage, key, []);
   events.push({ eventType, payload, occurredAt: new Date().toISOString() });

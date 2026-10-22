@@ -1,5 +1,6 @@
 import { parseTouchIdFromUrl } from '../lib/touchId.js';
 import { dbg } from '../lib/debug.js';
+import { trackEmbedApi } from '../lib/investorEmbed.js';
 
 function resolveTouchIdForRequest() {
   if (typeof window === 'undefined') return '';
@@ -109,7 +110,16 @@ async function request(path, options = {}) {
     return promise;
   }
 
-  return doFetch();
+  return doFetch().then(
+    (json) => {
+      trackEmbedApi(method, path, parsedBody, true);
+      return json;
+    },
+    (error) => {
+      trackEmbedApi(method, path, parsedBody, false);
+      throw error;
+    },
+  );
 }
 
 export function fetchRewardPlan(touchId, { refresh = false, skipTapReward = false } = {}) {
