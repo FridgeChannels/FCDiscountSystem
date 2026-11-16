@@ -118,6 +118,13 @@ export default function ExperienceRoot() {
 
     const sn = resolveSnFromUrl();
     if (!sn) {
+      // The bare local development URL is the default preview entry point.
+      // Deployed customer links still require a magnet serial number.
+      if (import.meta.env.DEV) {
+        setPhase({ status: 'asin_plus_preview' });
+        markContentReady();
+        return;
+      }
       setPhase({ status: 'unknown', reason: 'missing_sn' });
       markContentReady();
       return;
