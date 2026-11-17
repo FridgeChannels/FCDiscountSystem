@@ -85,23 +85,6 @@
 .daily-grind-spot:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
 .daily-grind-spot:disabled { cursor: not-allowed; opacity: 0.55; }
 
-.daily-grind-spot.is-selected {
-  background: rgba(33, 183, 166, 0.76);
-  background-image: none;
-  box-shadow: none !important;
-  filter: none !important;
-  outline: none;
-  text-shadow: none;
-}
-
-.daily-grind-spot.is-selected::before,
-.daily-grind-spot.is-selected::after {
-  content: none;
-  display: none;
-  box-shadow: none;
-  filter: none;
-}
-
 .daily-grind-details {
   display: grid;
   gap: 13px;
