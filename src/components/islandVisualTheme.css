@@ -1,0 +1,183 @@
+/* Island visual language: sunlit grass, deep foliage, water, stone and warm rewards.
+   Brand colors enter through --brand-primary and are toned for readable UI. */
+.mobile-viewport:has(.content-area.is-island-world) {
+  --island-ink: #18382d;
+  --island-muted: #526b5c;
+  --island-forest: #173d30;
+  --island-forest-deep: #102e27;
+  --island-grass: #b3d85c;
+  --island-sky: #ededed;
+  --island-paper: #f7faed;
+  --island-gold: #f6d787;
+  --island-accent: var(--brand-primary, #00a9ac);
+  --island-accent-dark: color-mix(in srgb, var(--island-accent) 30%, #12392f);
+  --island-accent-soft: color-mix(in srgb, var(--island-accent) 17%, #f5fae8);
+  --island-shadow: 0 3px 0 rgba(45, 77, 42, .12), 0 8px 18px rgba(32, 61, 42, .12);
+  color: var(--island-ink);
+  background: var(--island-sky);
+  margin-inline: auto;
+}
+
+/* The navigation has the softly lit, rounded materials of the island pieces. */
+.mobile-viewport:has(.content-area.is-island-world) .brand-header {
+  padding: 14px 20px 12px;
+  background: linear-gradient(115deg, #f6faed 0%, var(--island-accent-soft) 100%);
+  border: 0;
+}
+.mobile-viewport:has(.content-area.is-island-world) .brand-name {
+  color: var(--island-ink);
+  letter-spacing: -.035em;
+}
+.mobile-viewport:has(.content-area.is-island-world) :is(.wallet-entry-btn, .account-entry-btn) {
+  border: 1px solid rgba(255,255,255,.85);
+  color: var(--island-ink);
+  background: linear-gradient(145deg, #fff 4%, #e7f1d9 100%);
+  box-shadow: var(--island-shadow);
+}
+
+.mobile-viewport:has(.content-area.is-island-world) .content-area.is-island-world {
+  background: var(--island-sky);
+}
+.content-area.is-island-world .daily-grind-map__heading {
+  position: relative;
+  gap: 16px;
+  padding: 20px 20px 17px;
+  background:
+    radial-gradient(ellipse at 92% 8%, color-mix(in srgb, var(--island-accent) 16%, transparent), transparent 47%),
+    radial-gradient(ellipse at 0% 100%, rgba(179,216,92,.23), transparent 55%),
+    linear-gradient(180deg, #f6faed 0%, #edf5df 100%);
+}
+.daily-grind-map__heading-copy > span {
+  color: var(--island-ink);
+  font: 850 18px/1.1 var(--font-sans, sans-serif);
+  letter-spacing: -.035em;
+}
+.daily-grind-map__heading-copy > small {
+  color: var(--island-muted);
+  font: 700 10px/1.25 var(--font-sans, sans-serif);
+  font-variant-numeric: tabular-nums;
+}
+.daily-grind-map__heading-main > button {
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid rgba(255,255,255,.8);
+  border-radius: 12px;
+  color: #5e491e;
+  background: linear-gradient(145deg, #fff6d9, #f2d991);
+  box-shadow: 0 3px 0 rgba(145,105,43,.18), 0 6px 12px rgba(85,76,35,.1);
+  font: 800 10px/1 var(--font-sans, sans-serif);
+}
+
+/* Progress reads as a journey across the water toward a golden ticket. */
+.daily-grind-map__campaign { gap: 10px; }
+.daily-grind-map__campaign-goal strong {
+  color: var(--island-ink);
+  font: 800 15px/1.15 var(--font-sans, sans-serif);
+}
+.daily-grind-map__campaign-remaining {
+  color: var(--island-accent-dark);
+  font-size: 27px;
+}
+.daily-grind-map__campaign-goal small {
+  color: var(--island-muted);
+  font: 700 11px/1.3 var(--font-sans, sans-serif);
+}
+.daily-grind-map__campaign-tally {
+  color: var(--island-forest);
+  font: 800 10px/1.2 var(--font-sans, sans-serif);
+}
+.daily-grind-map__campaign-bar {
+  height: 10px;
+  background: rgba(35, 72, 52, .18);
+  box-shadow: inset 0 2px 3px rgba(28,58,38,.14), 0 1px rgba(255,255,255,.85);
+}
+.daily-grind-map__campaign-bar span {
+  background: linear-gradient(90deg, var(--island-accent-dark), var(--island-accent));
+  box-shadow: inset 0 2px 0 rgba(255,255,255,.3);
+}
+.daily-grind-map__campaign-marker {
+  box-shadow: 0 0 0 3px #fff, 0 3px 7px rgba(25,65,46,.3);
+}
+.daily-grind-map__campaign-target {
+  min-height: 39px;
+  padding-inline: 9px;
+  color: #5c4218;
+  background: linear-gradient(155deg, #fff1bc 0%, var(--island-gold) 55%, #e9b95e 100%);
+  filter: drop-shadow(0 3px 1px rgba(110,80,30,.19));
+}
+.daily-grind-map__campaign-target > span { color: #70551f; }
+.daily-grind-map__campaign-target strong { color: #533a14; }
+
+/* Keep the map's original 1280:1034 framing and clickable coordinates intact. */
+.content-area.is-island-world .daily-grind-map__scene { background: var(--island-sky); }
+.daily-grind-spot:focus-visible,
+.daily-grind-product-landmark:focus-visible {
+  outline: 3px solid white;
+  outline-offset: -3px;
+  filter: drop-shadow(0 0 3px var(--island-forest));
+}
+
+/* Selected task surfaces borrow the island's forest and use the brand for action. */
+.daily-grind-details {
+  gap: 14px;
+  padding: 16px 18px 18px;
+  border: 0;
+  color: #f8fff1;
+  background:
+    radial-gradient(ellipse at 5% 0%, rgba(181,224,106,.17), transparent 55%),
+    linear-gradient(135deg, var(--island-forest), var(--island-forest-deep));
+  box-shadow: inset 0 3px 0 rgba(201,236,156,.2);
+}
+.daily-grind-details__badge {
+  border: 0;
+  color: #fff1bd;
+  background: rgba(238,192,96,.23);
+}
+.daily-grind-details__title { color: #fafff5; }
+.daily-grind-details__description,
+.daily-grind-details__difficulty,
+.daily-grind-details__question-count { color: #d5e7d5; }
+.daily-grind-details__action {
+  min-height: 48px;
+  border: 0;
+  color: #fff;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--island-accent) 30%, #194436), color-mix(in srgb, var(--island-accent) 24%, #12352a));
+  box-shadow: inset 0 1px rgba(255,255,255,.28), 0 3px 0 rgba(6,29,22,.28), 0 7px 14px rgba(0,0,0,.12);
+}
+.daily-grind-details__action-reward { color: #fff8df; background: rgba(255,255,255,.2); }
+
+/* The field guide extends the landscape through the remainder of the screen. */
+.content-area.is-island-world .daily-grind-map {
+  background: linear-gradient(180deg, var(--island-sky) 45%, #e7f1dd 100%);
+}
+.content-area.is-island-world .island-map-footer {
+  padding: 14px 20px calc(20px + env(safe-area-inset-bottom));
+  color: var(--island-ink);
+  background: linear-gradient(180deg, #edf5e4, rgba(231,241,221,.55));
+  box-shadow: inset 0 1px rgba(255,255,255,.9);
+}
+.content-area.is-island-world .island-map-footer > button {
+  min-height: 34px;
+  font: 800 12px/1.3 var(--font-sans, sans-serif);
+}
+.content-area.is-island-world .island-map-footer > button > span:last-child {
+  display:grid;
+  place-items:center;
+  width:28px;
+  height:28px;
+  border-radius:50%;
+  color: var(--island-forest);
+  background: #d7e9c3;
+}
+.content-area.is-island-world .island-map-footer > p { color: var(--island-muted); }
+
+@media (max-width: 380px) {
+  .content-area.is-island-world .daily-grind-map__heading { padding-inline: 16px; }
+  .daily-grind-map__heading-copy > span { font-size: 16px; }
+  .daily-grind-map__campaign-copy { flex-direction: row; align-items: center; }
+  .daily-grind-map__campaign-tally { white-space: normal; text-align: right; }
+}
+@media (max-width: 340px) {
+  .daily-grind-map__campaign-copy { align-items: flex-start; flex-direction: column; }
+  .daily-grind-map__campaign-tally { text-align: left; }
+}

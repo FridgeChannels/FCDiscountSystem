@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import VivoraCan3D from './VivoraCan3D.jsx';
 import './dailyGrindGameMap.css';
+import './islandVisualTheme.css';
 
 const TASK_SPOTS = [
   { key: 'memory_match', fallback: 'card', className: 'daily-grind-spot--cards', bounds: { left: 15, top: 72, width: 28, height: 27 }, accepts: (task) => task.type === 'game' },
