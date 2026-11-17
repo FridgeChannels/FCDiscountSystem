@@ -6,7 +6,7 @@
   --island-forest: #173d30;
   --island-forest-deep: #102e27;
   --island-grass: #b3d85c;
-  --island-sky: #ededed;
+  --island-sky: #ececec;
   --island-paper: #f7faed;
   --island-gold: #f6d787;
   --island-accent: var(--brand-primary, #00a9ac);
@@ -18,10 +18,20 @@
   margin-inline: auto;
 }
 
+/* The map media has a light grey backdrop; extend that color to the outer canvas. */
+html:has(.content-area.is-island-world),
+body:has(.content-area.is-island-world),
+body:has(.content-area.is-island-world) #root {
+  background: #ececec;
+}
+.mobile-viewport[data-screen-label="优惠券首页"]:has(.content-area.is-island-world) {
+  background: var(--island-sky);
+}
+
 /* The navigation has the softly lit, rounded materials of the island pieces. */
 .mobile-viewport:has(.content-area.is-island-world) .brand-header {
   padding: 14px 20px 12px;
-  background: linear-gradient(115deg, #f6faed 0%, var(--island-accent-soft) 100%);
+  background: var(--island-sky);
   border: 0;
 }
 .mobile-viewport:has(.content-area.is-island-world) .brand-name {
@@ -42,10 +52,7 @@
   position: relative;
   gap: 16px;
   padding: 20px 20px 17px;
-  background:
-    radial-gradient(ellipse at 92% 8%, color-mix(in srgb, var(--island-accent) 16%, transparent), transparent 47%),
-    radial-gradient(ellipse at 0% 100%, rgba(179,216,92,.23), transparent 55%),
-    linear-gradient(180deg, #f6faed 0%, #edf5df 100%);
+  background: var(--island-sky);
 }
 .daily-grind-map__heading-copy > span {
   color: var(--island-ink);
@@ -117,26 +124,27 @@
   filter: drop-shadow(0 0 3px var(--island-forest));
 }
 
-/* Selected task surfaces borrow the island's forest and use the brand for action. */
+/* The task details share the map background; controls carry the color. */
 .daily-grind-details {
   gap: 14px;
   padding: 16px 18px 18px;
   border: 0;
-  color: #f8fff1;
-  background:
-    radial-gradient(ellipse at 5% 0%, rgba(181,224,106,.17), transparent 55%),
-    linear-gradient(135deg, var(--island-forest), var(--island-forest-deep));
-  box-shadow: inset 0 3px 0 rgba(201,236,156,.2);
+  color: var(--island-ink);
+  background: var(--island-sky);
+  box-shadow: none;
 }
 .daily-grind-details__badge {
   border: 0;
-  color: #fff1bd;
-  background: rgba(238,192,96,.23);
+  color: #684916;
+  background: #ead5a2;
 }
-.daily-grind-details__title { color: #fafff5; }
+.daily-grind-details__badge.is-survey,
+.daily-grind-details__badge.is-shopify_connect { color: #244d36; background: #d2e3cb; }
+.daily-grind-details__quest-label { color: var(--island-muted); }
+.daily-grind-details__title { color: var(--island-ink); }
 .daily-grind-details__description,
 .daily-grind-details__difficulty,
-.daily-grind-details__question-count { color: #d5e7d5; }
+.daily-grind-details__question-count { color: var(--island-muted); }
 .daily-grind-details__action {
   min-height: 48px;
   border: 0;
@@ -148,13 +156,13 @@
 
 /* The field guide extends the landscape through the remainder of the screen. */
 .content-area.is-island-world .daily-grind-map {
-  background: linear-gradient(180deg, var(--island-sky) 45%, #e7f1dd 100%);
+  background: var(--island-sky);
 }
 .content-area.is-island-world .island-map-footer {
   padding: 14px 20px calc(20px + env(safe-area-inset-bottom));
   color: var(--island-ink);
-  background: linear-gradient(180deg, #edf5e4, rgba(231,241,221,.55));
-  box-shadow: inset 0 1px rgba(255,255,255,.9);
+  background: var(--island-sky);
+  box-shadow: none;
 }
 .content-area.is-island-world .island-map-footer > button {
   min-height: 34px;
