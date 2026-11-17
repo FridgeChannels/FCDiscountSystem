@@ -66,6 +66,7 @@ function ErrorScreen({ title, detail, onRetry }) {
 function PendingShell({ ready, children }) {
   return (
     <div
+      className="experience-destination"
       aria-hidden={!ready}
       style={ready ? undefined : {
         visibility: 'hidden',

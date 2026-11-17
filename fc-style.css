@@ -61,6 +61,12 @@ body {
   overflow-x: clip;
 }
 
+.experience-destination {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
 .mobile-viewport {
   width: min(100%, 440px);
   max-width: 100%;

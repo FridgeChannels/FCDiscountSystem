@@ -60,6 +60,7 @@ import {
   selectPackRevealCoupons,
 } from './api/walletCoupons.js';
 import PlatformGameModal from './components/PlatformGameModal.jsx';
+import DailyGrindGameMap from './components/DailyGrindGameMap.jsx';
 import DevToolbar from './components/DevToolbar.jsx';
 import {
   applyDevSceneUi,
@@ -2207,6 +2208,12 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
   const targetThreshold = targetPack?.threshold ?? null;
   const targetCoupons = targetPack?.coupons ?? [];
   const targetCouponCount = targetCoupons.length;
+  const primaryTargetReward = couponTicketHeadline(targetCoupons[0]);
+  const targetRewardLabel = targetCouponCount === 1
+    ? `${primaryTargetReward} coupon`
+    : targetCouponCount > 1
+      ? `${primaryTargetReward} + ${targetCouponCount - 1} more rewards`
+      : null;
   const targetUnlocked = !targetPack
     || planCurrentTier >= 1
     || (targetThreshold != null && targetThreshold > 0 && points >= targetThreshold);
@@ -4642,6 +4649,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
         <CouponWalletPage
           key={walletOpen ? 'wallet-archive' : completedMode ? 'completed-rewards' : 'wallet-active'}
           coupons={walletOpen ? walletArchiveCoupons : completedAvailableCoupons}
+          brand={brand}
           copiedCode={walletCopiedCode}
           onCopy={handleWalletCopy}
           onClaim={handleShopNowDirect}
@@ -4655,15 +4663,9 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
         />
       ) : (
         <>
-          <main className="content-area">
+          <main className="content-area is-island-world">
             <div className="reward-journey-shell">
-              <img
-                className="reward-journey-gift"
-                src="/rewards/target-gift.webp"
-                alt=""
-                aria-hidden="true"
-              />
-              <div className={`reward-journey ${urgent ? 'is-urgent' : ''}`}>
+              <div hidden aria-hidden="true">
               <TargetProgress
                 points={points}
                 threshold={targetThreshold}
@@ -4690,9 +4692,24 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
                 onOpen={openChallenge}
                 onOpenLeaderboard={() => { void syncLeaderboard(true); setLeaderboardOpen(true); }}
               />
+              </div>
+              <DailyGrindGameMap
+                challenges={displayedChallenges}
+                disabled={planLoading || surveySubmitting || crediting || isExpired}
+                onOpen={openChallenge}
+                upgradeMaxPoints={targetUnlocked ? 0 : (targetThreshold ?? 0)}
+                countdownText={`${time.digits[0]}d ${time.digits[1]}h ${time.digits[2]}m ${time.digits[3]}s`}
+                isExpired={isExpired}
+                points={points}
+                threshold={targetThreshold}
+                delta={targetUnlocked ? 0 : targetDelta}
+                brandLogoUrl={brand.logoUrl}
+                brandName={brand.name}
+                targetRewardLabel={targetRewardLabel}
+                targetCouponLabel={targetCouponCount ? primaryTargetReward : null}
+                onLeaderboard={() => { void syncLeaderboard(true); setLeaderboardOpen(true); }}
+              />
             </div>
-            </div>
-            <RulesFooter rulesOpen={rulesOpen} onToggle={() => setRulesOpen((value) => !value)} />
           </main>
           <LeaderboardSheet
             open={leaderboardOpen}
@@ -5290,7 +5307,6 @@ function TargetProgress({
             <span className="tg-points">{points} / {threshold} pts</span>
             {!unlocked && <span className="tg-remain">Need {delta} more</span>}
           </div>
-
           {unlocked && claimed && (
             <button className="tg-claim-btn is-secondary" type="button" onClick={onOpenWallet}>Open my coupons</button>
           )}
@@ -5330,6 +5346,14 @@ function ChallengeCardIcon({ challenge, isShopifyConnect }) {
         alt=""
         aria-hidden="true"
       />
+    );
+  }
+
+  if (challenge.type === 'game') {
+    return (
+      <span className="challenge-fallback-icon is-game-emoji" aria-hidden="true">
+        {challenge.icon}
+      </span>
     );
   }
 
@@ -6098,6 +6122,13 @@ function CouponTicket({
   const conditions = coupon.conditions || 'No minimum';
   const displayCode = coupon.code || coupon.mockCode;
   const mode = couponDisplayMode(coupon);
+  const brandName = brand?.name?.trim();
+  const shopAriaLabel = brandName
+    ? `Visit ${brandName}'s official website`
+    : 'Visit the brand’s official website';
+  const shopTitle = brandName
+    ? `Opens ${brandName}'s official website`
+    : 'Opens the brand’s official website';
 
   if (featured) {
     return (
@@ -6134,9 +6165,11 @@ function CouponTicket({
           </span>
         </div>
         {showShop && (
-          <button className="cwticket-stub" type="button" aria-label="Shop with coupon" onClick={onShop}>
+          <button className="cwticket-stub" type="button" aria-label={shopAriaLabel} title={shopTitle} onClick={onShop}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m13 5 7 7-7 7" /></svg>
-            <span className="cwticket-stub-text">Shop now</span>
+            <span className="cwticket-stub-text">
+              {brandName ? <>Visit {brandName}<br />Official site</> : <>Visit official<br />website</>}
+            </span>
           </button>
         )}
       </div>
@@ -6177,19 +6210,22 @@ function CouponTicket({
         )}
       </div>
       {showShop && (
-        <button className="cwticket-stub" type="button" aria-label="Shop with coupon" onClick={onShop}>
+        <button className="cwticket-stub" type="button" aria-label={shopAriaLabel} title={shopTitle} onClick={onShop}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m13 5 7 7-7 7" /></svg>
-          <span className="cwticket-stub-text">Shop now</span>
+          <span className="cwticket-stub-text">
+            {brandName ? <>Visit {brandName}<br />Official site</> : <>Visit official<br />website</>}
+          </span>
         </button>
       )}
     </div>
   );
 }
 
-function WalletTicket({ coupon, copiedCode, onCopy, onClaim }) {
+function WalletTicket({ coupon, brand, copiedCode, onCopy, onClaim }) {
   return (
     <CouponTicket
       coupon={coupon}
+      brand={brand}
       copied={copiedCode === coupon.code}
       onCopy={onCopy}
       onShop={onClaim}
@@ -6366,6 +6402,7 @@ function CompletedRewardsIntro({ couponCount, time, isExpired, urgent }) {
 
 function CouponWalletPage({
   coupons,
+  brand = null,
   copiedCode,
   onCopy,
   onClaim,
@@ -6409,7 +6446,7 @@ function CouponWalletPage({
               {!completed && <div className="cwallet-section-label">Available · {active.length}</div>}
               <div className="cwallet-ticket-grid">
                 {active.map((coupon) => (
-                  <WalletTicket key={walletCouponKey(coupon) ?? coupon.code} coupon={coupon} copiedCode={copiedCode} onCopy={onCopy} onClaim={onClaim} />
+                  <WalletTicket key={walletCouponKey(coupon) ?? coupon.code} coupon={coupon} brand={brand} copiedCode={copiedCode} onCopy={onCopy} onClaim={onClaim} />
                 ))}
               </div>
             </>
