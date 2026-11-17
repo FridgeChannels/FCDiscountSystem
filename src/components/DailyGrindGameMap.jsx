@@ -161,14 +161,18 @@ export default function DailyGrindGameMap({
                 aria-label={`Target coupon: ${targetRewardLabel || targetCouponLabel}`}
                 title={`Target coupon: ${targetRewardLabel || targetCouponLabel}`}
               >
-                <span>Target</span>
-                <strong>{targetCouponLabel}</strong>
+                <img src="/rewards/island-target-gift.png" alt="" />
               </div>
             )}
           </div>
         </div>
       </div>
       <div className="daily-grind-map__scene">
+        <svg aria-hidden="true" width="0" height="0" style={{ position: 'absolute' }}>
+          <filter id="island-soft-green" colorInterpolationFilters="sRGB">
+            <feColorMatrix type="matrix" values="0.96 0 0 0 0  0 1 0 0 0  0 0 0.93 0 0  0 0 0 1 0" />
+          </filter>
+        </svg>
         <video
           src="/scene-media/daily-grind.mp4"
           autoPlay

@@ -6,7 +6,7 @@
   --island-forest: #173d30;
   --island-forest-deep: #102e27;
   --island-grass: #b3d85c;
-  --island-sky: #ececec;
+  --island-sky: #e3ecdb;
   --island-paper: #f7faed;
   --island-gold: #f6d787;
   --island-accent: var(--brand-primary, #00a9ac);
@@ -18,11 +18,11 @@
   margin-inline: auto;
 }
 
-/* The map media has a light grey backdrop; extend that color to the outer canvas. */
+/* Extend the soft green landscape backdrop to the outer canvas. */
 html:has(.content-area.is-island-world),
 body:has(.content-area.is-island-world),
 body:has(.content-area.is-island-world) #root {
-  background: #ececec;
+  background: #e3ecdb;
 }
 .mobile-viewport[data-screen-label="优惠券首页"]:has(.content-area.is-island-world) {
   background: var(--island-sky);
@@ -105,18 +105,11 @@ body:has(.content-area.is-island-world) #root {
 .daily-grind-map__campaign-marker {
   box-shadow: 0 0 0 3px #fff, 0 3px 7px rgba(25,65,46,.3);
 }
-.daily-grind-map__campaign-target {
-  min-height: 39px;
-  padding-inline: 9px;
-  color: #5c4218;
-  background: linear-gradient(155deg, #fff1bc 0%, var(--island-gold) 55%, #e9b95e 100%);
-  filter: drop-shadow(0 3px 1px rgba(110,80,30,.19));
-}
-.daily-grind-map__campaign-target > span { color: #70551f; }
-.daily-grind-map__campaign-target strong { color: #533a14; }
 
 /* Keep the map's original 1280:1034 framing and clickable coordinates intact. */
 .content-area.is-island-world .daily-grind-map__scene { background: var(--island-sky); }
+.daily-grind-map__scene video,
+.daily-grind-game-tile img { filter: url(#island-soft-green); }
 .daily-grind-spot:focus-visible,
 .daily-grind-product-landmark:focus-visible {
   outline: 3px solid white;
