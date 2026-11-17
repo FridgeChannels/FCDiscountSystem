@@ -85,6 +85,8 @@ export default defineConfig(({ mode }) => {
     dedupe: ['react', 'react-dom'],
   },
   server: {
+    port: 5180,
+    strictPort: true,
     fs: {
       allow: [root, fcRoot],
     },

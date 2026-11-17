@@ -1,11 +1,143 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { composeConsumerModules, getCouponCode, isSafeAmazonUrl } from './domain.js';
+import { SHIPPING_ADDRESS } from './fixtures.js';
 import { clearSurveyProgress, emitTelemetry, markClaimCodeCopied, readSurveyProgress, resolveFcConfiguration, resolveFcId, resolveScenario, startReorderSurvey, submitReorderSurvey, writeSurveyProgress, writeSurveyResponse } from './reorderService.js';
 import './reorder.css';
 
 const PREVIEW_VIEWS = new Set(['landing', 'coupon-list', 'survey', 'survey-thanks', 'amazon-product', 'amazon-success']);
 const LIVE_VIEWS = new Set(['landing', 'coupon-list', 'survey', 'survey-thanks']);
 const PRODUCT_PRICE = 59.99;
+const DEMO_ADDRESS_KEY = 'fc-reorder:demo-shipping-address-selected';
+const productVisualCache = new Map();
+
+async function fetchProductImageBlob(imageUrl) {
+  const readImage = async (url, options) => {
+    const response = await fetch(url, options);
+    if (!response.ok) throw new Error(`Product image request failed (${response.status}).`);
+    const blob = await response.blob();
+    if (!blob.type.startsWith('image/')) throw new Error('The product image URL did not return an image.');
+    return blob;
+  };
+  const target = new URL(imageUrl, window.location.href);
+  if (target.origin === window.location.origin) return readImage(target.href, { credentials: 'same-origin' });
+  const proxyUrl = `/api/brand-asset?url=${encodeURIComponent(target.href)}`;
+  const isAwsS3 = target.hostname === 'amazonaws.com' || target.hostname.endsWith('.amazonaws.com');
+  const readProxy = () => readImage(proxyUrl, { credentials: 'same-origin' });
+  const readDirect = () => readImage(target.href, { mode: 'cors', credentials: 'omit' });
+
+  if (isAwsS3) {
+    try { return await readProxy(); }
+    catch { return readDirect(); }
+  }
+  try { return await readDirect(); }
+  catch (directError) {
+    try { return await readProxy(); }
+    catch { throw directError; }
+  }
+}
+
+async function makeQuickWhiteCutout(blob) {
+  const bitmap = await createImageBitmap(blob);
+  const { width, height } = bitmap;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.drawImage(bitmap, 0, 0);
+  bitmap.close();
+
+  const image = context.getImageData(0, 0, width, height);
+  const pixels = image.data;
+  const count = width * height;
+  const candidates = new Uint8Array(count);
+  const background = new Uint8Array(count);
+  const queue = new Int32Array(count);
+  for (let index = 0; index < count; index += 1) {
+    const pixel = index * 4;
+    const red = pixels[pixel];
+    const green = pixels[pixel + 1];
+    const blue = pixels[pixel + 2];
+    if (Math.min(red, green, blue) >= 252 && Math.max(red, green, blue) - Math.min(red, green, blue) <= 12) candidates[index] = 1;
+  }
+
+  let read = 0;
+  let write = 0;
+  const enqueue = (index) => {
+    if (!background[index] && candidates[index]) {
+      background[index] = 1;
+      queue[write++] = index;
+    }
+  };
+  for (let x = 0; x < width; x += 1) {
+    enqueue(x);
+    enqueue((height - 1) * width + x);
+  }
+  for (let y = 0; y < height; y += 1) {
+    enqueue(y * width);
+    enqueue(y * width + width - 1);
+  }
+  while (read < write) {
+    const index = queue[read++];
+    const x = index % width;
+    if (x > 0) enqueue(index - 1);
+    if (x + 1 < width) enqueue(index + 1);
+    if (index >= width) enqueue(index - width);
+    if (index + width < count) enqueue(index + width);
+  }
+
+  for (let index = 0; index < count; index += 1) {
+    const pixel = index * 4;
+    if (background[index]) {
+      pixels[pixel + 3] = 0;
+      continue;
+    }
+    const x = index % width;
+    const touchesBackground = (x > 0 && background[index - 1])
+      || (x + 1 < width && background[index + 1])
+      || (index >= width && background[index - width])
+      || (index + width < count && background[index + width]);
+    if (!touchesBackground) continue;
+    const colorSpread = Math.max(pixels[pixel], pixels[pixel + 1], pixels[pixel + 2]) - Math.min(pixels[pixel], pixels[pixel + 1], pixels[pixel + 2]);
+    // Keep neutral white cap highlights intact; only unmix visibly colored
+    // anti-aliased edges where the white matte is identifiable.
+    if (colorSpread < 18) continue;
+    const coverage = (255 - Math.min(pixels[pixel], pixels[pixel + 1], pixels[pixel + 2])) / 255;
+    if (coverage < 0.08) {
+      pixels[pixel + 3] = 0;
+      continue;
+    }
+    for (let channel = 0; channel < 3; channel += 1) {
+      pixels[pixel + channel] = Math.max(0, Math.min(255, Math.round((pixels[pixel + channel] - 255 * (1 - coverage)) / coverage)));
+    }
+    pixels[pixel + 3] = Math.round(coverage * 255);
+  }
+  context.putImageData(image, 0, 0);
+  let left = width;
+  let right = 0;
+  let top = height;
+  let bottom = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (pixels[(y * width + x) * 4 + 3] > 12) {
+        left = Math.min(left, x);
+        right = Math.max(right, x);
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
+      }
+    }
+  }
+  if (right <= left || bottom <= top) throw new Error('No product subject was detected in this image.');
+  const padding = Math.round(Math.max(right - left, bottom - top) * 0.035);
+  const cropX = Math.max(0, left - padding);
+  const cropY = Math.max(0, top - padding);
+  const cropRight = Math.min(width, right + padding + 1);
+  const cropBottom = Math.min(height, bottom + padding + 1);
+  const cropped = document.createElement('canvas');
+  cropped.width = cropRight - cropX;
+  cropped.height = cropBottom - cropY;
+  cropped.getContext('2d').drawImage(canvas, cropX, cropY, cropped.width, cropped.height, 0, 0, cropped.width, cropped.height);
+  return new Promise((resolve, reject) => cropped.toBlob((result) => result ? resolve(result) : reject(new Error('Could not prepare the product preview.')), 'image/png'));
+}
 
 function readView(allowedViews) {
   const params = new URLSearchParams(window.location.search);
@@ -18,6 +150,7 @@ function Icon({ name, size = 24 }) {
   if (name === 'back') return <svg {...common}><path d="m15 18-6-6 6-6" /></svg>;
   if (name === 'chevron') return <svg {...common}><path d="m9 18 6-6-6-6" /></svg>;
   if (name === 'copy') return <svg {...common}><rect x="8" y="8" width="11" height="11" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></svg>;
+  if (name === 'location') return <svg {...common}><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>;
   if (name === 'clock') return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>;
   if (name === 'check') return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="m8 12 2.5 2.5L16 9" /></svg>;
   if (name === 'calendar') return <svg {...common}><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M8 3v4M16 3v4M4 10h16" /></svg>;
@@ -51,6 +184,109 @@ function ProductArt({ product, size = 'hero' }) {
   useEffect(() => setFailed(false), [product?.image]);
   if (failed || !product?.image) return <div className={`product-art product-art--${size} product-placeholder`} role="img" aria-label="Product image unavailable"><span className="placeholder-leaf">◇</span></div>;
   return <div className={`product-art product-art--${size} product-art--${product.id}`}><img src={product.image} alt={`${product.name}, ${product.variant}`} onError={() => setFailed(true)} /></div>;
+}
+
+function MarketplaceProductHero({ product, brand }) {
+  const [cutoutUrl, setCutoutUrl] = useState('');
+  const [processing, setProcessing] = useState(false);
+  const [processingMessage, setProcessingMessage] = useState('');
+  const [cutoutFailed, setCutoutFailed] = useState(false);
+  const [cutoutError, setCutoutError] = useState('');
+  const imageUrl = product?.image || '';
+  const preparedCutout = product?.visualAssets?.cutout || product?.heroImage || '';
+  const scene = product?.visualAssets?.scene || product?.heroScene || {};
+  const background = scene.background || brand?.colors?.background || '#0b251a';
+  const surface = scene.surface || '#153b2a';
+  const accent = scene.accent || brand?.colors?.accent || '#c9a276';
+
+  useEffect(() => {
+    let active = true;
+    let cutoutWorker;
+    let cutoutObjectUrl = '';
+    let quickCutoutReady = false;
+    let aiCutoutReady = false;
+    setCutoutUrl('');
+    setCutoutFailed(false);
+    setCutoutError('');
+    setProcessingMessage('');
+    if (preparedCutout) {
+      setCutoutUrl(preparedCutout);
+      setProcessing(false);
+      setProcessingMessage('');
+      return undefined;
+    }
+
+    const cacheKey = preparedCutout || imageUrl;
+    const cached = productVisualCache.get(cacheKey);
+    if (cached) {
+      cutoutObjectUrl = URL.createObjectURL(cached);
+      setCutoutUrl(cutoutObjectUrl);
+      setProcessing(false);
+      return () => URL.revokeObjectURL(cutoutObjectUrl);
+    }
+
+    const reportError = (error) => {
+      if (!active) return;
+      setCutoutFailed(!quickCutoutReady);
+      setCutoutError(error || 'Could not prepare this product image.');
+      setProcessing(false);
+      setProcessingMessage('');
+    };
+    setProcessing(true);
+    if (!preparedCutout && imageUrl) {
+      setProcessingMessage('Preparing product cutout…');
+      const requestId = `${Date.now()}-${Math.random()}`;
+      cutoutWorker = new Worker(new URL('./productCutout.worker.js', import.meta.url), { type: 'module' });
+      cutoutWorker.onmessage = (event) => {
+        if (!active) return;
+        if (event.data?.type === 'progress') return;
+        if (event.data?.id !== requestId) return;
+        if (event.data.type === 'result' && event.data.blob) {
+          aiCutoutReady = true;
+          productVisualCache.set(cacheKey, event.data.blob);
+          if (cutoutObjectUrl) URL.revokeObjectURL(cutoutObjectUrl);
+          cutoutObjectUrl = URL.createObjectURL(event.data.blob);
+          setCutoutUrl(cutoutObjectUrl);
+          setProcessing(false);
+          setProcessingMessage('');
+          cutoutWorker.terminate();
+        } else if (event.data.type === 'error') {
+          reportError(event.data.message);
+          cutoutWorker.terminate();
+        }
+      };
+      cutoutWorker.onerror = () => { reportError('Could not prepare this product image.'); cutoutWorker?.terminate(); };
+      fetchProductImageBlob(imageUrl).then((blob) => {
+        if (!active) return;
+        cutoutWorker?.postMessage({ id: requestId, blob });
+        makeQuickWhiteCutout(blob).then((previewBlob) => {
+          if (!active || aiCutoutReady) return;
+          quickCutoutReady = true;
+          cutoutObjectUrl = URL.createObjectURL(previewBlob);
+          setCutoutUrl(cutoutObjectUrl);
+        }).catch(() => {});
+      }).catch((error) => reportError(error.message));
+    } else {
+      setProcessing(false);
+      setProcessingMessage('');
+    }
+    return () => {
+      active = false;
+      cutoutWorker?.terminate();
+      if (cutoutObjectUrl) URL.revokeObjectURL(cutoutObjectUrl);
+    };
+  }, [imageUrl, preparedCutout]);
+
+  return (
+    <div className="marketplace-hero__stage" style={{ '--hero-bg': background, '--hero-surface': surface, '--hero-accent': accent }}>
+      <span className="marketplace-hero__wash" />
+      <span className="marketplace-hero__floor" />
+      <span className="marketplace-hero__contact" />
+      {cutoutUrl && <img className="marketplace-hero__bottle" src={cutoutUrl} alt={`${product.name}, ${product.variant}`} />}
+      {cutoutFailed && !cutoutUrl && imageUrl && <img className="marketplace-hero__source-image" src={imageUrl} alt={`${product.name}, ${product.variant}`} />}
+      {(processing || cutoutFailed) && <span className={`marketplace-hero__status${cutoutFailed ? ' marketplace-hero__status--error' : ''}`} role="status" title={cutoutError}>{cutoutFailed ? 'Showing original product image' : processingMessage}</span>}
+    </div>
+  );
 }
 
 /**
@@ -99,9 +335,13 @@ function AmazonCta({ product, brand, children, onBeforeOpen, onOpenDemo }) {
   return <button className="amazon-button" type="button" onClick={open} disabled={opening}>{opening ? 'Opening Amazon…' : children}</button>;
 }
 
-function useCouponCopy(coupon, fcId, productId, { live = false } = {}) {
+function useCouponCopy(coupon, fcId, productId, { live = false, feedbackDuration = 0 } = {}) {
   const [copied, setCopied] = useState(false);
+  const feedbackTimer = useRef(null);
   const code = getCouponCode(coupon, fcId);
+
+  useEffect(() => () => clearTimeout(feedbackTimer.current), []);
+
   const copy = async () => {
     if (!code) return false;
     try { await navigator.clipboard.writeText(code); }
@@ -111,15 +351,31 @@ function useCouponCopy(coupon, fcId, productId, { live = false } = {}) {
       document.body.appendChild(field); field.select(); const didCopy = document.execCommand?.('copy'); field.remove();
       if (!didCopy) return false;
     }
-    setCopied(true); emitTelemetry('coupon_code_copied', { couponId: coupon.id, productId });
+    setCopied(true);
+    if (feedbackDuration > 0) {
+      clearTimeout(feedbackTimer.current);
+      feedbackTimer.current = setTimeout(() => setCopied(false), feedbackDuration);
+    }
+    emitTelemetry('coupon_code_copied', { couponId: coupon.id, productId });
     if (live) markClaimCodeCopied(fcId, coupon.id);
     return true;
   };
   return { code, copied, copy };
 }
 
-function CopyIconButton({ copied, onCopy }) {
-  return <button className={copied ? 'copy-icon-button copy-icon-button--copied' : 'copy-icon-button'} type="button" aria-label={copied ? 'Code copied' : 'Copy code'} aria-live="polite" onClick={onCopy}><Icon name={copied ? 'check' : 'copy'} size={21} /></button>;
+function CopyIconButton({ copied, onCopy, showLabel = false }) {
+  return (
+    <button
+      className={copied ? 'copy-icon-button copy-icon-button--copied' : 'copy-icon-button'}
+      type="button"
+      aria-label={showLabel ? undefined : (copied ? 'Code copied' : 'Copy code')}
+      aria-live={showLabel ? undefined : 'polite'}
+      onClick={onCopy}
+    >
+      <Icon name={copied ? 'check' : 'copy'} size={showLabel ? 18 : 21} />
+      {showLabel && <span>{copied ? 'Copied' : 'Copy code'}</span>}
+    </button>
+  );
 }
 
 function CouponTerms({ coupon, product, detailed = false }) {
@@ -151,9 +407,9 @@ function CouponSummary({ coupons, navigate }) {
   return <button className="coupon-summary" type="button" onClick={() => navigate('coupon-list')}><span><strong>{coupons.length} coupons available</strong><small>Choose the coupon that fits your order.</small></span><span className="coupon-summary__action"><Icon name="chevron" size={24} /></span></button>;
 }
 
-function VoluntarySurveyCard({ survey, navigate }) {
+function VoluntarySurveyCard({ survey, navigate, marketplace = false }) {
   const seconds = Math.max(10, survey.questions.length * 5);
-  return <button className="voluntary-survey-card" type="button" onClick={() => navigate('survey', { step: 0 })}><span><strong>Quick survey</strong><small>{survey.questions.length} questions · About {seconds} seconds</small></span><Icon name="chevron" size={22} /></button>;
+  return <button className={`voluntary-survey-card${marketplace ? ' voluntary-survey-card--marketplace' : ''}`} type="button" onClick={() => navigate('survey', { step: 0 })}>{marketplace ? <strong>Share feedback · {survey.questions.length} questions · ~{seconds} sec</strong> : <span><strong>Quick survey</strong><small>{survey.questions.length} questions · About {seconds} seconds</small></span>}<Icon name="chevron" size={18} /></button>;
 }
 
 function PurchaseBlock({ config, modules, product, live = false }) {
@@ -177,13 +433,169 @@ function CouponListScreen({ config, coupons, navigate, live = false }) {
   return <main className="screen coupon-list-screen" aria-label={`Available coupons for ${product.name}, ${product.variant}`}><BrandHeader brand={config.brand} onBack={() => navigate('landing')} /><section className="coupon-list-heading"><h1>Available coupons</h1></section><div className="coupon-list">{coupons.map((coupon) => <CouponListItem key={coupon.id} config={config} coupon={coupon} product={product} live={live} />)}</div><div className="coupon-list-shop"><AmazonCta product={product} brand={config.brand}>Shop on Amazon</AmazonCta><p className="amazon-reassurance"><Icon name="lock" size={18} /> Opens Amazon</p></div></main>;
 }
 
+function DemoShippingAddress() {
+  return (
+    <div className="marketplace-address__content">
+      <Icon name="location" size={21} />
+      <div className="marketplace-address__lines">
+        {SHIPPING_ADDRESS.map((line) => <span key={line}>{line}</span>)}
+      </div>
+    </div>
+  );
+}
+
+function AmazonProductAdditionalInfo({ brand, product, onChangeAddress }) {
+  const [deliveryNoticeVisible, setDeliveryNoticeVisible] = useState(true);
+  const [selectedPack, setSelectedPack] = useState(0);
+  const [saved, setSaved] = useState(false);
+  const variantParts = product.variant.split(',').map((part) => part.trim());
+  const flavor = variantParts.find((part) => !/\d+\s*[- ]?\s*(bottles?|packs?|count|ct|pieces?|pcs|units?|cans?|bags?)/i.test(part)) || variantParts[0] || 'Original';
+  const packageCount = product.variant.match(/\d+\s*[- ]?\s*(?:bottles?|packs?|count|ct|pieces?|pcs|units?|cans?|bags?)/i)?.[0]?.replace(/\s+/g, ' ').trim() || '12 Bottles';
+
+  return (
+    <section className="marketplace-extra-info" aria-label="More product information">
+      <div className="marketplace-extra-info__intro">
+        <h2>Product information</h2>
+        <span>Sample data · scroll to explore</span>
+      </div>
+
+      {deliveryNoticeVisible && (
+        <aside className="marketplace-delivery-notice">
+          <p>We’re showing items that ship to Singapore. Change your delivery address to see other available options.</p>
+          <div><button type="button" onClick={() => setDeliveryNoticeVisible(false)}>Dismiss</button><button type="button" onClick={onChangeAddress}>Change address</button></div>
+        </aside>
+      )}
+
+      <details className="marketplace-info-accordion" open>
+        <summary>Top highlights</summary>
+        <dl className="marketplace-highlights-table">
+          <div><dt>Type</dt><dd>Beverage</dd></div>
+          <div><dt>Flavor</dt><dd>{flavor}</dd></div>
+          <div><dt>Product benefits</dt><dd>Refreshing fruit flavor; a convenient drink for breakfast or on the go.</dd></div>
+          <div><dt>Number of items</dt><dd>{packageCount.match(/\d+/)?.[0] || '12'}</dd></div>
+          <div><dt>Unit count</dt><dd>{packageCount}</dd></div>
+          <div><dt>Brand</dt><dd>{brand.name}</dd></div>
+        </dl>
+        <ul className="marketplace-feature-list">
+          <li>Includes {packageCount} of {product.name}.</li>
+          <li>Made for easy serving at home, at breakfast, or while traveling.</li>
+          <li>Packaged for convenient storage and everyday use.</li>
+          <li>Enjoy chilled as part of a balanced routine.</li>
+        </ul>
+      </details>
+
+      <section className="marketplace-info-section marketplace-buying-options" aria-labelledby="marketplace-options-title">
+        <h3 id="marketplace-options-title">Size options</h3>
+        <div className="marketplace-option-list">
+          {[
+            { label: packageCount, offers: '1 option', price: '$59.99' },
+            { label: '24 Bottles', offers: '3 options', price: '$109.99' },
+          ].map((option, index) => (
+            <button className={'marketplace-option' + (selectedPack === index ? ' marketplace-option--selected' : '')} key={option.label} type="button" aria-pressed={selectedPack === index} onClick={() => setSelectedPack(index)}>
+              <span><b>{option.label}</b><small>{option.offers} from {option.price}</small></span>
+              {selectedPack === index && <span className="marketplace-option__check" aria-hidden="true">✓</span>}
+            </button>
+          ))}
+        </div>
+        <button className="marketplace-buying-options__all" type="button">See all buying options <span aria-hidden="true">›</span></button>
+      </section>
+
+      <section className="marketplace-info-section" aria-labelledby="marketplace-details-title">
+        <h3 id="marketplace-details-title">Product details</h3>
+        <details className="marketplace-info-accordion">
+          <summary>Nutritional info</summary>
+          <dl className="marketplace-highlights-table marketplace-highlights-table--compact">
+            <div><dt>Serving size</dt><dd>1 bottle (240 ml)</dd></div>
+            <div><dt>Calories</dt><dd>110</dd></div>
+            <div><dt>Total fat</dt><dd>0 g</dd></div>
+            <div><dt>Total sugars</dt><dd>22 g</dd></div>
+            <div><dt>Vitamin C</dt><dd>100% daily value</dd></div>
+          </dl>
+        </details>
+        <details className="marketplace-info-accordion">
+          <summary>Ingredients</summary>
+          <p>Orange juice, filtered water, natural flavor. Example copy for layout preview; final ingredients will come from product data.</p>
+        </details>
+      </section>
+
+      <details className="marketplace-info-accordion marketplace-info-accordion--section">
+        <summary>Product specifications</summary>
+        <dl className="marketplace-highlights-table">
+          <div><dt>Brand</dt><dd>{brand.name}</dd></div>
+          <div><dt>Product</dt><dd>{product.name}</dd></div>
+          <div><dt>Flavor</dt><dd>{flavor}</dd></div>
+          <div><dt>Unit count</dt><dd>{packageCount}</dd></div>
+          <div><dt>ASIN</dt><dd>{product.asin || 'B0DEMO1234'}</dd></div>
+        </dl>
+      </details>
+
+      <details className="marketplace-info-accordion marketplace-info-accordion--section">
+        <summary>About the brand</summary>
+        <p>{brand.name} makes convenient products for everyday routines. This brand description is sample copy for the product information layout.</p>
+      </details>
+
+      <section className="marketplace-info-section" aria-labelledby="marketplace-gallery-title">
+        <div className="marketplace-info-section__heading">
+          <h3 id="marketplace-gallery-title">Product image gallery</h3>
+          <div className="marketplace-gallery-actions"><button type="button" aria-label={saved ? 'Remove from list' : 'Save to list'} onClick={() => setSaved((value) => !value)}>{saved ? '♥' : '♡'}</button><button type="button" aria-label="Share product">↗</button></div>
+        </div>
+        <div className="marketplace-gallery-grid">
+          <div className="marketplace-gallery-tile marketplace-gallery-tile--hero"><span>Product image</span></div>
+          <div className="marketplace-gallery-tile marketplace-gallery-tile--facts"><span>Nutrition facts</span></div>
+          <div className="marketplace-gallery-tile marketplace-gallery-tile--pack"><span>Package details</span></div>
+        </div>
+      </section>
+
+      <details className="marketplace-info-accordion marketplace-info-accordion--section">
+        <summary>Videos</summary>
+        <div className="marketplace-video-preview"><span className="marketplace-video-preview__play" aria-hidden="true">▶</span><span><b>Get to know {product.name}</b><small>Product overview · 0:45</small></span></div>
+      </details>
+
+      <details className="marketplace-info-accordion marketplace-info-accordion--section">
+        <summary>Additional details</summary>
+        <dl className="marketplace-highlights-table">
+          <div><dt>Storage</dt><dd>Store in a cool, dry place. Chill before serving.</dd></div>
+          <div><dt>Package type</dt><dd>Multi-unit pack</dd></div>
+          <div><dt>Seller</dt><dd>{brand.name}</dd></div>
+        </dl>
+      </details>
+
+      <button className="marketplace-report-link" type="button">⚑ <span>Report an issue with this product or seller</span></button>
+
+      <section className="marketplace-manufacturer" aria-labelledby="marketplace-manufacturer-title">
+        <h3 id="marketplace-manufacturer-title">From the manufacturer</h3>
+        <h4>Good ingredients, made for everyday moments</h4>
+        <div className="marketplace-manufacturer-banner"><b>{brand.name}</b><span>Real ingredients, thoughtfully made</span></div>
+        <div className="marketplace-manufacturer-points"><span>Simple to enjoy</span><span>Made for your routine</span><span>A refreshing choice</span></div>
+      </section>
+    </section>
+  );
+}
+
 function AmazonProductScreen({ config, coupons, modules, navigate }) {
   const product = config.products.find((item) => item.id === config.currentProductId);
+  const productSize = product.variant.match(/\d+\s*[- ]?\s*(?:bottles?|packs?|count|ct|pieces?|pcs|units?|cans?|bags?)/i)?.[0]?.replace(/\s+/g, ' ').trim() || product.variant;
   const coupon = coupons[0];
-  const { code, copied, copy } = useCouponCopy(coupon, config.fcId, product.id);
-  const hasHeroImage = Boolean(product.heroImage);
+  const { code, copied, copy } = useCouponCopy(coupon, config.fcId, product.id, { feedbackDuration: 2000 });
   const [quantity, setQuantity] = useState(1);
+  const [couponTermsOpen, setCouponTermsOpen] = useState(false);
+  const [productInfoTab, setProductInfoTab] = useState(0);
+  const addressDialogRef = useRef(null);
+  const [demoAddressSelected, setDemoAddressSelected] = useState(() => {
+    try { return sessionStorage.getItem(DEMO_ADDRESS_KEY) === 'true'; }
+    catch { return false; }
+  });
   const orderTotal = (PRODUCT_PRICE * quantity).toFixed(2);
+
+  const updateDemoAddress = (selected) => {
+    setDemoAddressSelected(selected);
+    try {
+      if (selected) sessionStorage.setItem(DEMO_ADDRESS_KEY, 'true');
+      else sessionStorage.removeItem(DEMO_ADDRESS_KEY);
+    } catch { /* The demo still works for the current page. */ }
+    addressDialogRef.current?.close();
+  };
+
   const placeDemoOrder = () => {
     const order = { orderNumber: 'Demo-114-20260909', quantity, productId: product.id, total: orderTotal };
     sessionStorage.setItem('fc-reorder:demo-order', JSON.stringify(order));
@@ -191,37 +603,68 @@ function AmazonProductScreen({ config, coupons, modules, navigate }) {
     navigate('amazon-success');
   };
   return (
-    <main className="marketplace-screen marketplace-screen--2p5d" aria-label={`${product.name} product page demo`}>
-      <header className="marketplace-header">
-        <button className="marketplace-icon-button" type="button" onClick={() => navigate('landing')} aria-label="Back to reorder page"><Icon name="back" size={25} /></button>
-        <span className="marketplace-brand" aria-label={config.brand.name}><BrandWordmark brand={config.brand} /></span>
-      </header>
-      <section className="marketplace-product marketplace-product--2p5d">
-        <div className={`marketplace-hero__stage${hasHeroImage ? '' : ' marketplace-hero__stage--source'}`}>
-          <span className="marketplace-hero__orb marketplace-hero__orb--one" />
-          <span className="marketplace-hero__orb marketplace-hero__orb--two" />
-          {hasHeroImage ? (
-            <img className="marketplace-hero__bottle" src={product.heroImage} alt={`${product.name}, ${product.variant}`} />
-          ) : (
-            <div className="marketplace-hero__source"><img src={product.image} alt={`${product.name}, ${product.variant}`} /></div>
-          )}
-          <span className="marketplace-hero__platform" />
-        </div>
+    <main className="marketplace-screen marketplace-screen--2p5d marketplace-screen--product" aria-label={`${product.name} product page demo`}>
+      <section className="marketplace-product marketplace-product--2p5d" aria-label="Product information" tabIndex={0}>
+        <header className="marketplace-header marketplace-header--with-account">
+          <button className="marketplace-icon-button" type="button" onClick={() => navigate('landing')} aria-label="Back to reorder page"><Icon name="back" size={25} /></button>
+          <span className="marketplace-brand" aria-label={config.brand.name}><BrandWordmark brand={config.brand} /></span>
+          <button
+            className="marketplace-account-button"
+            type="button"
+            aria-haspopup="dialog"
+            aria-controls="marketplace-address-dialog"
+            onClick={() => addressDialogRef.current?.showModal()}
+          >
+            {demoAddressSelected ? 'Delivery address' : 'Link Amazon'}
+          </button>
+        </header>
+        <MarketplaceProductHero product={product} brand={config.brand} />
         <div className="marketplace-product-copy marketplace-product-copy--2p5d">
-          <button className="marketplace-store" type="button">Visit the {config.brand.name} Store</button>
-          <h1>{product.name}, {product.variant}</h1>
-          <p className="marketplace-variant"><b>Size:</b> 12 Bottles</p>
-          <div className="marketplace-rating" aria-label="Rated 4.8 out of 5"><span>4.8</span><span className="marketplace-stars"><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /></span><button type="button">128 ratings</button></div>
-          <div className="marketplace-price"><sup>$</sup>59<span>99</span></div>
-          {coupon && <div className="marketplace-coupon"><span className="marketplace-coupon__text">{code ? <>Save with code <b>{code}</b> · {coupon.benefit}</> : coupon.benefit}</span>{code && <CopyIconButton copied={copied} onCopy={copy} />}</div>}
-          <p className="marketplace-stock">In stock</p>
-          <p className="marketplace-delivery">Free delivery available on eligible orders.</p>
-          <div className="marketplace-quantity" aria-label="Quantity"><span>Quantity</span><button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))} aria-label="Reduce quantity">−</button><b>{quantity}</b><button type="button" onClick={() => setQuantity((current) => current + 1)} aria-label="Increase quantity">+</button></div>
-          <section className="marketplace-details"><p><b>Product details</b></p><p>Bright, refreshing original orange juice in a convenient 12-bottle pack.</p></section>
-          {modules.showVoluntarySurvey && <VoluntarySurveyCard survey={config.survey} navigate={navigate} />}
+          <a className="marketplace-store" href={config.brand.amazonStoreUrl} target="_blank" rel="noopener noreferrer">Visit the {config.brand.name} Store</a>
+          <div className="marketplace-info-dots" role="tablist" aria-label="Product information pages">
+            {[0, 1].map((tab) => <button key={tab} id={`marketplace-info-tab-${tab}`} role="tab" type="button" aria-label={`Page ${tab + 1}`} aria-selected={productInfoTab === tab} aria-controls={`marketplace-info-panel-${tab}`} onClick={() => setProductInfoTab(tab)} />)}
+          </div>
+          {productInfoTab === 0 ? (
+            <div className="marketplace-info-page" id="marketplace-info-panel-0" role="tabpanel" aria-labelledby="marketplace-info-tab-0">
+              <h1>{product.name}, {product.variant}</h1>
+              <p className="marketplace-variant"><b>Size:</b> {productSize}</p>
+              <div className="marketplace-rating" aria-label="Rated 4.8 out of 5"><span>4.8</span><span className="marketplace-stars"><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /></span><button type="button">128 ratings</button></div>
+              <div className="marketplace-price"><sup>$</sup>59<span>99</span></div>
+              {coupon && (
+                <section className="marketplace-coupon marketplace-coupon--compact" aria-label="Available coupon">
+                  <strong className="marketplace-coupon__benefit">{coupon.benefit}</strong>
+                  {code && <div className="marketplace-coupon__code-row"><span className="marketplace-coupon__code">Code <code>{code}</code></span><CopyIconButton copied={copied} onCopy={copy} /><span className="visually-hidden" role="status">{copied ? 'Code copied' : ''}</span></div>}
+                  <button className="marketplace-coupon__details-toggle" type="button" aria-expanded={couponTermsOpen} aria-controls={`marketplace-coupon-terms-${coupon.id}`} onClick={() => setCouponTermsOpen((open) => !open)}><span>{couponTermsOpen ? 'Hide usage conditions' : 'Usage conditions'}</span><Icon name="chevron" size={18} /></button>
+                  <div className="marketplace-coupon__details" id={`marketplace-coupon-terms-${coupon.id}`} hidden={!couponTermsOpen}><CouponTerms coupon={coupon} product={product} detailed /></div>
+                </section>
+              )}
+              <div className="marketplace-quantity" aria-label="Quantity"><span>Quantity</span><button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))} aria-label="Reduce quantity">−</button><b>{quantity}</b><button type="button" onClick={() => setQuantity((current) => current + 1)} aria-label="Increase quantity">+</button></div>
+            </div>
+          ) : (
+            <div className="marketplace-info-panel" id="marketplace-info-panel-1" role="tabpanel" aria-labelledby="marketplace-info-tab-1">
+              <AmazonProductAdditionalInfo brand={config.brand} product={product} onChangeAddress={() => addressDialogRef.current?.showModal()} />
+            </div>
+          )}
+          <footer className="marketplace-action">
+            <button type="button" onClick={placeDemoOrder}>Place order · ${orderTotal}</button>
+            {modules.showVoluntarySurvey && <VoluntarySurveyCard survey={config.survey} navigate={navigate} marketplace />}
+          </footer>
         </div>
       </section>
-      <footer className="marketplace-action"><p>Local demo checkout · no payment will be collected</p><button type="button" onClick={placeDemoOrder}>Place order · ${orderTotal}</button><a className="explore-brand-link marketplace-explore-link" href={config.brand.amazonStoreUrl} target="_blank" rel="noopener noreferrer">Explore more from {config.brand.name}</a></footer>
+      <dialog
+        className="marketplace-address-dialog"
+        id="marketplace-address-dialog"
+        ref={addressDialogRef}
+        aria-labelledby="marketplace-address-dialog-title"
+      >
+        <h2 id="marketplace-address-dialog-title">Delivery address</h2>
+        <p>Choose an address for this order.</p>
+        <DemoShippingAddress />
+        <form className="marketplace-address-dialog__actions" method="dialog">
+          <button className="marketplace-address-dialog__secondary" type="submit">{demoAddressSelected ? 'Close' : 'Cancel'}</button>
+          <button className="marketplace-address-dialog__primary" type="button" onClick={() => updateDemoAddress(!demoAddressSelected)}>{demoAddressSelected ? 'Remove address' : 'Use this address'}</button>
+        </form>
+      </dialog>
     </main>
   );
 }

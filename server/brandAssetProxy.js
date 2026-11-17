@@ -1,7 +1,12 @@
 const PRIVATE_HOST_RE =
   /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)$/i;
 
-const DEFAULT_ALLOWED_HOSTS = ['amzn-s3-fc-bucket.s3.sa-east-1.amazonaws.com', 's3.sa-east-1.amazonaws.com'];
+const DEFAULT_ALLOWED_HOSTS = [
+  'amzn-s3-fc-bucket.s3.sa-east-1.amazonaws.com',
+  's3.sa-east-1.amazonaws.com',
+  'm.media-amazon.com',
+  'images-na.ssl-images-amazon.com',
+];
 
 export function allowedBrandAssetHosts() {
   const fromEnv = process.env.BRAND_ASSET_PROXY_HOSTS?.trim();
