@@ -142,7 +142,9 @@ async function makeQuickWhiteCutout(blob) {
 function readView(allowedViews) {
   const params = new URLSearchParams(window.location.search);
   const name = params.get('view') || 'landing';
-  return { name: allowedViews.has(name) ? name : 'landing', step: Math.max(0, Number(params.get('step') || 0)), coupon: params.get('coupon') || '' };
+  const requestedDiscount = params.get('discount');
+  const discount = ['code', 'coupon', 'price'].includes(requestedDiscount) ? requestedDiscount : 'code';
+  return { name: allowedViews.has(name) ? name : 'landing', step: Math.max(0, Number(params.get('step') || 0)), coupon: params.get('coupon') || '', discount };
 }
 
 function Icon({ name, size = 24 }) {
@@ -572,20 +574,23 @@ function AmazonProductAdditionalInfo({ brand, product, onChangeAddress }) {
   );
 }
 
-function AmazonProductScreen({ config, coupons, modules, navigate }) {
+function AmazonProductScreen({ config, coupons, modules, navigate, discountMode = 'code' }) {
   const product = config.products.find((item) => item.id === config.currentProductId);
   const productSize = product.variant.match(/\d+\s*[- ]?\s*(?:bottles?|packs?|count|ct|pieces?|pcs|units?|cans?|bags?)/i)?.[0]?.replace(/\s+/g, ' ').trim() || product.variant;
   const coupon = coupons[0];
   const { code, copied, copy } = useCouponCopy(coupon, config.fcId, product.id, { feedbackDuration: 2000 });
   const [quantity, setQuantity] = useState(1);
   const [couponTermsOpen, setCouponTermsOpen] = useState(false);
+  const [couponApplied, setCouponApplied] = useState(false);
   const [productInfoTab, setProductInfoTab] = useState(0);
   const addressDialogRef = useRef(null);
   const [demoAddressSelected, setDemoAddressSelected] = useState(() => {
     try { return sessionStorage.getItem(DEMO_ADDRESS_KEY) === 'true'; }
     catch { return false; }
   });
-  const orderTotal = (PRODUCT_PRICE * quantity).toFixed(2);
+  const discountEligible = discountMode === 'price' || (discountMode === 'coupon' && couponApplied);
+  const unitPrice = discountEligible ? Number((PRODUCT_PRICE * 0.9).toFixed(2)) : PRODUCT_PRICE;
+  const orderTotal = (unitPrice * quantity).toFixed(2);
 
   const updateDemoAddress = (selected) => {
     setDemoAddressSelected(selected);
@@ -621,22 +626,33 @@ function AmazonProductScreen({ config, coupons, modules, navigate }) {
         <MarketplaceProductHero product={product} brand={config.brand} />
         <div className="marketplace-product-copy marketplace-product-copy--2p5d">
           <a className="marketplace-store" href={config.brand.amazonStoreUrl} target="_blank" rel="noopener noreferrer">Visit the {config.brand.name} Store</a>
-          <div className="marketplace-info-dots" role="tablist" aria-label="Product information pages">
-            {[0, 1].map((tab) => <button key={tab} id={`marketplace-info-tab-${tab}`} role="tab" type="button" aria-label={`Page ${tab + 1}`} aria-selected={productInfoTab === tab} aria-controls={`marketplace-info-panel-${tab}`} onClick={() => setProductInfoTab(tab)} />)}
-          </div>
           {productInfoTab === 0 ? (
             <div className="marketplace-info-page" id="marketplace-info-panel-0" role="tabpanel" aria-labelledby="marketplace-info-tab-0">
               <h1>{product.name}, {product.variant}</h1>
               <p className="marketplace-variant"><b>Size:</b> {productSize}</p>
               <div className="marketplace-rating" aria-label="Rated 4.8 out of 5"><span>4.8</span><span className="marketplace-stars"><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /></span><button type="button">128 ratings</button></div>
-              <div className="marketplace-price"><sup>$</sup>59<span>99</span></div>
-              {coupon && (
+              {discountMode === 'price' ? (
+                <div className="marketplace-price marketplace-price--discount" aria-label="Discounted price $53.99, was $59.99, 10% off">
+                  <span className="marketplace-price__current"><sup>$</sup>53<span>99</span></span>
+                  <del>$59.99</del>
+                  <span className="marketplace-price__saving">10% off</span>
+                </div>
+              ) : (
+                <div className="marketplace-price"><sup>$</sup>59<span>99</span></div>
+              )}
+              {coupon && discountMode === 'code' && (
                 <section className="marketplace-coupon marketplace-coupon--compact" aria-label="Available coupon">
                   <strong className="marketplace-coupon__benefit">{coupon.benefit}</strong>
                   {code && <div className="marketplace-coupon__code-row"><span className="marketplace-coupon__code">Code <code>{code}</code></span><CopyIconButton copied={copied} onCopy={copy} /><span className="visually-hidden" role="status">{copied ? 'Code copied' : ''}</span></div>}
                   <button className="marketplace-coupon__details-toggle" type="button" aria-expanded={couponTermsOpen} aria-controls={`marketplace-coupon-terms-${coupon.id}`} onClick={() => setCouponTermsOpen((open) => !open)}><span>{couponTermsOpen ? 'Hide usage conditions' : 'Usage conditions'}</span><Icon name="chevron" size={18} /></button>
                   <div className="marketplace-coupon__details" id={`marketplace-coupon-terms-${coupon.id}`} hidden={!couponTermsOpen}><CouponTerms coupon={coupon} product={product} detailed /></div>
                 </section>
+              )}
+              {discountMode === 'coupon' && (
+                <button className={`marketplace-coupon-clip${couponApplied ? ' marketplace-coupon-clip--applied' : ''}`} type="button" aria-pressed={couponApplied} onClick={() => setCouponApplied((applied) => !applied)}>
+                  <span className="marketplace-coupon-clip__check" aria-hidden="true">{couponApplied ? '✓' : ''}</span>
+                  <span><b>{couponApplied ? 'Coupon applied' : 'Apply coupon'}</b><small>Save 10% at checkout</small></span>
+                </button>
               )}
               <div className="marketplace-quantity" aria-label="Quantity"><span>Quantity</span><button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))} aria-label="Reduce quantity">−</button><b>{quantity}</b><button type="button" onClick={() => setQuantity((current) => current + 1)} aria-label="Increase quantity">+</button></div>
             </div>
@@ -646,6 +662,9 @@ function AmazonProductScreen({ config, coupons, modules, navigate }) {
             </div>
           )}
           <footer className="marketplace-action">
+            <div className="marketplace-info-dots" role="tablist" aria-label="Product information pages">
+              {[0, 1].map((tab) => <button key={tab} id={`marketplace-info-tab-${tab}`} role="tab" type="button" aria-label={`Page ${tab + 1}`} aria-selected={productInfoTab === tab} aria-controls={`marketplace-info-panel-${tab}`} onClick={() => setProductInfoTab(tab)} />)}
+            </div>
             <button type="button" onClick={placeDemoOrder}>Place order · ${orderTotal}</button>
             {modules.showVoluntarySurvey && <VoluntarySurveyCard survey={config.survey} navigate={navigate} marketplace />}
           </footer>
@@ -820,7 +839,7 @@ export default function ReorderApp({
     navigate('survey-thanks');
   };
   if (view.name === 'coupon-list') return <CouponListScreen config={config} coupons={coupons} navigate={navigate} live={live} />;
-  if (!live && view.name === 'amazon-product') return <AmazonProductScreen config={config} coupons={coupons} modules={modules} navigate={navigate} />;
+  if (!live && view.name === 'amazon-product') return <AmazonProductScreen config={config} coupons={coupons} modules={modules} navigate={navigate} discountMode={view.discount} />;
   if (!live && view.name === 'amazon-success') return <AmazonOrderSuccessScreen config={config} navigate={navigate} />;
   // DEMO: allow re-entering survey even after a prior completion.
   if (view.name === 'survey' && modules.showVoluntarySurvey) {

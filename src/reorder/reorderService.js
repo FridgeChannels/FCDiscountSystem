@@ -23,7 +23,9 @@ export function resolveScenario(location = window.location) {
   if (legacy === 'invalid') return 'invalid';
   if (legacy === 'replacement') return 'discontinued';
   const scenario = params.get('scenario');
-  return SCENARIO_NAMES.includes(scenario) ? scenario : 'landing';
+  if (SCENARIO_NAMES.includes(scenario)) return scenario;
+  if (['code', 'coupon', 'price'].includes(params.get('discount'))) return 'direct-coupon';
+  return 'landing';
 }
 
 export function isScenarioPreview(location = window.location) {
