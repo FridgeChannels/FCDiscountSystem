@@ -965,3 +965,23 @@ body:has(.content-area.is-island-world) #root { background: #d4ede0; }
 .content-area.is-island-world .island-guide-buoy small { display: none; }
 @media (max-width: 480px) { .content-area.is-island-world .island-map-footer { right: 16px; bottom: max(18px, env(safe-area-inset-bottom)); } }
 .content-area.is-island-world .island-map-footer { position: relative; inset: auto; display: flex; justify-content: flex-end; width: auto; margin: 12px 16px 20px; }
+/* Center the island within the available page height, keeping the header fixed. */
+.content-area.is-island-world .daily-grind-map__scene {
+  margin-top: max(0px, calc((min(92vh, 100dvh) - 64px - min(100vw, 440px) * 0.8078) / 2));
+}
+@media (max-width: 480px) {
+  .content-area.is-island-world .daily-grind-map__scene {
+    margin-top: max(0px, calc((100dvh - 64px - 100vw * 0.8078) / 2));
+  }
+}
+.game-hud-modal--rewards .cwticket.is-colored:not(.is-featured):not(.is-inactive):not(.is-settlement-used):not(.is-settlement-earned):not(.is-target-preview) .cwticket-main { grid-template-areas: 'value value' 'condition condition' 'expiry code'; }
+.game-hud-modal--rewards .cwticket-terms { grid-area: condition; min-width: 0; color: #694e21; font-size: 12px; line-height: 1.35; }
+.game-hud-modal--rewards .cwticket-terms summary { display: flex; align-items: center; justify-content: space-between; gap: 5px; padding: 4px 9px; border-radius: 12px; background: #f8dfaa; font-weight: 800; cursor: pointer; list-style: none; overflow-wrap: anywhere; }
+.game-hud-modal--rewards .cwticket-terms summary::-webkit-details-marker { display: none; }
+.game-hud-modal--rewards .cwticket-terms[open] summary span { transform: rotate(180deg); }
+.game-hud-modal--rewards .cwticket-terms > div { padding: 8px 2px; color: #465746; overflow-wrap: anywhere; }
+.game-hud-modal--rewards .cwticket-terms p { margin: 5px 0 0; color: inherit; font-size: inherit; }
+.game-hud-modal--rewards .cwticket.is-colored .cwticket-value b { font-size: clamp(24px,6vw,32px); }
+.game-hud-modal--rewards .cwticket.is-colored .cwticket-value span { font-size: 16px; }
+.game-hud-modal--rewards .cwticket-code-value { font-size: 13px; }
+.game-hud-modal--rewards .cwticket-expire { font-size: 11px; white-space: normal; }

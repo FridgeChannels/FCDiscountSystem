@@ -620,7 +620,7 @@ const server = http.createServer(async (req, res) => {
       }
       try {
         const asset = await fetchBrandAsset(target);
-        sendBinary(res, 200, asset.body, asset.contentType);
+        sendBinary(res, 200, asset.body, asset.contentType, { 'Cache-Control': 'public, max-age=3600' });
       } catch (err) {
         const status = err?.statusCode === 502 ? 502 : 502;
         sendJson(res, status, {

@@ -48,7 +48,7 @@ import {
   resolveSettlementCoupon,
 } from './api/mapPlan.js';
 import { mapApiWalletToLocal } from './api/mapWallet.js';
-import { couponDisplayMode, couponPercentNum, couponPaletteTierFor, enrichCouponDisplay } from './api/couponDisplay.js';
+import { couponDisplayMode, couponPercentNum, couponPaletteTierFor, enrichCouponDisplay, formatCouponConditions } from './api/couponDisplay.js';
 import {
   dedupeWalletCoupons,
   enrichWalletCoupons,
@@ -668,6 +668,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
 
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [hudRewardsOpen, setHudRewardsOpen] = useState(false);
+  const [tutorialRewardsActive, setTutorialRewardsActive] = useState(false);
   const [tutorialGameCompletion, setTutorialGameCompletion] = useState(0);
   const [rewardNoticeSeen, setRewardNoticeSeen] = useState(false);
   const [leaderboardData, setLeaderboardData] = useState(null);
@@ -4743,9 +4744,11 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
                 identity={touchId}
                 coinGainSignal={coinGainSignal}
                 lastGainAmount={lastGainAmount}
+                onTutorialRewardsChange={setTutorialRewardsActive}
                 rewardsOpen={hudRewardsOpen}
                 gameOpen={activeModal === 'platform-game'}
                 gameCompletion={tutorialGameCompletion}
+                rewardPresentationOpen={Boolean(giftReveal)}
               />
             </div>
           </main>
@@ -4757,6 +4760,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
                 {targetUnlocked && !targetClaimed && targetPack && <div className="game-hud-modal__reward"><span>Ready to unlock</span><strong>{targetRewardLabel}</strong><button type="button" onClick={() => { setHudRewardsOpen(false); void issueTargetPack(); }}>Claim reward</button></div>}
                 <CouponWalletPage coupons={walletArchiveCoupons} brand={brand} copiedCode={walletCopiedCode} onCopy={handleWalletCopy} onClaim={handleShopNowDirect} />
               </section>
+              {tutorialRewardsActive && <button type="button" className="tutorial-modal-next tutorial-modal-next--outside" onClick={(event) => { event.stopPropagation(); setHudRewardsOpen(false); }}>Next</button>}
             </div>
           )}
           <LeaderboardSheet
@@ -6167,7 +6171,9 @@ function CouponTicket({
   brand = null,
 }) {
   const expiry = formatWalletExpiry(coupon.expiresAt);
-  const conditions = coupon.conditions || 'No minimum';
+  const conditions = coupon.conditions || formatCouponConditions(coupon);
+  const restrictionDetails = coupon.restrictions ? formatCouponConditions(coupon) : '';
+  const conditionSummary = conditions.split(/\s*[·\n]\s*/)[0];
   const displayCode = coupon.code || coupon.mockCode;
   const mode = couponDisplayMode(coupon);
   const brandName = brand?.name?.trim();
@@ -6229,7 +6235,7 @@ function CouponTicket({
         <div className="cwticket-value">
           <CouponValueFace coupon={coupon} />
         </div>
-        {showDetails && <div className="cwticket-cond">{conditions}</div>}
+        {showDetails && <details className="cwticket-terms"><summary>{conditionSummary}<span aria-hidden="true">⌄</span></summary><div>{conditions}{restrictionDetails && restrictionDetails !== conditions && <p>{restrictionDetails}</p>}{expiry && <p>Expires {expiry}</p>}</div></details>}
         {showDetails && expiry && <div className="cwticket-expire">Expires {expiry}</div>}
         {showCode && displayCode && (
           <div className="cwticket-code">

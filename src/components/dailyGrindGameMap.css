@@ -550,3 +550,36 @@ body:has(.content-area.is-island-world) #root,
 .content-area.is-island-world {
   background:#ededed;
 }
+/* The bridge remains scenery; its game entry sits on the nearby empty island. */
+.daily-grind-spot--bridge,
+.daily-grind-game-tile.daily-grind-spot--bridge {
+  left: 46%; top: 53%; width: 23%; height: 20%;
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+/* Product artwork is configurable and leaves the underlying game targets clickable. */
+.daily-grind-product-landmark .vivora-can-3d > img, .island-product-visual img { clip-path: inset(0 29% 0 29%); filter: drop-shadow(0 5px 4px #193b3870); transform: scale(1.65); transform-origin: center bottom; }
+.island-product-visual { position: absolute; z-index: 4; pointer-events: none; display: grid; place-items: end center; }
+.island-product-visual .vivora-can-3d { width: 65%; height: 100%; }
+.daily-grind-product-landmark .vivora-can-3d > img, .island-product-visual img { clip-path: none; transform: none; }
+/* Give product landmarks a gentle floating motion without moving their hit areas. */
+.daily-grind-product-landmark.has-game { animation: none; }
+.daily-grind-product-landmark .vivora-can-3d, .island-product-visual .vivora-can-3d { animation: island-product-float 2.8s ease-in-out infinite; will-change: transform; }
+.island-product-visual:nth-of-type(even) .vivora-can-3d { animation-delay: -.9s; }
+@keyframes island-product-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+@media (prefers-reduced-motion: reduce) { .daily-grind-product-landmark .vivora-can-3d, .island-product-visual .vivora-can-3d { animation: none; } }
+/* Active products emit a continuous, warm interactive glow. */
+.daily-grind-product-landmark.has-game .vivora-can-3d::before,
+.island-product-visual .vivora-can-3d::before {
+  content: ''; position: absolute; inset: 10% 8% 5%; z-index: -1; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(ellipse, rgba(255,245,153,.68) 0%, rgba(255,226,98,.34) 38%, transparent 72%);
+  filter: blur(7px); animation: island-product-glow 1.8s ease-in-out infinite;
+}
+.daily-grind-product-landmark.has-game .vivora-can-3d > img,
+.island-product-visual .vivora-can-3d > img { animation: island-product-shine 1.8s ease-in-out infinite; }
+@keyframes island-product-glow { 0%,100% { opacity: .45; transform: scale(.88); } 50% { opacity: 1; transform: scale(1.15); } }
+@keyframes island-product-shine { 0%,100% { filter: drop-shadow(0 4px 4px #193b3866) drop-shadow(0 0 3px #ffdc6677); } 50% { filter: drop-shadow(0 4px 4px #193b3866) drop-shadow(0 0 11px #ffe574ee); } }
+.daily-grind-product-landmark:disabled .vivora-can-3d::before { display: none; }
+.daily-grind-product-landmark:disabled .vivora-can-3d > img { animation: none; }
+@media (prefers-reduced-motion: reduce) { .daily-grind-product-landmark .vivora-can-3d::before, .island-product-visual .vivora-can-3d::before, .daily-grind-product-landmark .vivora-can-3d > img, .island-product-visual .vivora-can-3d > img { animation: none; } }
+.island-product-visual.is-disabled .vivora-can-3d::before { display: none; }
+.island-product-visual.is-disabled .vivora-can-3d, .island-product-visual.is-disabled .vivora-can-3d > img { animation: none; }

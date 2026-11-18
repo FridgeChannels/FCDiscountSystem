@@ -15,6 +15,8 @@ export function useOnboarding(identity, channel = 'dtc') {
   const [state, setState] = useState(null);
   useEffect(() => {
     if (!key) { setState(null); return; }
+    // Local testing: show the guide on each page load without changing production persistence.
+    if (import.meta.env.DEV) { setState({ status: 'in_progress', step: 'welcome' }); return; }
     let saved;
     try { saved = JSON.parse(localStorage.getItem(key)); } catch { /* storage unavailable */ }
     if (saved?.status === 'completed' || saved?.status === 'skipped') setState(saved);
@@ -44,7 +46,7 @@ export function ContextualTooltip({ step, rect, onSkip }) {
   const left = Math.max(16, Math.min(window.innerWidth - width - 16, rect ? rect.left + rect.width / 2 - width / 2 : (window.innerWidth - width) / 2));
   const below = rect && rect.bottom < window.innerHeight * .53;
   const top = rect ? (below ? Math.min(rect.bottom + 20, window.innerHeight - 245) : Math.max(16, rect.top - 230)) : Math.max(16, window.innerHeight / 2 - 110);
-  return <div className="tutorial-card tutorial-tooltip" style={{ left, top, width }} role="dialog" aria-label={copy[0]}><button className="tutorial-close" onClick={onSkip} aria-label="Close tutorial">×</button><TutorialProgress step={step} /><div className="tutorial-content"><img src={step === 'rewards' ? '/rewards/hud-rewards-3d.png' : '/rewards/hud-credits-3d.png'} alt="" /><div><h2>{copy[0]}</h2><p>{copy[1]}</p><strong>{copy[2]}</strong></div></div></div>;
+  return <div className={`tutorial-card tutorial-tooltip ${below ? 'points-up' : 'points-down'}`} style={{ left, top, width, '--tutorial-arrow-x': `${Math.max(20, Math.min(width - 20, rect ? rect.left + rect.width / 2 - left : width / 2))}px` }} role="dialog" aria-label={copy[0]}><button className="tutorial-close" onClick={onSkip} aria-label="Close tutorial">×</button><TutorialProgress step={step} /><div className="tutorial-content"><img src={step === 'rewards' ? '/rewards/hud-rewards-3d.png' : '/rewards/hud-credits-3d.png'} alt="" /><div><h2>{copy[0]}</h2><p>{copy[1]}</p><strong>{copy[2]}</strong></div></div></div>;
 }
 
 export function TutorialOverlay({ step, selector, onSkip }) {

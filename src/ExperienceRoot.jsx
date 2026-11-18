@@ -31,10 +31,8 @@ async function resolveAsinConfiguration(fcId) {
 
 function brandFromExperience(result) {
   const raw = typeof result?.brandLogo === 'string' ? result.brandLogo.trim() : '';
-  // Loading shell uses <img> — prefer the absolute CDN URL (no brand-asset proxy hop).
-  const logoUrl = raw
-    ? (/^https?:\/\//i.test(raw) ? raw : normalizeLogoUrl(raw))
-    : null;
+  // Preload the same-origin URL that the particle canvas will use.
+  const logoUrl = raw ? normalizeLogoUrl(raw) : null;
   return {
     logoUrl,
     brandName: result?.brandName ?? null,
@@ -46,6 +44,7 @@ function preloadLogo(url) {
   if (!url || typeof window === 'undefined') return;
   const img = new Image();
   img.decoding = 'async';
+  img.crossOrigin = 'anonymous';
   img.src = url;
 }
 
@@ -88,9 +87,7 @@ export default function ExperienceRoot() {
   const [phase, setPhase] = useState({ status: 'resolving' });
   const [contentReady, setContentReady] = useState(false);
   const [loadingBrand, setLoadingBrand] = useState({ logoUrl: null, brandName: null });
-  const [loadingBrandReady, setLoadingBrandReady] = useState(false);
   const [logoSettled, setLogoSettled] = useState(true);
-  const [loadingVideoEnabled, setLoadingVideoEnabled] = useState(false);
   const [loadingOverlayDismissed, setLoadingOverlayDismissed] = useState(false);
   const contentReadyRef = useRef(false);
   const resolveSeqRef = useRef(0);
@@ -111,7 +108,6 @@ export default function ExperienceRoot() {
     contentReadyRef.current = false;
     setContentReady(false);
     setLoadingBrand({ logoUrl: null, brandName: null });
-    setLoadingBrandReady(false);
     setLogoSettled(true);
     setLoadingOverlayDismissed(false);
 
@@ -147,7 +143,6 @@ export default function ExperienceRoot() {
 
         // Experience API already loaded magnet_brand_param — apply logo before destination boot.
         const brand = brandFromExperience(result);
-        setLoadingBrandReady(true);
         if (brand.logoUrl) {
           setLogoSettled(false);
           setLoadingBrand(brand);
@@ -158,7 +153,6 @@ export default function ExperienceRoot() {
         }
 
         if (result.experience === 'asin_plus') {
-          setLoadingVideoEnabled(true);
           const resolvedSn = result.sn || sn;
           const config = await resolveAsinConfiguration(resolvedSn);
           if (seq !== resolveSeqRef.current) return;
@@ -177,7 +171,6 @@ export default function ExperienceRoot() {
           prefetchDtcEntry(touchId, { includeRewardPlan: !isShopifyOAuthPending(touchId) });
           const App = await bootDtcApp();
           if (seq !== resolveSeqRef.current) return;
-          setLoadingVideoEnabled(true);
           setPhase({ status: 'dtc', sn: result.sn || sn, App });
           return;
         }
@@ -243,10 +236,7 @@ export default function ExperienceRoot() {
     <>
       {keepLoadingOverlay ? (
         <ExperienceLoading
-          videoEnabled={loadingVideoEnabled}
           logoUrl={loadingBrand.logoUrl}
-          brandName={loadingBrand.brandName}
-          brandReady={loadingBrandReady}
           readyToExit={!showLoading}
           onLogoReady={markLogoSettled}
           onLogoError={markLogoSettled}

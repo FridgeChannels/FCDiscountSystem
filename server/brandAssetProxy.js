@@ -56,7 +56,22 @@ export function isAllowedBrandAssetUrl(raw) {
   return allowed.some((host) => hostname === host || hostname.endsWith(`.${host}`));
 }
 
+const assetCache = new Map();
+const inflightAssets = new Map();
 export async function fetchBrandAsset(targetUrl) {
+  const cached = assetCache.get(targetUrl);
+  if (cached && cached.expiresAt > Date.now()) return cached.asset;
+  if (inflightAssets.has(targetUrl)) return inflightAssets.get(targetUrl);
+  const request = loadBrandAsset(targetUrl);
+  inflightAssets.set(targetUrl, request);
+  try {
+    const asset = await request;
+    if (assetCache.size >= 100) assetCache.delete(assetCache.keys().next().value);
+    assetCache.set(targetUrl, { asset, expiresAt: Date.now() + 3600000 });
+    return asset;
+  } finally { inflightAssets.delete(targetUrl); }
+}
+async function loadBrandAsset(targetUrl) {
   const upstream = await fetch(targetUrl, {
     headers: { accept: 'image/*,*/*;q=0.8' },
     cache: 'no-store',

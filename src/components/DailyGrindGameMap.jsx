@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import OnboardingController, { useOnboarding } from '../onboarding/OnboardingController.jsx';
 import VivoraCan3D from './VivoraCan3D.jsx';
+
+const PRODUCT_IMAGES = ['/products/5-hour-berry-25d.png', '/products/5-hour-caramel-apple-25d.png'];
 import './dailyGrindGameMap.css';
 import './islandVisualTheme.css';
 
 const TASK_SPOTS = [
   { key: 'memory_match', fallback: 'card', className: 'daily-grind-spot--cards', bounds: { left: 15, top: 72, width: 28, height: 27 }, accepts: (task) => task.type === 'game' },
-  { key: 'bridge_cross', fallback: 'bridge', className: 'daily-grind-spot--bridge', bounds: { left: 39.5, top: 36.5, width: 20, height: 15 }, accepts: (task) => task.type === 'game' },
+  { key: 'bridge_cross', fallback: 'bridge', className: 'daily-grind-spot--bridge', bounds: { left: 46, top: 53, width: 23, height: 20 }, accepts: (task) => task.type === 'game' },
   { key: 'dodge_plane', fallback: 'dodge', className: 'daily-grind-spot--dodge', bounds: { left: 5, top: 36.5, width: 25, height: 26 }, accepts: (task) => task.type === 'game' },
   { key: 'shopify_connect', className: 'daily-grind-spot--shopify', bounds: { left: 73, top: 26, width: 23, height: 30 }, accepts: (task) => task.type === 'shopify_connect' },
   { key: 'survey', className: 'daily-grind-spot--survey', bounds: { left: 46, top: 0, width: 25, height: 24 }, accepts: (task) => task.type === 'survey' },
@@ -15,7 +17,6 @@ const TASK_SPOTS = [
 // The original video is shared by all animated spots. Masks use percentages of
 // the source frame so every active region stays aligned as the map resizes.
 const VIDEO_SPOT_MASKS = {
-  bridge_cross: 'radial-gradient(ellipse 18% 17% at 48% 37%, #000 75%, transparent 100%)',
   dodge_plane: 'radial-gradient(ellipse 13% 14% at 16% 41%, #000 72%, transparent 100%)',
   survey: 'radial-gradient(ellipse 15% 16% at 56% 9%, #000 75%, transparent 100%)',
 };
@@ -49,12 +50,13 @@ function iconAssetForTask(challenge, spot) {
 export default function DailyGrindGameMap({
   challenges = [], disabled = false, onOpen, upgradeMaxPoints = 5,
   countdownText = '', isExpired = false, points = 0, threshold = null, delta = 0,
-  targetRewardLabel = null, brandLogoUrl = null, brandName = '', onLeaderboard, onRewards, rewardNotice = false, expiryDate = '', identity = '', coinGainSignal = 0, lastGainAmount = 0, rewardsOpen = false, gameOpen = false, gameCompletion = 0,
+  targetRewardLabel = null, brandLogoUrl = null, brandName = '', onLeaderboard, onRewards, onTutorialRewardsChange, rewardNotice = false, expiryDate = '', identity = '', coinGainSignal = 0, lastGainAmount = 0, rewardsOpen = false, gameOpen = false, gameCompletion = 0, rewardPresentationOpen = false,
 }) {
   const [selectedId, setSelectedId] = useState(null);
   const toggleSelectedTask = (id) => setSelectedId((current) => current === id ? null : id);
   const [hudModal, setHudModal] = useState(null);
   const [recentGain, setRecentGain] = useState(0);
+  useEffect(() => { if (rewardPresentationOpen) setHudModal(null); }, [rewardPresentationOpen]);
   const seenCoinGain = useRef(coinGainSignal);
   useEffect(() => {
     if (coinGainSignal > seenCoinGain.current && lastGainAmount > 0) {
@@ -69,6 +71,7 @@ export default function DailyGrindGameMap({
   const onboarding = useOnboarding(identity, 'dtc');
   const tutorialStep = onboarding.state?.status === 'in_progress' ? onboarding.state.step : null;
   const [tutorialModal, setTutorialModal] = useState(null);
+  useEffect(() => { onTutorialRewardsChange?.(tutorialStep === 'rewards' && tutorialModal === 'rewards'); }, [tutorialStep, tutorialModal, onTutorialRewardsChange]);
   const previousGameOpen = useRef(false);
   const completionSeen = useRef(gameCompletion);
   const tutorialSettled = useRef(false);
@@ -158,7 +161,6 @@ export default function DailyGrindGameMap({
       : 'Play now';
   const tutorialGame = tasks.find(({ spot, challenge }) => challenge.type === 'game' && spot.key !== 'memory_match') ?? tasks.find(({ challenge }) => challenge.type === 'game');
   const productIslandChallenge = tasks.find(({ spot }) => spot.key === 'memory_match')?.challenge;
-  const hasShopifyTask = tasks.some(({ spot }) => spot.key === 'shopify_connect');
   const activeVideoMasks = tasks.map(({ spot }) => VIDEO_SPOT_MASKS[spot.key]).filter(Boolean);
   const videoMask = activeVideoMasks.join(', ');
   const progressMax = Number(threshold) > 0 ? Number(threshold) : 100;
@@ -195,8 +197,8 @@ export default function DailyGrindGameMap({
                 <span className="credits-progress-percent">{Math.round(progressPercent)}%</span>
               </div>
             </>}
-          
           </section>
+          {tutorialStep === 'credits' && tutorialModal === 'credits' && <button type="button" className="tutorial-modal-next tutorial-modal-next--outside" onClick={(event) => { event.stopPropagation(); setHudModal(null); }}>Next</button>}
         </div>
       )}
       <div className="daily-grind-map__scene">
@@ -220,7 +222,7 @@ export default function DailyGrindGameMap({
           </filter>
         </svg>
         <div className="daily-grind-map__world-art" aria-hidden="true">
-          <img className="daily-grind-map__still" src="/scene-media/daily-grind-map-frame.png" alt="" />
+          <img className="daily-grind-map__still" src="/scene-media/daily-grind-map-product-clear.png" alt="" />
           {activeVideoMasks.length > 0 && (
             <video
               className="daily-grind-map__task-motion"
@@ -232,16 +234,6 @@ export default function DailyGrindGameMap({
               playsInline
               preload="metadata"
             />
-          )}
-          {hasShopifyTask && (
-            <span className="daily-grind-map__flag-motion">
-              <img src="/scene-media/daily-grind-map-frame.png" alt="" />
-            </span>
-          )}
-          {productIslandChallenge && (
-            <span className="daily-grind-map__product-motion">
-              <img src="/scene-media/daily-grind-map-frame.png" alt="" />
-            </span>
           )}
         </div>
         {tasks.map(({ spot }) => (
@@ -259,7 +251,7 @@ export default function DailyGrindGameMap({
             aria-hidden="true"
           >
             <polygon
-              points={spot.key === 'bridge_cross' ? '12,0 100,57 88,100 0,42' : '50,0 100,25 100,75 50,100 0,75 0,25'}
+              points="50,0 100,25 100,75 50,100 0,75 0,25"
               pathLength="100"
               vectorEffect="non-scaling-stroke"
             />
@@ -274,8 +266,13 @@ export default function DailyGrindGameMap({
           disabled={!productIslandChallenge}
           onClick={() => { if (productIslandChallenge) { toggleSelectedTask(productIslandChallenge.id); if (tutorialStep === 'game' && tutorialGame?.challenge.id === productIslandChallenge.id) onboarding.go('launch'); } }}
         >
-          <VivoraCan3D label="VIVORA Sparkling product model" />
+          <VivoraCan3D src={PRODUCT_IMAGES[0]} label="5-hour ENERGY Berry" />
         </button>
+        {tasks.filter(({ challenge }) => challenge.id !== productIslandChallenge?.id).map(({ spot, challenge }, index) => (
+          <span key={`product-${spot.key}`} className={`island-product-visual ${disabled ? 'is-disabled' : ''}`} style={{ left: `${spot.bounds.left}%`, top: `${spot.bounds.top}%`, width: `${spot.bounds.width}%`, height: `${spot.bounds.height}%` }} aria-hidden="true">
+            <VivoraCan3D src={PRODUCT_IMAGES[(index + 1) % PRODUCT_IMAGES.length]} label="" />
+          </span>
+        ))}
         {tasks.map(({ spot, challenge }) => (
           <button
             key={spot.key}
