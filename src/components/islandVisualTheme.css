@@ -109,12 +109,43 @@ body:has(.content-area.is-island-world) #root {
 /* Keep the map's original 1280:1034 framing and clickable coordinates intact. */
 .content-area.is-island-world .daily-grind-map__scene { background: var(--island-sky); }
 .daily-grind-map__scene video,
+.daily-grind-map__still,
+.daily-grind-map__flag-motion img,
+.daily-grind-map__product-motion img,
 .daily-grind-game-tile img { filter: url(#island-soft-green); }
 .daily-grind-spot:focus-visible,
 .daily-grind-product-landmark:focus-visible {
   outline: 3px solid white;
   outline-offset: -3px;
   filter: drop-shadow(0 0 3px var(--island-forest));
+}
+
+/* A brief glint follows the outline of each assigned island. */
+.daily-grind-task-shimmer {
+  position: absolute;
+  z-index: 4;
+  overflow: visible;
+  pointer-events: none;
+}
+.daily-grind-task-shimmer polygon {
+  fill: none;
+  stroke: color-mix(in srgb, var(--island-accent) 26%, #fff);
+  stroke-width: 2.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 12 88;
+  opacity: 0;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--island-accent) 65%, white));
+  animation: island-edge-shimmer 6s linear infinite;
+}
+@keyframes island-edge-shimmer {
+  0%, 73% { opacity: 0; stroke-dashoffset: 100; }
+  77% { opacity: .85; }
+  90% { opacity: .85; stroke-dashoffset: 0; }
+  94%, 100% { opacity: 0; stroke-dashoffset: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .daily-grind-task-shimmer polygon { animation: none; opacity: 0; }
 }
 
 /* The task details share the map background; controls carry the color. */
@@ -182,3 +213,646 @@ body:has(.content-area.is-island-world) #root {
   .daily-grind-map__campaign-copy { align-items: flex-start; flex-direction: column; }
   .daily-grind-map__campaign-tally { text-align: left; }
 }
+
+/* A continuous landscape behind the live, independently interactive UI. */
+html:has(.content-area.is-island-world),
+body:has(.content-area.is-island-world),
+body:has(.content-area.is-island-world) #root { background: #d4ede0; }
+.mobile-viewport[data-screen-label="优惠券首页"]:has(.content-area.is-island-world) {
+  --island-world-height: calc(min(100vw, 440px) * 2.14);
+  background: #b7d789;
+}
+.mobile-viewport:has(.content-area.is-island-world) .brand-header,
+.mobile-viewport:has(.content-area.is-island-world) .content-area.is-island-world,
+.content-area.is-island-world .daily-grind-map,
+.content-area.is-island-world .daily-grind-map__heading,
+.content-area.is-island-world .daily-grind-map__scene,
+.content-area.is-island-world .island-map-footer { background: transparent; }
+
+.mobile-viewport:has(.content-area.is-island-world) .brand-header {
+  padding: 12px 20px 8px;
+  flex: 0 0 58px;
+  box-sizing: border-box;
+  background: transparent;
+}
+.mobile-viewport:has(.content-area.is-island-world) .content-area.is-island-world {
+  background: #b7d789 url('/scene-media/island-world-reward-board.png') center top / 100% var(--island-world-height) no-repeat local;
+}
+.content-area.is-island-world > .reward-journey-shell { min-height: 0; }
+.content-area.is-island-world .daily-grind-map { background: transparent; }
+.mobile-viewport:has(.content-area.is-island-world) .brand-name {
+  font-size: 20px;
+  font-weight: 850;
+  color: #092e25;
+}
+.mobile-viewport:has(.content-area.is-island-world) :is(.wallet-entry-btn, .account-entry-btn) {
+  background: linear-gradient(155deg, #f8faed, #d5debe);
+  box-shadow: inset 0 2px 1px rgba(255,255,255,.9), 0 3px 0 #9ba890, 0 6px 12px rgba(42,74,51,.22);
+}
+
+.content-area.is-island-world .daily-grind-map__heading {
+  padding: calc(8px + max(0px, calc(min(100vw, 440px) * .242 - 67px))) 16px 14px;
+  gap: 10px;
+}
+.daily-grind-map__heading-main { gap: 10px; align-items: center; justify-content: space-between; }
+.daily-grind-map__heading-copy,
+.daily-grind-map__campaign {
+  background: linear-gradient(150deg, #f4f5df 0%, #d8dfc6 100%);
+  box-shadow: inset 0 2px 2px rgba(255,255,255,.8), 0 3px 0 #acb99b, 0 6px 13px rgba(46,77,47,.16);
+}
+.daily-grind-map__heading-copy {
+  flex: 0 0 47%;
+  min-height: calc(min(100vw, 440px) * .167);
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+  padding: 6px 5px 8px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.daily-grind-map__heading-copy > span { color: #073428; font-size: 15px; }
+.daily-grind-map__heading-copy > small { color: #405d4a; }
+.daily-grind-map__heading-main > button {
+  position: relative;
+  isolation: isolate;
+  min-height: 38px;
+  border-radius: 7px;
+  color: #5b3c13;
+  background: linear-gradient(145deg, #fff0b0, #efc467);
+  box-shadow: inset 0 0 0 3px #b77c3f, inset 0 4px 0 rgba(255,255,255,.48), 0 3px 0 #8d6438, 0 5px 10px rgba(57,67,28,.2);
+}
+.daily-grind-map__heading-main > button::before,
+.daily-grind-map__heading-main > button::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  bottom: -10px;
+  width: 5px;
+  height: 15px;
+  border-radius: 2px;
+  background: #966832;
+}
+.daily-grind-map__heading-main > button::before { left: 13px; }
+.daily-grind-map__heading-main > button::after { right: 13px; }
+.daily-grind-map__campaign {
+  box-sizing: border-box;
+  min-height: calc(min(100vw, 440px) * .23);
+  align-content: center;
+  padding: 4px 20px;
+  gap: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.daily-grind-map__campaign-copy {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+}
+.daily-grind-map__campaign-goal { justify-items: start; }
+.daily-grind-map__campaign-goal strong { justify-content: flex-start; flex-wrap: wrap; }
+.daily-grind-map__campaign-goal strong { color: #0b3a2e; }
+.daily-grind-map__campaign-goal small { color: #3d5e4e; }
+.daily-grind-map__campaign-tally {
+  padding: 6px 8px;
+  border-radius: 9px 7px 10px 7px;
+  color: #0b3a2e;
+  background: linear-gradient(160deg, #f6f7e6, #d7e0c8);
+  box-shadow: 0 2px 0 rgba(108,129,94,.3), 0 3px 6px rgba(50,74,46,.1);
+}
+.daily-grind-map__campaign-meter { padding-inline: 12px 0; }
+.daily-grind-map__campaign-target { flex-basis: 36px; width: 36px; height: 36px; }
+.daily-grind-map__campaign-bar {
+  background: #a9b4a0;
+  box-shadow: inset 0 2px 3px rgba(39,56,38,.3), 0 1px 0 rgba(255,255,255,.9);
+}
+
+/* Clip the source frame around the island while preserving its original colors. */
+.daily-grind-map__world-art {
+  position: absolute;
+  inset: 0;
+  filter: url(#island-water-matte);
+  /* The source frame contains a dark edge in its last pixels. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 8px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 8px), transparent 100%);
+  pointer-events: none;
+}
+.daily-grind-map__scene video,
+.daily-grind-map__still,
+.daily-grind-map__flag-motion img,
+.daily-grind-map__product-motion img { filter: none; }
+
+.content-area.is-island-world .island-map-footer {
+  position: relative;
+  padding: 8px 16px calc(20px + env(safe-area-inset-bottom));
+  border: 0;
+  box-shadow: none;
+}
+.content-area.is-island-world .island-map-footer::before,
+.content-area.is-island-world .island-map-footer::after {
+  content: none;
+}
+.content-area.is-island-world .island-map-footer > button {
+  position: relative;
+  z-index: 1;
+  width: min(215px, 100%);
+  min-height: 72px;
+  aspect-ratio: 2101 / 748;
+  justify-content: center;
+  gap: 8px;
+  padding: 5px 18px 20px;
+  border-radius: 0;
+  color: #274632;
+  background: url('/scene-media/island-guide-wide-sign.png') center / 100% 100% no-repeat;
+  box-shadow: none;
+  font-size: 14px;
+}
+.content-area.is-island-world .island-map-footer > button > span:last-child {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  color: #244832;
+  background: #d3e9a7;
+  box-shadow: 0 1px 2px rgba(60,94,35,.18);
+}
+.island-field-guide {
+  position: absolute;
+  z-index: 8;
+  left: 16px;
+  bottom: calc(100% - 4px);
+  width: min(310px, calc(100% - 32px));
+  padding: 15px 16px;
+  border-radius: 16px;
+  color: #1b3e2e;
+  background: #f7f5e5;
+  box-shadow: 0 3px 0 #a7b49a, 0 10px 26px rgba(24,55,38,.27);
+  font: 550 13px/1.45 var(--font-sans, sans-serif);
+}
+.island-field-guide__heading { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.island-field-guide__heading strong { font:800 15px/1.2 var(--font-sans, sans-serif); }
+.island-field-guide__heading button {
+  display:grid;
+  flex:0 0 32px;
+  width:32px;
+  height:32px;
+  place-items:center;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  color:#244832;
+  background:#e2e9d2;
+  font:700 19px/1 var(--font-sans, sans-serif);
+  cursor:pointer;
+}
+.island-field-guide p { margin:8px 0 0; color:#405e4b; }
+
+@media (max-width: 380px) {
+  .content-area.is-island-world .daily-grind-map__heading { padding-inline: 14px; }
+  .daily-grind-map__heading-copy { padding-inline: 5px; }
+  .daily-grind-map__heading-copy > span { font-size: 15px; }
+  .daily-grind-map__campaign { padding-inline: 20px; }
+}
+@media (max-width: 340px) {
+  .daily-grind-map__heading-copy { padding-inline: 5px; }
+  .daily-grind-map__heading-copy > span { font-size: 13px; }
+  .daily-grind-map__heading-copy > small { font-size: 8px; white-space: nowrap; }
+  .daily-grind-map__campaign-goal strong { font-size: 13px; }
+  .daily-grind-map__campaign-remaining { font-size: 21px; }
+  .daily-grind-map__campaign-goal small { font-size: 10px; }
+  .daily-grind-map__campaign-tally { padding: 4px 5px; font-size: 9px; white-space: nowrap; }
+  .daily-grind-map__campaign-target { flex-basis: 30px; width: 30px; height: 30px; }
+}
+
+/* The artwork and live content share the same width-based coordinates. */
+.content-area.is-island-world .daily-grind-map__heading {
+  --board-width: min(100vw, 440px);
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  height: calc(var(--board-width) * .82 - 58px);
+  padding: 0;
+}
+.content-area.is-island-world .daily-grind-map__heading-main {
+  position: absolute;
+  top: calc(var(--board-width) * .235 - 58px);
+  right: 6%;
+  width: auto;
+}
+.content-area.is-island-world .daily-grind-map__campaign {
+  position: static;
+  min-height: 0;
+  padding: 0;
+}
+.content-area.is-island-world .daily-grind-map__heading-copy {
+  position: absolute;
+  top: calc(var(--board-width) * .45 - 58px);
+  left: 9%;
+  width: 50%;
+  min-height: 0;
+  padding: 0;
+  text-align: center;
+}
+.content-area.is-island-world .daily-grind-map__heading-copy > span {
+  font-size: clamp(13px, 4.1vw, 18px);
+  line-height: 1.05;
+  white-space: nowrap;
+}
+.content-area.is-island-world .daily-grind-map__countdown {
+  position: absolute;
+  top: calc(var(--board-width) * .51 - 58px);
+  left: 61%;
+  width: 29%;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  color: #3e3322;
+  text-align: center;
+  font: 600 clamp(8px, 2.2vw, 10px)/1.1 var(--font-sans, sans-serif);
+}
+.content-area.is-island-world .daily-grind-map__countdown strong {
+  font-size: clamp(8px, 2.3vw, 10px);
+  white-space: nowrap;
+}
+.content-area.is-island-world .daily-grind-map__campaign-copy {
+  position: absolute;
+  top: calc(var(--board-width) * .515 - 58px);
+  left: 9%;
+  width: 49%;
+  text-align: center;
+}
+.content-area.is-island-world .daily-grind-map__campaign-goal { width: 100%; justify-items: center; }
+.content-area.is-island-world .daily-grind-map__campaign-goal strong {
+  justify-content: center;
+  gap: 3px;
+  font-size: clamp(11px, 3.2vw, 14px);
+}
+.content-area.is-island-world .daily-grind-map__campaign-remaining { font-size: clamp(19px, 5.6vw, 25px); }
+.content-area.is-island-world .daily-grind-map__campaign-goal small { font-size: clamp(9px, 2.4vw, 11px); }
+.content-area.is-island-world .daily-grind-map__campaign-meter {
+  position: absolute;
+  top: calc(var(--board-width) * .66 - 58px);
+  left: 10%;
+  width: 80%;
+  box-sizing: border-box;
+  padding: 0;
+  gap: 5px;
+}
+.content-area.is-island-world .daily-grind-map__campaign-tally {
+  padding: 5px 7px;
+  font-size: clamp(8px, 2.1vw, 10px);
+  white-space: nowrap;
+}
+.content-area.is-island-world .daily-grind-map__campaign-target {
+  flex-basis: 27px;
+  width: 27px;
+  height: 27px;
+}
+
+/* Compact game information floats above the island rather than occupying it. */
+.mobile-viewport:has(.content-area.is-island-world) .content-area.is-island-world {
+  background: #b7d789 url('/scene-media/island-world-backdrop-clear.png') center top / 100% var(--island-world-height) no-repeat local;
+}
+.mobile-viewport:has(.content-area.is-island-world) .wallet-entry-btn { display: none; }
+.content-area.is-island-world .daily-grind-map { position: relative; padding-top: 86px; }
+.game-hud { position: absolute; z-index: 5; top: 13px; left: 50%; display: flex; gap: 12px; transform: translateX(-50%); }
+.game-hud__icon { position: relative; display: grid; justify-items: center; gap: 5px; width: 58px; padding: 0; border: 0; background: none; color: #285143; cursor: pointer; }
+.game-hud__icon > span { display: grid; place-items: center; width: 46px; height: 46px; border: 1px solid rgba(255,255,255,.85); border-radius: 16px; background: linear-gradient(145deg,#fffef0,#dbe9cc); box-shadow: inset 0 2px 2px #fff, 0 3px 0 #9cad8e, 0 6px 12px #3c6c4833; font: 700 24px/1 Georgia,serif; transition: transform .18s; }
+.game-hud__icon:active > span { transform: translateY(2px); }
+.game-hud__icon small { color: #24483a; font: 700 10px/1 sans-serif; text-shadow: 0 1px #fff9; }
+.game-hud__icon.is-urgent > span { border-color: #d7aa62; }
+.game-hud__notice { position: absolute; top: 0; right: 5px; width: 9px; height: 9px; border: 2px solid #fff9e9; border-radius: 50%; background: #e77c50; }
+.game-hud__intro { position: absolute; z-index: 6; top: 78px; left: 50%; width: min(300px, 80%); box-sizing: border-box; padding: 14px 17px; border-radius: 16px; background: #fffdf0; box-shadow: 0 7px 25px #264c3f40; color: #355a48; transform: translateX(-50%); font: 13px/1.4 sans-serif; }
+.game-hud__intro strong, .game-hud__intro span { display: block; }
+.game-hud__intro strong { margin-bottom: 3px; color: #173e30; }
+.game-hud-modal__overlay { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(21,52,40,.48); animation: hud-fade .2s ease both; }
+.game-hud-modal { position: relative; width: min(100%, 360px); max-height: min(80dvh, 680px); overflow: auto; box-sizing: border-box; padding: 27px 24px; border: 1px solid #fff; border-radius: 24px; background: #fbfbee; box-shadow: 0 18px 50px #173d3155, inset 0 2px #fff; color: #254b3a; animation: hud-enter .25s ease both; }
+.game-hud-modal__close { position: absolute; top: 14px; right: 14px; width: 34px; height: 34px; border: 0; border-radius: 50%; background: #e8efde; color: #315543; font-size: 24px; cursor: pointer; }
+.game-hud-modal__eyebrow { color: #799578; font: 800 10px/1 sans-serif; letter-spacing: .14em; }
+.game-hud-modal h2 { margin: 7px 0 20px; color: #173e30; font: 700 27px/1.1 Georgia,serif; }
+.game-hud-modal__balance { margin: 8px 0 20px; color: #719077; font-size: 13px; }
+.game-hud-modal__balance strong { color: #1e644a; font: 700 28px/1.1 Georgia,serif; }
+.game-hud-modal__reward { display: grid; gap: 6px; padding: 15px; border-radius: 14px; background: #eaf2df; }
+.game-hud-modal__reward span, .game-hud-modal__progress-label { color: #738c77; font: 700 11px/1.3 sans-serif; }
+.game-hud-modal__reward button { margin-top: 8px; padding: 10px; border: 0; border-radius: 10px; color: white; background: #2e7656; cursor: pointer; }
+.game-hud-modal__progress-label { display: flex; justify-content: space-between; margin: 20px 0 8px; }
+.game-hud-modal__progress { height: 9px; overflow: hidden; border-radius: 99px; background: #dce8d4; }
+.game-hud-modal__progress span { display: block; height: 100%; border-radius: inherit; background: #6bae7c; }
+.game-hud-modal p { color: #728a76; font: 13px/1.5 sans-serif; }
+.game-hud-modal--rewards .cwallet-page { min-height: 0; padding: 0; background: transparent; }
+.game-hud-modal--rewards .cwallet-empty { padding: 22px 0; }
+@keyframes hud-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes hud-enter { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .game-hud-modal, .game-hud-modal__overlay { animation: none; } }
+
+/* The original island progress stone opens on demand. */
+.game-hud__coupon { width: 40px; height: 35px; object-fit: contain; border-radius: 8px; }
+.credits-stone { position: relative; width: min(420px, 100%); box-sizing: border-box; padding: 48px 34px 50px; color: #163f30; background: url('/scene-media/island-progress-stone.png') center / 100% 100% no-repeat; filter: drop-shadow(0 14px 18px rgba(18,51,35,.32)); animation: hud-enter .25s ease both; }
+.credits-stone__close { position: absolute; top: 28px; right: 27px; display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 50%; background: #dbe4ce; color: #3a6049; font: 24px/1 sans-serif; cursor: pointer; }
+.credits-stone__top { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding-right: 22px; }
+.credits-stone__goal { display: grid; gap: 4px; }
+.credits-stone__goal h2 { margin: 0 0 3px; color: #123e2e; font: 800 17px/1.15 sans-serif; }
+.credits-stone__goal > strong { font: 800 13px/1.2 sans-serif; }
+.credits-stone__goal em { color: #16836b; font-size: 21px; font-style: normal; }
+.credits-stone__goal > span { color: #58725b; font: 600 11px/1.25 sans-serif; }
+.credits-stone__time { display: grid; gap: 4px; text-align: center; color: #50644d; font: 700 10px/1.2 sans-serif; white-space: nowrap; }
+.credits-stone__time strong { color: #284b37; font-size: 11px; }
+.credits-stone__time small { font-size: 9px; }
+.credits-stone__bottom { display: flex; align-items: center; gap: 8px; margin-top: 17px; }
+.credits-stone__bar { flex: 1; height: 10px; overflow: hidden; border-radius: 20px; background: #abb9a4; box-shadow: inset 0 2px 3px #41544255, 0 1px #fff; }
+.credits-stone__bar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#08b8ab,#53d6c5); transition: width 1.15s cubic-bezier(.2,.75,.25,1); }
+.credits-stone__bar span.is-gaining { box-shadow: 0 0 12px #54e0bc; }
+.credits-stone__bottom > strong.credits-stone__gain { color: #087c62; font-size: 12px; animation: credits-gain-pop .42s ease both; }
+@keyframes credits-gain-pop { 0% { transform: scale(.75); opacity: .4; } 70% { transform: scale(1.12); } 100% { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .credits-stone__bar span, .credits-stone__gain { transition: none; animation: none; } }
+.credits-stone__bottom > strong { white-space: nowrap; color: #315543; font: 800 10px/1 sans-serif; }
+.credits-stone__bottom > img { width: 34px; height: 28px; object-fit: contain; border-radius: 5px; }
+@media (max-width: 360px) { .credits-stone { padding: 43px 27px; } .credits-stone__goal h2 { font-size: 14px; } .credits-stone__goal > strong { font-size: 11px; } .credits-stone__time strong { font-size: 9px; } }
+@media (prefers-reduced-motion: reduce) { .credits-stone { animation: none; } }
+
+/* Keep game controls alongside the profile in the header. */
+.content-area.is-island-world .daily-grind-map { padding-top: 0; }
+.game-hud { top: -44px; right: 65px; left: auto; gap: 5px; transform: none; }
+.game-hud__icon { width: 34px; gap: 0; }
+.game-hud__icon > span { width: 34px; height: 34px; border-radius: 12px; font-size: 19px; }
+.game-hud__icon small { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.game-hud__coupon { width: 30px; height: 27px; }
+.game-hud__notice { right: -1px; top: -2px; }
+.game-hud__intro { top: 8px; }
+
+/* Campaign background supplied for the island world. */
+.mobile-viewport:has(.content-area.is-island-world) .content-area.is-island-world {
+  background: #b7d789 url('/scene-media/island-world-user-background.png') center top / 100% 100% no-repeat local;
+}
+.game-hud__asset { display: block; width: 33px; height: 33px; object-fit: contain; }
+
+/* Match the island's existing wooden sign for campaign information. */
+.credits-stone {
+  padding: 64px 48px 100px;
+  background-image: url('/scene-media/island-guide-wide-sign.png');
+}
+.credits-stone__close { top: 48px; right: 39px; background: #f4e2bb; color: #775131; }
+.credits-stone .tutorial-modal-explanation { margin: 8px 0 0; color: #58654b; font-size: 11px; line-height: 1.3; }
+@media (max-width: 360px) {
+  .credits-stone { padding: 58px 40px 92px; }
+  .credits-stone__close { top: 42px; right: 32px; }
+}
+.credits-stone { padding-bottom: 140px; }
+@media (max-width: 360px) { .credits-stone { padding-bottom: 132px; } }
+.credits-stone { padding-top: 76px; }
+@media (max-width: 360px) { .credits-stone { padding-top: 70px; } }
+
+/* Restore the reward board from the original island scene. */
+.credits-stone {
+  width: min(420px, 100%);
+  min-height: 190px;
+  padding: 40px 42px 32px;
+  background: url('/scene-media/island-world-reward-board.png') center 22% / 100% auto no-repeat;
+}
+.credits-stone__close { top: 25px; right: 26px; background: #f8edcf; color: #755527; }
+.credits-stone__bottom { margin-top: 11px; }
+.credits-stone .tutorial-modal-explanation { margin-top: 5px; }
+@media (max-width: 360px) {
+  .credits-stone { min-height: 165px; padding: 34px 35px 26px; }
+  .credits-stone__close { top: 21px; right: 22px; }
+}
+.credits-stone { background: none; isolation: isolate; padding-top: 35px; }
+.credits-stone::before {
+  content: ''; position: absolute; z-index: -1; inset: 0;
+  background: url('/scene-media/island-world-reward-board.png') center 22% / 100% auto no-repeat;
+  clip-path: polygon(2% 19%, 5% 13%, 15% 12%, 29% 10%, 35% 4%, 39% 3%, 44% 8%, 61% 10%, 80% 10%, 91% 13%, 98% 19%, 98% 68%, 94% 73%, 87% 76%, 69% 76%, 52% 74%, 40% 74%, 24% 76%, 8% 74%, 2% 68%);
+}
+.credits-stone__bottom { margin-top: 5px; }
+.credits-stone .tutorial-modal-explanation { margin-top: 2px; font-size: 9px; line-height: 1.15; }
+@media (max-width: 360px) { .credits-stone { padding-top: 31px; } }
+.credits-stone .tutorial-modal-explanation { position: absolute; left: 12%; right: 12%; top: 79%; margin: 0; color: #f9fff1; text-align: center; text-shadow: 0 1px 3px #19493e; }
+.credits-stone::before { clip-path: polygon(2% 19%, 5% 13%, 15% 12%, 29% 10%, 35% 4%, 39% 3%, 44% 8%, 61% 10%, 80% 10%, 91% 13%, 98% 19%, 98% 70%, 94% 77%, 87% 80%, 69% 80%, 52% 78%, 40% 78%, 24% 80%, 8% 78%, 2% 70%); }
+.credits-stone__time { transform: translateY(-5px); gap: 2px; }
+
+/* Standalone transparent reward-board component, without any scene pixels. */
+.credits-stone {
+  width: min(440px, 100%);
+  min-height: 220px;
+  padding: 65px 48px 48px;
+  box-sizing: border-box;
+  background: url('/scene-media/island-reward-board-transparent.png') center / 100% 100% no-repeat;
+  filter: drop-shadow(0 14px 18px rgba(18,51,35,.25));
+}
+.credits-stone::before { content: none; }
+.credits-stone__close { top: 43px; right: 36px; }
+.credits-stone__top { padding-right: 86px; }
+.credits-stone__time { position: absolute; top: 30px; right: 52px; width: 105px; transform: none; }
+.credits-stone__bottom { margin-top: 10px; }
+.credits-stone .tutorial-modal-explanation { position: static; margin: 6px 0 0; color: #58654b; text-align: left; text-shadow: none; font-size: 9px; line-height: 1.15; }
+@media (max-width: 360px) {
+  .credits-stone { min-height: 190px; padding: 56px 38px 40px; }
+  .credits-stone__close { top: 36px; right: 29px; }
+  .credits-stone__time { top: 25px; right: 43px; width: 90px; }
+  .credits-stone__top { padding-right: 76px; }
+}
+.credits-stone__close { top: 78px; right: 17px; }
+.credits-stone__time { top: 16px; right: 46px; width: 100px; gap: 1px; }
+.credits-stone__time span, .credits-stone__time strong, .credits-stone__time small { font-size: 8px; line-height: 1.05; }
+@media (max-width: 360px) { .credits-stone__close { top: 67px; right: 14px; } .credits-stone__time { top: 13px; right: 38px; width: 85px; } }
+
+/* Improve readability while keeping all copy inside the illustrated board. */
+.credits-stone { padding: 68px 48px 45px; }
+.credits-stone__top { padding-right: 0; }
+.credits-stone__goal { max-width: 100%; gap: 5px; }
+.credits-stone__goal h2 { max-width: 100%; font-size: clamp(17px, 4.6vw, 21px); line-height: 1.12; }
+.credits-stone__goal > strong { font-size: clamp(15px, 3.8vw, 18px); line-height: 1.2; }
+.credits-stone__goal em { font-size: 1.35em; }
+.credits-stone__goal > span { font-size: clamp(12px, 3vw, 14px); line-height: 1.25; }
+.credits-stone__time { top: 15px; right: 48px; width: 95px; gap: 2px; }
+.credits-stone__time span, .credits-stone__time strong, .credits-stone__time small { font-size: 9px; line-height: 1.1; }
+.credits-stone__time strong { font-size: 10px; }
+.credits-stone__bottom { margin-top: 12px; gap: 7px; }
+.credits-stone__bar { min-width: 40px; height: 11px; }
+.credits-stone__bottom > strong { font-size: 11px; }
+.credits-stone__bottom > img { flex: 0 0 30px; width: 30px; height: 26px; }
+.credits-stone .tutorial-modal-explanation { max-width: 100%; margin-top: 7px; font-size: 10px; line-height: 1.2; overflow-wrap: anywhere; }
+.credits-stone__close { top: 75px; right: 20px; width: 27px; height: 27px; }
+@media (max-width: 380px) {
+ .credits-stone { padding: 63px 42px 43px; }
+ .credits-stone__time { top: 14px; right: 41px; width: 86px; }
+ .credits-stone__close { top: 68px; right: 16px; }
+ .credits-stone__goal h2 { font-size: 16px; }
+ .credits-stone__goal > strong { font-size: 14px; }
+ .credits-stone__goal > span { font-size: 11px; }
+ .credits-stone__bottom > strong { font-size: 10px; }
+ .credits-stone .tutorial-modal-explanation { font-size: 9px; }
+}
+.content-area.is-island-world .island-map-footer { position: absolute; z-index: 8; top: 39%; right: 7%; padding: 0; }
+.content-area.is-island-world .island-map-footer::before,
+.content-area.is-island-world .island-map-footer::after { display: none; }
+.island-guide-buoy { display: grid; justify-items: center; gap: 3px; padding: 0; border: 0; background: transparent; color: #15483d; cursor: pointer; filter: drop-shadow(0 5px 3px #123e3840); }
+.island-guide-buoy > span { display: grid; width: 55px; height: 55px; place-items: center; border: 4px solid #f9f3d9; border-radius: 50%; background: repeating-conic-gradient(#e95642 0deg 45deg,#fff2d5 45deg 90deg); box-shadow: inset 0 3px 4px #fff9, 0 4px 0 #a94437; font-size: 28px; }
+.island-guide-buoy small { padding: 3px 7px; border-radius: 8px; background: #fff8dfdc; font: 800 9px/1 sans-serif; white-space: nowrap; }
+
+/* Reference pass: warm paper, lagoon blues and toy-like 3D controls. */
+.mobile-viewport:has(.content-area.is-island-world) .brand-header {
+  padding: 16px 18px 9px;
+}
+.mobile-viewport:has(.content-area.is-island-world) .brand-info { gap: 9px; }
+.mobile-viewport:has(.content-area.is-island-world) .brand-logo-img { width: 28px; height: 28px; object-fit: contain; }
+.mobile-viewport:has(.content-area.is-island-world) .brand-name { font-size: 21px; letter-spacing: -.045em; }
+.mobile-viewport:has(.content-area.is-island-world) .account-entry-btn {
+  width: 48px; height: 48px; overflow: hidden; border-radius: 17px;
+}
+.mobile-viewport:has(.content-area.is-island-world) .account-entry-avatar-img,
+.mobile-viewport:has(.content-area.is-island-world) .account-entry-avatar { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+.game-hud { top: 8px; left: auto; right: 72px; gap: 9px; transform: none; }
+.game-hud__icon { width: 48px; gap: 0; }
+.game-hud__icon > span { width: 46px; height: 46px; border: 2px solid #fffef2; border-radius: 16px; background: linear-gradient(145deg,#fffef4,#e8e5c8); box-shadow: inset 0 2px 2px #fff, 0 4px 0 #9ca88c, 0 8px 15px #28584d35; }
+.game-hud__icon .game-hud__asset { width: 36px; height: 36px; object-fit: contain; }
+.game-hud__icon small { display: none; }
+.game-hud__icon:hover > span, .game-hud__icon:focus-visible > span { box-shadow: 0 0 0 3px #ffe79b, 0 0 17px #ffdf72, 0 4px 0 #9ca88c; transform: translateY(-1px); }
+.game-hud__notice { top: -3px; right: -2px; width: 12px; height: 12px; border: 0; background: #f05d42; box-shadow: 0 1px 3px #78472e66; }
+
+.content-area.is-island-world .daily-grind-details {
+  position: relative; z-index: 7; margin: 0 16px 12px; padding: 17px 18px 18px;
+  border: 1px solid #fffdf0; border-radius: 25px;
+  background: linear-gradient(145deg,#fffdf3 0%,#f7f2df 100%);
+  box-shadow: inset 0 2px #fff, 0 4px 0 #c8c6a7, 0 12px 23px #326e5940;
+  color: #183e30;
+}
+.daily-grind-details__identity { grid-template-columns: 54px minmax(0,1fr); align-items: center; gap: 12px; }
+.daily-grind-details__icon-image { width: 56px; height: 56px; }
+.daily-grind-details__badge { padding: 6px 12px; border-radius: 20px; font-size: 10px; letter-spacing: .08em; }
+.daily-grind-details__title { font-size: 22px; font-weight: 850; letter-spacing: -.04em; }
+.daily-grind-details__difficulty { padding-left: 12px; border-left: 1px solid #d8d2bd; text-transform: uppercase; letter-spacing: .08em; }
+.daily-grind-details__action { min-height: 55px; border-radius: 30px; font-size: 18px; box-shadow: inset 0 2px #ffffff40, 0 4px 0 #07564e, 0 8px 15px #176b5940; }
+.daily-grind-details__action-main { justify-content: space-between; }
+.daily-grind-details__action-reward { margin-right: auto; margin-left: 12px; padding: 8px 13px; border-radius: 24px; background: #e1ead0; color: #164c3c; font-size: 17px; }
+.daily-grind-details__action-arrow { font-size: 24px; }
+.content-area.is-island-world .island-map-footer { top: 39%; right: 7%; }
+.island-guide-buoy { display: flex; flex-direction: row; gap: 10px; padding: 8px 13px 8px 8px; border: 3px solid #d89a4b; border-radius: 13px; background: linear-gradient(#ffe4a0,#f5bd61); box-shadow: inset 0 2px #fff9,0 4px 0 #9d5e29,0 8px 14px #163b3455; }
+.island-guide-buoy > span { width: 42px; height: 42px; border-width: 3px; }
+.island-guide-buoy small { padding: 0; background: transparent; font-size: 12px; }
+.island-guide-buoy small::after { content: '›'; margin-left: 10px; font-size: 22px; vertical-align: -2px; }
+
+.game-hud-modal__overlay { background: rgba(15,61,67,.48); backdrop-filter: blur(5px); }
+.credits-stone {
+  width: min(94vw, 440px); min-height: 0; padding: 37px 28px 31px;
+  border: 1px solid #fffef6; border-radius: 34px;
+  background: linear-gradient(145deg,#fffdf1 0%,#f8f1dc 100%);
+  box-shadow: inset 0 3px #fff,0 5px 0 #d2c7a4,0 18px 40px #153f3c55;
+  filter: none; animation: reference-modal-in .35s cubic-bezier(.2,.8,.2,1) both;
+}
+.credits-stone__close { top: -15px; right: -8px; width: 42px; height: 42px; background: #fff8e6; box-shadow: 0 3px 0 #c6b98e,0 5px 12px #36584d40; font-size: 26px; }
+.credits-stone__top { grid-template-columns: 1fr auto; align-items: center; padding: 0 52px 18px 55px; border-bottom: 1px solid #dfd7c3; }
+.credits-stone__goal { position: relative; gap: 5px; }
+.credits-stone__goal::before { content: ''; position: absolute; right: calc(100% + 9px); top: 0; width: 47px; height: 47px; background: url('/rewards/hud-credits-3d.png') center/contain no-repeat; }
+.credits-stone__goal h2 { font-size: 24px; letter-spacing: -.04em; }
+.credits-stone__goal > strong { color: #195440; font-size: 14px; }
+.credits-stone__time { padding: 9px 12px; border-radius: 26px; background: #e5ecd6; }
+.credits-stone__time::before { content: '◷'; margin-right: 4px; color: #117b6b; font-size: 16px; }
+.credits-stone__bottom { gap: 12px; margin-top: 18px; }
+.credits-stone__bar { height: 17px; border: 2px solid #fff; border-radius: 20px; background: #ddd9ca; box-shadow: inset 0 1px 3px #675c4730,0 1px 2px #827d6440; }
+.credits-stone__bar span { background: repeating-linear-gradient(125deg,#04b9a7 0 18px,#22caba 18px 34px); box-shadow: inset 0 2px #ffffff55,0 0 8px #1abfa68a; }
+.credits-stone__bottom > strong { color: #184c3b; font-size: 14px; }
+.credits-stone .tutorial-modal-explanation { margin: 14px 0 0; text-align: center; color: #65715b; font-size: 13px; line-height: 1.4; }
+.game-hud-modal--rewards { width: min(94vw,500px); max-height: 80dvh; padding: 34px 24px; border: 1px solid #fff; border-radius: 33px; background: linear-gradient(150deg,#fffdf2,#f5ecd6); box-shadow: inset 0 3px #fff,0 5px 0 #d2c7a4,0 18px 40px #153f3c55; }
+.game-hud-modal--rewards h2 { text-align: center; font: 850 34px/1.1 var(--font-sans,sans-serif); letter-spacing: -.05em; }
+.game-hud-modal--rewards .game-hud-modal__eyebrow { display: block; width: max-content; margin: auto; padding: 7px 18px; border-radius: 20px; background: #ead8a9; color: #654a1e; }
+
+.leaderboard-overlay { background: #12464c99; backdrop-filter: blur(6px); }
+.leaderboard-sheet { border-radius: 34px 34px 0 0; background: linear-gradient(155deg,#fffdf2,#f3ead5); box-shadow: inset 0 3px #fff,0 -8px 30px #153f3c35; }
+.leaderboard-head h3 { color: #173e30; font-size: clamp(21px,6vw,29px); font-weight: 850; letter-spacing: -.045em; }
+.leaderboard-head p { color: #65715b; }
+.lb-section-title { color: #654a1e; }
+.lb-row.is-current-user { border: 1px solid #fff; border-radius: 18px; background: #e2efd4; box-shadow: inset 0 1px #fff; }
+
+.profile-page { background-color: #67d0d9; background-image: url('/scene-media/island-world-backdrop-clear.png'); background-position: center top; background-size: 100% auto; }
+.profile-page .profile-panel { border: 1px solid #fffdf0; border-radius: 27px; background: linear-gradient(145deg,#fffdf3,#f5f0dd); box-shadow: inset 0 2px #fff,0 4px 0 #d0c8a6,0 10px 20px #22574c30; }
+.profile-page .profile-panel-head span { color: #173e30; font-size: 20px; font-weight: 850; }
+.profile-page .profile-field input { border: 1px solid #d7d0bd; border-radius: 15px; background: #fffdf3; box-shadow: inset 0 2px 3px #52574212,0 2px #fff; }
+.profile-page .profile-save-btn { border-radius: 32px; background: linear-gradient(#12bbae,#007b70); box-shadow: inset 0 2px #ffffff55,0 5px 0 #075a50,0 10px 20px #175e5540; }
+
+.tutorial-card { border: 1px solid #fffdf2; border-radius: 25px; background: linear-gradient(145deg,#fffdf2,#f5efd9); box-shadow: inset 0 2px #fff,0 5px 0 #c9c19e,0 18px 35px #123e3b55; }
+.tutorial-ring { border-color: #ffe78a; box-shadow: 0 0 0 4px #ffe78a55,0 0 26px #ffe78acc; }
+.tutorial-progress i.is-active { background: #16a78d; }
+.tutorial-primary { border-radius: 25px; background: linear-gradient(#12bbae,#00766b); box-shadow: inset 0 2px #ffffff55,0 4px 0 #07564e; }
+@keyframes reference-modal-in { from { opacity: 0; transform: translateY(12px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@media (max-width: 380px) {
+  .game-hud { right: 61px; gap: 5px; }
+  .game-hud__icon { width: 42px; }
+  .game-hud__icon > span { width: 40px; height: 40px; border-radius: 14px; }
+  .game-hud__icon .game-hud__asset { width: 32px; height: 32px; }
+  .credits-stone { padding: 35px 22px 28px; }
+  .credits-stone__top { padding-right: 42px; padding-left: 49px; }
+  .credits-stone__time { padding: 7px 8px; }
+  .credits-stone__goal h2 { font-size: 21px; }
+}
+/* Reference layout: progress board and game card. */
+.credits-stone { width: min(88vw, 430px); padding: 28px 22px 24px; border-radius: 28px; }
+.credits-stone__close { top: -12px; right: 0; }
+.credits-reference__heading { display: flex; align-items: center; gap: 12px; padding: 3px 5px 20px; }
+.credits-reference__heading > img { width: 72px; height: 72px; object-fit: contain; }
+.credits-reference__heading h2 { flex: 1; margin: 0; padding-left: 13px; border-left: 1px solid #ddd4bf; color: #103b2d; font: 850 clamp(22px, 6vw, 29px)/1.02 var(--font-sans, sans-serif); letter-spacing: -.04em; }
+.credits-reference__time { display: flex; align-items: center; gap: 5px; padding: 8px 10px; border-radius: 24px; background: #dfe9d2; color: #163e30; white-space: nowrap; }
+.credits-reference__time > span { font-size: 22px; }.credits-reference__time small,.credits-reference__time strong { display: block; font-size: 9px; }.credits-reference__time strong { font-size: 11px; }
+.credits-reference__comparison { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: end; }
+.credits-reference__comparison > div > span { display: block; margin-bottom: 5px; text-align: center; font-size: 10px; font-weight: 850; letter-spacing: .06em; color: #6c705e; }
+.credits-reference__comparison > b { padding-bottom: 16px; color: #8a9381; }
+.credits-reference__comparison > div > strong { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 54px; padding: 6px; box-sizing: border-box; border-radius: 13px; background: #e0ebd5; color: #0f4131; font-size: clamp(15px,4vw,22px); line-height: 1.05; }
+.credits-reference__comparison > div:last-child > strong { background: #faeab9; font-size: clamp(13px,3.5vw,18px); }
+.credits-reference__comparison i { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 50%; background: linear-gradient(#ffe985,#e4a51c); color: #b67500; box-shadow: inset 0 0 0 2px #d69415; font-style: normal; }
+.credits-reference__comparison img { width: 42px; height: 42px; object-fit: contain; }
+.credits-reference__description { margin: 15px auto 14px; max-width: 310px; text-align: center; color: #687564; font: 13px/1.35 var(--font-sans,sans-serif); }
+.credits-reference__earned { text-align: center; color: #087c62; font-weight: 850; margin-bottom: 8px; }
+.credits-stone__bar { width: 100%; height: 18px; }.credits-stone__bar span { display: flex; align-items: center; justify-content: flex-end; box-sizing: border-box; padding-right: 7px; }.credits-stone__bar b { color: white; font-size: 10px; }
+.content-area.is-island-world .daily-grind-details { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: center; }.daily-grind-details__main { grid-column: 1 / -1; }.daily-grind-details__reward { justify-self: center; display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 30px; background: #e0e9d3; color: #0d4b39; font-size: 17px; }.daily-grind-details__action { width: 100%; min-width: 0; }.daily-grind-details__action-main { justify-content: center; }
+.game-hud-modal--rewards .cwallet-section-label { width: max-content; margin: 0 auto 14px; padding: 6px 18px; border-radius: 20px; background: #dcead2; color: #154c38; font-weight: 800; }
+.leaderboard-head { align-items: center; gap: 12px; }.leaderboard-head::before { content: ''; flex: 0 0 55px; height: 55px; background: url('/rewards/hud-ranking-3d.png') center/contain no-repeat; }.leaderboard-head > div { flex: 1; }
+.lb-section-title { text-align: center; letter-spacing: .08em; }.lb-podium-avatar { width: 54px; height: 54px; border: 3px solid #fffdf3; border-radius: 16px; box-shadow: 0 3px 9px #294c3a33; overflow: hidden; }.lb-podium-player:nth-child(2) .lb-podium-avatar { width: 64px; height: 64px; border-color: #f2cf64; border-radius: 18px; }.lb-podium-name,.lb-podium-coins { padding: 4px 11px; border-radius: 20px; background: #fffaf0; box-shadow: 0 2px 5px #344a3020; }
+.profile-page .profile-panel-head::before { content: ''; width: 42px; height: 42px; flex: none; border-radius: 13px; background: #fff9e9 url('/rewards/hud-ranking-3d.png') center/80% no-repeat; box-shadow: 0 3px 6px #41513730; }.profile-page .shopify-profile-panel .profile-panel-head::before { background-image: url('/gift-opening/shopify-icon.webp'); }.profile-page .profile-panel-head { gap: 12px; }.profile-page .profile-avatar-preview { border: 5px solid #fff8e8; box-shadow: 0 4px 0 #d8d1bc,0 8px 15px #22574c33; }.profile-page .profile-avatar-option { box-shadow: inset 0 2px #ffffff66,0 3px 0 #6d8e43; }
+.game-hud-modal__overlay { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.credits-reference__heading { gap: 8px; }.credits-reference__heading > img { width: clamp(48px, 16vw, 72px); height: clamp(48px, 16vw, 72px); flex: none; }.credits-reference__heading h2 { min-width: 0; padding-left: 9px; font-size: clamp(19px, 5.2vw, 27px); }.credits-reference__time { flex: none; padding: 7px 8px; }.credits-reference__time strong { font-size: clamp(9px, 2.7vw, 11px); }
+/* Align the HUD with the profile control in the header. */
+.game-hud { top: -44px; }
+.credits-progress-track { position: relative; margin-top: 17px; }
+.credits-progress-track .credits-stone__bar { overflow: hidden; }
+.credits-progress-marker { position: absolute; top: 50%; display: grid; place-items: center; width: 30px; height: 30px; box-sizing: border-box; border: 2px solid #fff9e6; border-radius: 50%; background: #fffaf0; box-shadow: 0 2px 5px #304f4066; transform: translate(-50%, -50%); transition: left 1.15s cubic-bezier(.2,.75,.25,1); }
+.credits-progress-marker img { display: block; width: 80%; height: 80%; object-fit: contain; border-radius: 50%; }
+.credits-progress-marker span { color: #164c3c; font: 800 13px/1 sans-serif; }
+.credits-progress-percent { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); color: #365b4c; font: 800 10px/1 sans-serif; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .credits-progress-marker { transition: none; } }
+.game-hud { top: -56px; }
+/* Profile view — the same island palette and proportions as the reference. */
+.mobile-viewport .shopify-account-page.profile-page { background: linear-gradient(180deg,rgba(183,240,244,.75) 0%,rgba(104,215,225,.12) 25%,rgba(83,204,218,0) 78%), url('/scene-media/island-world-backdrop-clear.png') center bottom / 100% 100% no-repeat, #7bd5dc; }
+.mobile-viewport .profile-page .shopify-account-header { flex: none; height: 64px; padding: 13px 22px; border: 0; background: transparent; }
+.mobile-viewport .profile-page .shopify-account-brand-logo { width: 30px; height: 30px; border-radius: 0; }
+.mobile-viewport .profile-page .shopify-account-brand-name { font: 850 20px/1 var(--font-sans,sans-serif); letter-spacing: -.03em; color: #12382a; }
+.mobile-viewport .profile-page .shopify-account-close { width: 38px; height: 38px; border: 1px solid #fff; border-radius: 13px; background: linear-gradient(#fffdf2,#ede7d3); box-shadow: 0 3px 0 #cfc5a6,0 5px 12px #285b4a33; color: #123c2c; }
+.mobile-viewport .profile-page .profile-body { min-height: calc(100% - 64px); padding: 6px 15px 48px; gap: 14px; background: transparent; }
+.mobile-viewport .profile-page .profile-hero { padding: 0 0 3px; }
+.mobile-viewport .profile-page .profile-avatar-preview { position: relative; box-sizing: border-box; width: 90px; height: 90px; border: 6px solid #fdf9eb; font-family: var(--font-sans,sans-serif); }
+.mobile-viewport .profile-page .profile-avatar-preview::after { content: ''; position: absolute; right: 0; bottom: 0; width: 19px; height: 19px; border: 3px solid #fff9e9; border-radius: 50%; background: linear-gradient(#58d64a,#19a22c); box-shadow: 0 2px 4px #274b3955; }
+.mobile-viewport .profile-page .profile-hero h1 { margin: 8px 0 0; color: #123e2e; font: 850 30px/1.05 var(--font-sans,sans-serif); letter-spacing: -.03em; }
+.mobile-viewport .profile-page .profile-panel { width: 100%; max-width: none; margin: 0; padding: 17px 18px 20px; border: 1px solid #fffef6; border-radius: 22px; background: linear-gradient(145deg,#fffbef,#f5efdd); box-shadow: inset 0 2px #fff,0 3px 0 #d3c9a8,0 8px 17px #1e65583a; }
+.mobile-viewport .profile-page .profile-panel-head { justify-content: flex-start; gap: 12px; margin-bottom: 17px; }
+.mobile-viewport .profile-page .profile-panel-head::before { width: 42px; height: 42px; }
+.mobile-viewport .profile-page .profile-panel-head span { flex: 1; color: #173e30; font: 850 clamp(16px,4.5vw,21px)/1.1 var(--font-sans,sans-serif); letter-spacing: -.025em; }
+.mobile-viewport .profile-page .profile-panel-head small { flex: none; padding: 6px 10px; font-size: 9px; letter-spacing: .05em; }
+.mobile-viewport .profile-page .is-connected .profile-panel-head small { color: #187b1d; background: #e2f0ca; }
+.mobile-viewport .profile-page .is-connected .profile-panel-head small::before { content: '✔'; margin-right: 5px; }
+.mobile-viewport .profile-page .profile-field { gap: 7px; }.mobile-viewport .profile-page .profile-field + .profile-field { margin-top: 17px; }
+.mobile-viewport .profile-page .profile-field > span { color: #6b7051; font-size: 11px; letter-spacing: .08em; }
+.mobile-viewport .profile-page .profile-input-wrap { position: relative; }.mobile-viewport .profile-page .profile-field input { height: 42px; padding: 0 40px 0 13px; border: 1px solid #d5cfbf; border-radius: 11px; background: #faf6eb; color: #173e30; font-size: 15px; box-shadow: 0 2px 5px #33523a18; }
+.mobile-viewport .profile-page .profile-input-edit { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: #6b7855; font-size: 22px; pointer-events: none; }
+.mobile-viewport .profile-page .profile-field-hint { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.mobile-viewport .profile-page .profile-avatar-options { grid-template-columns: repeat(6,1fr); gap: 9px; padding: 3px 5px; }.mobile-viewport .profile-page .profile-avatar-option { width: 100%; max-width: 42px; justify-self: center; border: 0; box-shadow: inset 0 2px 2px #ffffff55,0 2px 0 #79783b; }.mobile-viewport .profile-page .profile-avatar-option.is-selected { outline: 2px solid #61a72c; outline-offset: 3px; }
+.mobile-viewport .profile-page .profile-shopify-row { display: flex; align-items: center; padding: 12px; border-radius: 12px; background: #e8eddc; }.mobile-viewport .profile-page .profile-shopify-icon { display: none; }.mobile-viewport .profile-page .profile-shopify-copy { display: flex; align-items: center; width: 100%; gap: 12px; }.mobile-viewport .profile-page .profile-customer-label { flex: none; padding-right: 12px; border-right: 1px solid #cbd4bd; color: #204b37; font-weight: 800; font-size: 12px; }.mobile-viewport .profile-page .profile-shopify-copy strong { font-size: 11px; font-weight: 600; line-height: 1.25; color: #526c50; }
+.mobile-viewport .profile-page .profile-secondary-action { display: block; width: 65%; margin: 14px auto 0; height: 38px; border: 1px solid #e6ddc6; border-radius: 13px; background: linear-gradient(#fffdf3,#f5edd9); color: #173e30; box-shadow: 0 3px 0 #d7cbae,0 4px 9px #344e3320; }
+.mobile-viewport .profile-page .profile-save-btn { width: calc(100% - 20px); max-width: none; height: 51px; margin: 0 auto; border: 1px solid #24b7aa; border-radius: 22px; color: #fff; font-size: 18px; }
+.mobile-viewport .shopify-account-page.profile-page { background: linear-gradient(180deg,#baf0f2 0%,#9be6eb 18%,#69d3dd 33%,rgba(83,204,218,0) 67%), url('/scene-media/island-world-backdrop-clear.png') center bottom / 100% 100% no-repeat, #7bd5dc; }
+.mobile-viewport .profile-page .profile-avatar-preview { border-color: #fdf9eb !important; }
+/* Give the reward's visit action more room in the collection modal. */
+.game-hud-modal--rewards .cwticket:has(> .cwticket-stub:not(.is-inactive)) { grid-template-columns: minmax(0, 1fr) clamp(96px, 30%, 150px); }
+.game-hud-modal--rewards .cwticket > .cwticket-stub:not(.is-inactive) { width: 100%; min-width: 0; }
+.game-hud-modal--rewards .cwticket > .cwticket-stub:not(.is-inactive) .cwticket-stub-text { font-size: clamp(10px, 2.8vw, 13px); line-height: 1.15; }
+.game-hud-modal--rewards .cwticket:has(> .cwticket-stub:not(.is-inactive)) { grid-template-columns: minmax(0, 1fr) clamp(96px, 30%, 150px) !important; }
+.game-hud-modal--rewards .cwticket > .cwticket-stub:not(.is-inactive) { width: 100% !important; }

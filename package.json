@@ -19,6 +19,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.1.2",
     "framer-motion": "^13.2.0",
+    "gsap": "^3.15.1",
     "posthog-js": "^1.438.13",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

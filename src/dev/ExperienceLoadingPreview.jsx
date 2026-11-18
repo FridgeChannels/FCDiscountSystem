@@ -12,6 +12,7 @@ export default function ExperienceLoadingPreview() {
         detail={copy || undefined}
         logoUrl={logo || undefined}
         brandName={brand || undefined}
+        brandReady={Boolean(logo || brand)}
       />
       <aside className="fc-loading-preview-hint" aria-hidden="true">
         <strong>Loading preview</strong>

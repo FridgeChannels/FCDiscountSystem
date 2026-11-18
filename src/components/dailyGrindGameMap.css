@@ -34,7 +34,8 @@
   overflow: hidden;
 }
 
-.daily-grind-map__scene video {
+.daily-grind-map__scene video,
+.daily-grind-map__still {
   position: absolute;
   inset: 0;
   display: block;
@@ -42,6 +43,40 @@
   height: 100%;
   object-fit: contain;
   object-position: center;
+}
+
+/* The video is visible only through masks for currently assigned tasks. */
+.daily-grind-map__task-motion {
+  pointer-events: none;
+  animation: daily-grind-island-bob 6s ease-in-out infinite;
+}
+
+.daily-grind-map__flag-motion,
+.daily-grind-map__product-motion {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.daily-grind-map__flag-motion {
+  -webkit-mask-image: radial-gradient(ellipse 13% 20% at 85% 39%, #000 68%, transparent 100%);
+  mask-image: radial-gradient(ellipse 13% 20% at 85% 39%, #000 68%, transparent 100%);
+}
+.daily-grind-map__product-motion {
+  -webkit-mask-image: radial-gradient(ellipse 16% 16% at 27% 85%, #000 68%, transparent 100%);
+  mask-image: radial-gradient(ellipse 16% 16% at 27% 85%, #000 68%, transparent 100%);
+}
+
+.daily-grind-map__flag-motion img,
+.daily-grind-map__product-motion img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.daily-grind-map__flag-motion img {
+  animation: daily-grind-island-bob 6s ease-in-out infinite;
+}
+.daily-grind-map__product-motion img {
+  animation: daily-grind-island-bob 6s ease-in-out infinite;
 }
 
 .daily-grind-spot {
@@ -78,8 +113,10 @@
 }
 
 @keyframes daily-grind-island-bob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3px); }
+  0%, 74%, 90%, 100% { transform: translateY(0); }
+  79% { transform: translateY(-3px); }
+  83% { transform: translateY(0); }
+  86% { transform: translateY(-1px); }
 }
 
 .daily-grind-spot:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
@@ -333,14 +370,13 @@
 }
 
 .daily-grind-product-landmark.has-game {
-  animation: daily-grind-island-bob 2.8s ease-in-out infinite;
-}
-
-.daily-grind-product-landmark.is-selected {
-  animation-play-state: running;
+  animation: daily-grind-island-bob 6s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .daily-grind-map__scene .daily-grind-map__task-motion,
+  .daily-grind-map__flag-motion,
+  .daily-grind-map__product-motion { display: none; }
   .daily-grind-game-tile,
   .daily-grind-product-landmark.has-game {
     animation: none;
@@ -412,8 +448,22 @@
 .daily-grind-map__campaign-marker { position:absolute; z-index:1; top:50%; display:grid; width:27px; height:27px; box-sizing:border-box; place-items:center; padding:0; overflow:hidden; border:0; border-radius:50%; background:#fff; box-shadow:0 2px 7px rgba(22,82,73,.25),0 0 0 2px rgba(255,255,255,.82); transform:translate(-50%,-50%); transition:left 320ms cubic-bezier(.2,.8,.2,1); }
 .daily-grind-map__campaign-marker img { display:block; width:100%; height:100%; border-radius:50%; object-fit:cover; }
 .daily-grind-map__campaign-marker > span { display:grid; width:100%; height:100%; place-items:center; border-radius:50%; color:#087f78; font:800 12px/1 system-ui,sans-serif; }
-.daily-grind-map__campaign-target { display:grid; flex:0 0 52px; width:52px; height:52px; place-items:center; }
-.daily-grind-map__campaign-target img { display:block; width:100%; height:100%; object-fit:contain; filter:drop-shadow(0 3px 3px rgba(60,73,32,.2)); }
+.daily-grind-map__campaign-target { position:relative; display:grid; flex:0 0 52px; width:52px; height:52px; place-items:center; }
+.daily-grind-map__campaign-target img { position:relative; z-index:1; display:block; width:100%; height:100%; object-fit:contain; filter:drop-shadow(0 3px 3px rgba(60,73,32,.2)); animation:island-coupon-shine 4.5s ease-in-out infinite; }
+.daily-grind-map__campaign-target::after { content:''; position:absolute; z-index:2; top:12%; right:12%; width:10px; height:10px; background:#fffbe2; clip-path:polygon(50% 0,62% 38%,100% 50%,62% 62%,50% 100%,38% 62%,0 50%,38% 38%); opacity:0; pointer-events:none; animation:island-coupon-sparkle 4.5s ease-in-out infinite; }
+@keyframes island-coupon-shine {
+  0%, 70%, 100% { filter:brightness(1) drop-shadow(0 3px 3px rgba(60,73,32,.2)); transform:scale(1); }
+  78% { filter:brightness(1.18) drop-shadow(0 0 6px rgba(244,195,57,.65)); transform:scale(1.06); }
+  87% { filter:brightness(1) drop-shadow(0 3px 3px rgba(60,73,32,.2)); transform:scale(1); }
+}
+@keyframes island-coupon-sparkle {
+  0%, 70%, 90%, 100% { opacity:0; transform:scale(.35) rotate(0deg); }
+  78% { opacity:1; transform:scale(1.15) rotate(18deg); }
+  84% { opacity:.8; transform:scale(.85) rotate(32deg); }
+}
+@media (prefers-reduced-motion:reduce) {
+  .daily-grind-map__campaign-target img, .daily-grind-map__campaign-target::after { animation:none; }
+}
 
 .reward-journey-shell { width:100%; max-width:100%; min-width:0; }
 .content-area > .reward-journey-shell { align-self:stretch; flex:0 0 auto; }

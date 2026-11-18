@@ -88,10 +88,13 @@ export default function ExperienceRoot() {
   const [phase, setPhase] = useState({ status: 'resolving' });
   const [contentReady, setContentReady] = useState(false);
   const [loadingBrand, setLoadingBrand] = useState({ logoUrl: null, brandName: null });
+  const [loadingBrandReady, setLoadingBrandReady] = useState(false);
   const [logoSettled, setLogoSettled] = useState(true);
   const [loadingVideoEnabled, setLoadingVideoEnabled] = useState(false);
+  const [loadingOverlayDismissed, setLoadingOverlayDismissed] = useState(false);
   const contentReadyRef = useRef(false);
   const resolveSeqRef = useRef(0);
+  const amazonProductPreview = new URLSearchParams(window.location.search).get('view') === 'amazon-product';
 
   const markContentReady = useCallback(() => {
     if (contentReadyRef.current) return;
@@ -108,7 +111,9 @@ export default function ExperienceRoot() {
     contentReadyRef.current = false;
     setContentReady(false);
     setLoadingBrand({ logoUrl: null, brandName: null });
+    setLoadingBrandReady(false);
     setLogoSettled(true);
+    setLoadingOverlayDismissed(false);
 
     const params = new URLSearchParams(window.location.search);
     if (params.has('scenario')) {
@@ -142,6 +147,7 @@ export default function ExperienceRoot() {
 
         // Experience API already loaded magnet_brand_param — apply logo before destination boot.
         const brand = brandFromExperience(result);
+        setLoadingBrandReady(true);
         if (brand.logoUrl) {
           setLogoSettled(false);
           setLoadingBrand(brand);
@@ -211,6 +217,7 @@ export default function ExperienceRoot() {
   const showLoading = phase.status === 'resolving'
     || waitingForDestination
     || waitingForLogo;
+  const keepLoadingOverlay = showLoading || !loadingOverlayDismissed;
 
   if (phase.status === 'error') {
     return (
@@ -234,13 +241,16 @@ export default function ExperienceRoot() {
 
   return (
     <>
-      {showLoading ? (
+      {keepLoadingOverlay ? (
         <ExperienceLoading
           videoEnabled={loadingVideoEnabled}
           logoUrl={loadingBrand.logoUrl}
           brandName={loadingBrand.brandName}
+          brandReady={loadingBrandReady}
+          readyToExit={!showLoading}
           onLogoReady={markLogoSettled}
           onLogoError={markLogoSettled}
+          onExitComplete={() => setLoadingOverlayDismissed(true)}
         />
       ) : null}
 
@@ -254,7 +264,7 @@ export default function ExperienceRoot() {
         <PendingShell ready={contentReady}>
           <Suspense fallback={null}>
             <ReorderApp
-              mode="live"
+              mode={amazonProductPreview ? 'preview' : 'live'}
               sn={phase.sn}
               experienceMeta={phase.experience}
               initialResolved={phase.resolved}

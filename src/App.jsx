@@ -203,7 +203,8 @@ function shopifyAccountLabel(binding) {
   );
 }
 
-const PROFILE_AVATAR_OPTIONS = ['#a08447', '#5c6e58', '#b89855', '#6b7e65', '#8b6b3d', '#7a8c75'];
+const PROFILE_AVATAR_OPTIONS = ['#477e25', '#78c523', '#a7c82c', '#ffcb35', '#e7a51a', '#b68420'];
+const LEGACY_PROFILE_AVATAR_OPTIONS = ['#a08447', '#5c6e58', '#b89855', '#6b7e65', '#8b6b3d', '#7a8c75'];
 const DEFAULT_PROFILE = {
   nickname: 'You',
   avatarColor: '#a08447',
@@ -218,7 +219,7 @@ function normalizeProfile(profile) {
   const rawNickname = String(profile?.nickname ?? '').trim();
   const nickname = rawNickname.slice(0, 32)
     || (displayCode ? formatLeaderboardId(brandName || 'Player', displayCode) : DEFAULT_PROFILE.nickname);
-  const avatarColor = PROFILE_AVATAR_OPTIONS.includes(profile?.avatarColor)
+  const avatarColor = [...PROFILE_AVATAR_OPTIONS, ...LEGACY_PROFILE_AVATAR_OPTIONS].includes(profile?.avatarColor)
     ? profile.avatarColor
     : DEFAULT_PROFILE.avatarColor;
   return {
@@ -666,6 +667,9 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
   const [playerProfile, setPlayerProfile] = useState(null);
 
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const [hudRewardsOpen, setHudRewardsOpen] = useState(false);
+  const [tutorialGameCompletion, setTutorialGameCompletion] = useState(0);
+  const [rewardNoticeSeen, setRewardNoticeSeen] = useState(false);
   const [leaderboardData, setLeaderboardData] = useState(null);
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletNavDirection, setWalletNavDirection] = useState('forward');
@@ -2350,7 +2354,17 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
       && !showWelcomeRitual
       && (allRewardsClaimed || targetUnlockAcknowledged)
     );
-  const showRewardsPage = walletOpen || completedMode;
+  const showRewardsPage = walletOpen;
+  const rewardNoticeKey = rewardPlanId && touchId ? `vivora-reward-notice:${touchId}:${rewardPlanId}` : null;
+  useEffect(() => {
+    try { setRewardNoticeSeen(Boolean(rewardNoticeKey && localStorage.getItem(rewardNoticeKey))); }
+    catch { setRewardNoticeSeen(false); }
+  }, [rewardNoticeKey]);
+  const acknowledgeRewardNotice = () => {
+    if (!targetClaimed && !giftReveal) return;
+    if (rewardNoticeKey) { try { localStorage.setItem(rewardNoticeKey, '1'); } catch { /* Storage may be unavailable. */ } }
+    setRewardNoticeSeen(true);
+  };
   const showRenewWelcomeLoading = renewFlowActive && !introActive && welcomeStep < 1;
 
   useEffect(() => {
@@ -3033,10 +3047,10 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     const unlocked = resolveUnlockedCoupon(discounts, currentStepIndex);
     if (!unlocked?.tier) return undefined;
     const receiptKey = tierReceiptSessionKey(touchId, rewardPlanId, unlocked.tier);
-    if (sessionStorage.getItem(receiptKey)) return undefined;
+    if (localStorage.getItem(receiptKey)) return undefined;
 
     const timer = window.setTimeout(() => {
-      if (sessionStorage.getItem(receiptKey)) return;
+      if (localStorage.getItem(receiptKey)) return;
       triggerCelebration(points);
     }, 450);
     return () => window.clearTimeout(timer);
@@ -3064,6 +3078,13 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
   function triggerLoginBonusAnimation(pts, targetBalance, onComplete) {
     const viewport = viewportRef.current;
     if (!viewport) return;
+
+    // Game settlements use this animation path directly (they do not go through
+    // addPoints), so publish the same real-earn signal for the Credits HUD.
+    if (Number(pts) > 0) {
+      setLastGainAmount(Number(pts));
+      setCoinGainSignal((signal) => signal + 1);
+    }
 
     const card = document.createElement('div');
     card.className = 'login-bonus-card';
@@ -3652,7 +3673,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
   function triggerCelebration(updatedPoints) {
     const unlocked = resolveUnlockedCoupon(discounts, currentStepIndex);
     if (rewardPlanId && unlocked?.tier != null) {
-      sessionStorage.setItem(tierReceiptSessionKey(touchId, rewardPlanId, unlocked.tier), '1');
+      localStorage.setItem(tierReceiptSessionKey(touchId, rewardPlanId, unlocked.tier), '1');
     }
     setUnlockToastSignal((s) => s + 1);
     setTargetPulse('ready unlocking');
@@ -4039,6 +4060,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
   }, [currentPackClaimed, targetUnlocked, targetClaimed, targetPack?.id, devScene, singleCouponOnlyMode, renewFlowActive, renewGiftIntro]);
 
   function dismissTargetGiftReveal({ openWallet = false } = {}) {
+    acknowledgeRewardNotice();
     const coded = (giftReveal?.coupons ?? []).filter((coupon) => coupon?.code);
     if (rewardPlanId) setTargetUnlockAckCycleId(rewardPlanId);
     setGiftReveal(null);
@@ -4051,6 +4073,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
 
   async function handleSettlementComplete(settlement) {
     dbg('[FCDBG][App] settlement received', settlement);
+    setTutorialGameCompletion((value) => value + 1);
     clearGameSessionCache();
     setActiveModal(null);
     setGameStart(null);
@@ -4545,6 +4568,27 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     );
   }
 
+  const rewardHeader = (
+    <Header
+      brand={brand}
+      profile={displayProfile}
+      shopifyStatus={shopifyAuthStatus}
+      onOpenShopifyAccount={openShopifyAccountEntry}
+      onOpenWallet={() => {
+        if (!showRewardsPage) { setHudRewardsOpen(true); acknowledgeRewardNotice(); }
+        else { setWalletNavDirection('forward'); setWalletOpen(true); }
+      }}
+      onBackFromWallet={() => {
+        setWalletNavDirection('back');
+        setWalletOpen(false);
+      }}
+      walletOpen={walletOpen}
+      rewardsCompleted={completedMode}
+      walletCount={walletBadgeCount}
+      onLogoSecretTap={logoSecretEnabled ? handleLogoSecretTap : undefined}
+    />
+  );
+
   return (
     <div
       className="mobile-viewport"
@@ -4626,24 +4670,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
 
       {showHome && (
       <>
-      <Header
-        brand={brand}
-        profile={displayProfile}
-        shopifyStatus={shopifyAuthStatus}
-        onOpenShopifyAccount={openShopifyAccountEntry}
-        onOpenWallet={() => {
-          setWalletNavDirection('forward');
-          setWalletOpen(true);
-        }}
-        onBackFromWallet={() => {
-          setWalletNavDirection('back');
-          setWalletOpen(false);
-        }}
-        walletOpen={walletOpen}
-        rewardsCompleted={completedMode}
-        walletCount={walletBadgeCount}
-        onLogoSecretTap={logoSecretEnabled ? handleLogoSecretTap : undefined}
-      />
+      {showRewardsPage && rewardHeader}
 
       {showRewardsPage ? (
         <CouponWalletPage
@@ -4664,6 +4691,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
       ) : (
         <>
           <main className="content-area is-island-world">
+            {rewardHeader}
             <div className="reward-journey-shell">
               <div hidden aria-hidden="true">
               <TargetProgress
@@ -4708,9 +4736,29 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
                 targetRewardLabel={targetRewardLabel}
                 targetCouponLabel={targetCouponCount ? primaryTargetReward : null}
                 onLeaderboard={() => { void syncLeaderboard(true); setLeaderboardOpen(true); }}
+                onRewards={() => { setHudRewardsOpen(true); acknowledgeRewardNotice(); }}
+                rewardNotice={(targetClaimed && !rewardNoticeSeen) || walletBadgeCount > 0}
+                expiryDate={expiryDate}
+                urgent={urgent}
+                identity={touchId}
+                coinGainSignal={coinGainSignal}
+                lastGainAmount={lastGainAmount}
+                rewardsOpen={hudRewardsOpen}
+                gameOpen={activeModal === 'platform-game'}
+                gameCompletion={tutorialGameCompletion}
               />
             </div>
           </main>
+          {hudRewardsOpen && (
+            <div className="game-hud-modal__overlay" onClick={() => setHudRewardsOpen(false)}>
+              <section className="game-hud-modal game-hud-modal--rewards" role="dialog" aria-modal="true" aria-labelledby="hud-rewards-title" onClick={(event) => event.stopPropagation()}>
+                <button className="game-hud-modal__close" type="button" aria-label="Close rewards" onClick={() => setHudRewardsOpen(false)}>×</button>
+                <span className="game-hud-modal__eyebrow">YOUR COLLECTION</span><h2 id="hud-rewards-title">Rewards</h2>
+                {targetUnlocked && !targetClaimed && targetPack && <div className="game-hud-modal__reward"><span>Ready to unlock</span><strong>{targetRewardLabel}</strong><button type="button" onClick={() => { setHudRewardsOpen(false); void issueTargetPack(); }}>Claim reward</button></div>}
+                <CouponWalletPage coupons={walletArchiveCoupons} brand={brand} copiedCode={walletCopiedCode} onCopy={handleWalletCopy} onClaim={handleShopNowDirect} />
+              </section>
+            </div>
+          )}
           <LeaderboardSheet
             open={leaderboardOpen}
             leaderboard={leaderboardData}
@@ -5817,7 +5865,7 @@ function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onUploadA
 
           <div className="profile-field">
             <span>Leaderboard ID</span>
-            <input
+            <div className="profile-input-wrap"><input
               className="profile-leaderboard-id-input"
               value={draft.nickname}
               maxLength={32}
@@ -5830,7 +5878,7 @@ function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onUploadA
                   nickname: event.target.value.slice(0, 32),
                 }));
               }}
-            />
+            /><span className="profile-input-edit" aria-hidden="true">✎</span></div>
             <small className="profile-field-hint" id="leaderboard-id-hint">
               Shown on the leaderboard. Up to 32 characters.
             </small>
@@ -5841,19 +5889,19 @@ function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onUploadA
             <div className="profile-avatar-options" role="radiogroup" aria-label="Avatar color">
               {PROFILE_AVATAR_OPTIONS.map((color) => (
                 <button
-                  className={`profile-avatar-option ${draft.avatarColor === color ? 'is-selected' : ''}`}
+                  className={`profile-avatar-option ${draft.avatarColor === color || LEGACY_PROFILE_AVATAR_OPTIONS[PROFILE_AVATAR_OPTIONS.indexOf(color)] === draft.avatarColor ? 'is-selected' : ''}`}
                   key={color}
                   type="button"
                   style={{ background: color }}
                   aria-label={`Use avatar color ${color}`}
-                  aria-pressed={draft.avatarColor === color}
+                  aria-pressed={draft.avatarColor === color || LEGACY_PROFILE_AVATAR_OPTIONS[PROFILE_AVATAR_OPTIONS.indexOf(color)] === draft.avatarColor}
                   onClick={() => {
                     if (draft.avatarColor === color && draft.avatarImageUrl) return;
                     if (draft.avatarImageUrl) setClearAvatarImage(true);
                     setDraft((value) => ({ ...value, avatarColor: color, avatarImageUrl: '' }));
                   }}
                 >
-                  {draft.avatarColor === color && <span>{draftInitial}</span>}
+                  
                 </button>
               ))}
             </div>
@@ -5871,7 +5919,7 @@ function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onUploadA
               <img src="/gift-opening/shopify-icon.webp" alt="" />
             </div>
             <div className="profile-shopify-copy">
-              <strong>{connected ? accountLabel : 'Connect Shopify'}</strong>
+              {connected && binding?.shopifyCustomerId ? <><span className="profile-customer-label">Customer</span><strong>{binding.shopifyCustomerId}</strong></> : <strong>{connected ? accountLabel : 'Connect Shopify'}</strong>}
               {connected ? (
                 <>
                   {binding?.email && <p>{binding.email}</p>}

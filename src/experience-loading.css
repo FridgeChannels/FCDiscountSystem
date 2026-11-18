@@ -4,78 +4,439 @@
   z-index: 9999;
   overflow: hidden;
   margin: 0;
-  background: #1e241d;
+  color: #fffdf7;
+  background: #13131b;
+  isolation: isolate;
+  transform-origin: 50% 50%;
+  -webkit-font-smoothing: antialiased;
+}
+
+.fc-loading__camera,
+.fc-experience-loading__video,
+.fc-loading__scrim,
+.fc-loading__scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.fc-loading__camera {
+  z-index: 0;
+  overflow: hidden;
+  transform-origin: 50% 50%;
+  will-change: transform;
 }
 
 .fc-experience-loading__video {
-  position: absolute;
-  inset: 0;
   z-index: 0;
-  width: 100%;
-  height: 100%;
   object-fit: cover;
   object-position: center;
+  filter: saturate(0.92) brightness(0.32) contrast(1.18) blur(2px);
+  transform: scale(1.15);
 }
 
-.fc-experience-loading__logo-stage {
-  position: absolute;
+.fc-loading__scrim {
   z-index: 1;
-  top: 28%;
-  left: 50%;
-  width: clamp(188px, 52vw, 240px);
-  /* Match typical wordmark aspect; avoid 1:1 box that Safari paints under filters. */
-  aspect-ratio: 198 / 127;
   pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 48%, rgba(154, 49, 31, 0.22), rgba(21, 12, 24, 0.72) 44%, rgba(4, 7, 17, 0.94) 100%),
+    linear-gradient(135deg, rgba(5, 8, 18, 0.72), rgba(24, 7, 22, 0.67) 54%, rgba(5, 9, 20, 0.76));
+}
+
+.fc-loading__scene {
+  z-index: 2;
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+  perspective: 900px;
+}
+
+.fc-loading__ambient-orbit,
+.fc-loading__halo,
+.fc-loading__burst-rays,
+.fc-loading__burst-core,
+.fc-loading__shockwave,
+.fc-loading__spark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  pointer-events: none;
+}
+
+.fc-loading__ambient-orbit {
+  z-index: 0;
+  width: min(82vmin, 780px);
+  aspect-ratio: 1;
+  border: 1px solid rgba(255, 226, 170, 0.26);
+  border-radius: 50%;
+  box-shadow: inset 0 0 70px rgba(254, 185, 94, 0.035), 0 0 62px rgba(254, 185, 94, 0.035);
   transform: translate(-50%, -50%);
 }
 
-.fc-experience-loading__logo-motion {
-  position: relative;
-  width: 100%;
-  height: 100%;
+.fc-loading__ambient-orbit::before,
+.fc-loading__ambient-orbit::after {
+  position: absolute;
+  top: 10%;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffe3ad;
+  box-shadow: 0 0 15px 5px rgba(255, 205, 129, 0.62);
+  content: '';
 }
 
-.fc-experience-loading__logo {
-  position: relative;
+.fc-loading__ambient-orbit::after {
+  top: auto;
+  right: 12%;
+  bottom: 18%;
+  left: auto;
+  width: 4px;
+  height: 4px;
+  opacity: 0.7;
+}
+
+.fc-loading__ambient-orbit--two {
+  width: min(68vmin, 650px);
+  border-color: rgba(255, 246, 223, 0.09);
+  transform: translate(-50%, -50%) rotate(32deg) scaleY(0.58);
+}
+
+.fc-loading__ambient-orbit--two::before {
+  top: 50%;
+  left: -4px;
+}
+
+.fc-loading__ambient-orbit--two::after {
+  top: 20%;
+  right: 8%;
+}
+
+.fc-loading__halo {
   z-index: 1;
+  width: min(110vmin, 1120px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  opacity: 0;
+  background: radial-gradient(circle, rgba(255, 243, 218, 0.92) 0, rgba(255, 178, 86, 0.54) 19%, rgba(245, 83, 37, 0.2) 46%, transparent 76%);
+  filter: blur(4px) drop-shadow(0 0 90px rgba(255, 122, 45, 0.8));
+  transform: translate(-50%, -50%);
+}
+
+.fc-loading__burst-rays {
+  z-index: 2;
+  width: min(190vmin, 1800px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  opacity: 0;
+  background: conic-gradient(
+    from 3deg,
+    transparent 0 3deg, rgba(255, 253, 241, 1) 4deg 7deg, transparent 8deg 15deg,
+    rgba(255, 159, 61, 0.98) 16deg 19deg, transparent 20deg 29deg,
+    rgba(255, 246, 221, 0.96) 30deg 33deg, transparent 34deg 44deg,
+    rgba(255, 115, 43, 0.95) 45deg 48deg, transparent 49deg 59deg,
+    rgba(255, 251, 231, 1) 60deg 63deg, transparent 64deg 74deg,
+    rgba(255, 163, 64, 0.98) 75deg 78deg, transparent 79deg 89deg,
+    rgba(255, 240, 205, 0.96) 90deg 93deg, transparent 94deg 104deg,
+    rgba(255, 103, 39, 0.95) 105deg 108deg, transparent 109deg 119deg,
+    rgba(255, 253, 241, 1) 120deg 123deg, transparent 124deg 134deg,
+    rgba(255, 159, 61, 0.98) 135deg 138deg, transparent 139deg 149deg,
+    rgba(255, 246, 221, 0.96) 150deg 153deg, transparent 154deg 164deg,
+    rgba(255, 115, 43, 0.95) 165deg 168deg, transparent 169deg 179deg,
+    rgba(255, 251, 231, 1) 180deg 183deg, transparent 184deg 194deg,
+    rgba(255, 163, 64, 0.98) 195deg 198deg, transparent 199deg 209deg,
+    rgba(255, 240, 205, 0.96) 210deg 213deg, transparent 214deg 224deg,
+    rgba(255, 103, 39, 0.95) 225deg 228deg, transparent 229deg 239deg,
+    rgba(255, 253, 241, 1) 240deg 243deg, transparent 244deg 254deg,
+    rgba(255, 159, 61, 0.98) 255deg 258deg, transparent 259deg 269deg,
+    rgba(255, 246, 221, 0.96) 270deg 273deg, transparent 274deg 284deg,
+    rgba(255, 115, 43, 0.95) 285deg 288deg, transparent 289deg 299deg,
+    rgba(255, 251, 231, 1) 300deg 303deg, transparent 304deg 314deg,
+    rgba(255, 163, 64, 0.98) 315deg 318deg, transparent 319deg 329deg,
+    rgba(255, 240, 205, 0.96) 330deg 333deg, transparent 334deg 344deg,
+    rgba(255, 103, 39, 0.95) 345deg 348deg, transparent 349deg 360deg
+  );
+  filter: drop-shadow(0 0 28px rgba(255, 175, 85, 0.9));
+  transform: translate(-50%, -50%);
+  mask-image: radial-gradient(circle, transparent 0 13%, #000 35%, #000 48%, transparent 76%);
+}
+
+.fc-loading__burst-core {
+  z-index: 3;
+  width: min(46vmin, 420px);
+  aspect-ratio: 1;
+  border: 2px solid rgba(255, 249, 232, 0.86);
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff9e8 0, rgba(255, 206, 139, 0.76) 24%, rgba(255, 121, 53, 0.24) 56%, transparent 72%);
+  box-shadow: 0 0 110px 58px rgba(255, 166, 76, 0.72);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+}
+
+.fc-loading__shockwave {
+  z-index: 2;
+  width: min(40vmin, 480px);
+  aspect-ratio: 1;
+  border: 3px solid rgba(255, 246, 223, 0.98);
+  border-radius: 50%;
+  box-shadow: 0 0 36px rgba(255, 173, 89, 0.95), inset 0 0 42px rgba(255, 204, 139, 0.38);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+}
+
+.fc-loading__shockwave--two {
+  width: min(62vmin, 760px);
+  border-width: 2px;
+  border-color: rgba(255, 151, 63, 0.94);
+}
+
+.fc-loading__shockwave--three {
+  width: min(84vmin, 1040px);
+  border-width: 1px;
+  border-color: rgba(255, 241, 203, 0.74);
+}
+
+.fc-loading__flash {
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  background: #fff9ed;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fc-loading__spark {
+  z-index: 5;
+  width: 11px;
+  height: 11px;
+  border: 1px solid rgba(255, 252, 236, 0.95);
+  border-radius: 2px;
+  background: #ffc46a;
+  box-shadow: 0 0 24px 7px rgba(255, 170, 75, 0.9);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+}
+
+.fc-loading__spark:nth-of-type(3n) {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff4d5;
+}
+
+.fc-loading__brand-card {
+  position: absolute;
+  z-index: 4;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  box-sizing: border-box;
+  width: min(92vw, 760px);
+  min-height: 420px;
+  padding: clamp(28px, 5vw, 56px) clamp(28px, 6vw, 64px) clamp(32px, 5vw, 52px);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.96);
+  border-radius: clamp(32px, 5vw, 48px);
+  background: linear-gradient(145deg, #fffefa 0%, #fff8eb 65%, #f7eddd 100%);
+  box-shadow: 0 44px 140px rgba(8, 8, 15, 0.58), 0 0 0 8px rgba(255, 175, 77, 0.2), 0 0 110px 34px rgba(255, 125, 45, 0.24), inset 0 2px 0 #fff;
+  color: #24232a;
+  text-align: center;
+  will-change: transform, opacity;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.fc-loading__logo-wrap {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: clamp(180px, 34vw, 280px);
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.fc-loading__logo {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
-  /* No CSS drop-shadow: Safari paints a rectangular backdrop on SVG <img>.
-     Rello (and most brand) SVGs already embed their own shadow filter. */
   filter: none;
   -webkit-filter: none;
 }
 
+.fc-loading__logo-shimmer {
+  position: absolute;
+  inset: 12px 20%;
+  border-radius: 18px;
+  background: linear-gradient(90deg, #f3eee5 15%, #fff 48%, #f3eee5 82%);
+  background-size: 220% 100%;
+  animation: fc-logo-shimmer 1.2s linear infinite;
+}
+
+.fc-loading__brand-copy {
+  width: 100%;
+  opacity: 0;
+}
+
+.fc-loading__brand-name {
+  max-width: 100%;
+  margin: 0;
+  color: #24232a;
+  font: 850 clamp(30px, 6vw, 50px)/1.05 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: -0.045em;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.fc-loading__bird-flight {
+  position: absolute;
+  z-index: 6;
+  top: calc(50% - min(28vh, 225px));
+  left: calc(50% + min(18vw, 220px));
+  width: clamp(190px, 34vw, 310px);
+  aspect-ratio: 440 / 360;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.fc-loading__bird-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 18px 26px rgba(24, 15, 5, 0.38)) drop-shadow(0 0 30px rgba(255, 183, 76, 0.52));
+}
+
+.fc-loading__wing {
+  transform-box: view-box;
+}
+
 .fc-experience-loading__status {
+  position: absolute;
+  z-index: 8;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(27px, calc(env(safe-area-inset-bottom) + 16px));
+  left: max(20px, env(safe-area-inset-left));
+  margin: 0;
+  color: rgba(255, 249, 235, 0.86);
+  font: 500 13px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0.025em;
+  text-align: center;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.4);
+}
+
+.fc-loading__skip {
+  position: absolute;
+  z-index: 9;
+  top: max(16px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  min-height: 40px;
+  padding: 0 15px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 999px;
+  background: rgba(23, 23, 31, 0.48);
+  color: #fffdf7;
+  font: 600 12px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.fc-loading__sound {
+  position: absolute;
+  z-index: 9;
+  top: max(16px, env(safe-area-inset-top));
+  left: max(16px, env(safe-area-inset-left));
+  display: inline-flex;
+  min-height: 40px;
+  padding: 0 14px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(23, 23, 31, 0.42);
+  color: rgba(255, 253, 247, 0.9);
+  font: 600 12px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.fc-loading__sound span:first-child {
+  color: #ffd996;
+  font-size: 16px;
+}
+
+.fc-loading__sound:hover,
+.fc-loading__sound:focus-visible {
+  border-color: rgba(255, 225, 174, 0.9);
+  background: rgba(255, 255, 255, 0.15);
+  outline: 2px solid rgba(255, 225, 174, 0.72);
+  outline-offset: 3px;
+}
+
+.fc-loading__skip:hover,
+.fc-loading__skip:focus-visible {
+  border-color: rgba(255, 225, 174, 0.9);
+  background: rgba(255, 255, 255, 0.15);
+  outline: 2px solid rgba(255, 225, 174, 0.72);
+  outline-offset: 3px;
+}
+
+.fc-experience-loading__logo-a11y {
   position: absolute;
   width: 1px;
   height: 1px;
-  padding: 0;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
   clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-.fc-loading-preview-hint {
-  position: fixed;
-  left: 12px;
-  bottom: 12px;
-  z-index: 10000;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-width: min(320px, calc(100vw - 24px));
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(29, 24, 19, 0.82);
-  color: #f6f3ec;
-  font: 12px/1.4 system-ui, sans-serif;
-  pointer-events: none;
+@keyframes fc-logo-shimmer {
+  to { background-position: -220% 0; }
 }
 
-.fc-loading-preview-hint strong {
-  font-size: 13px;
+@media (max-width: 520px) {
+  .fc-loading__brand-card {
+    width: min(94vw, 430px);
+    min-height: 350px;
+    padding: 26px 21px 32px;
+    gap: 15px;
+    border-radius: 32px;
+  }
+
+  .fc-loading__logo-wrap {
+    height: clamp(165px, 44vw, 206px);
+  }
+
+  .fc-loading__bird-flight {
+    width: clamp(172px, 46vw, 220px);
+    top: calc(50% - min(28vh, 225px));
+    left: calc(50% + min(18vw, 220px));
+  }
+
+  .fc-loading__ambient-orbit {
+    width: 102vmin;
+  }
+
+  .fc-loading__ambient-orbit--two {
+    width: 84vmin;
+  }
+
+  .fc-loading__shockwave--three {
+    width: 100vmin;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fc-loading__logo-shimmer {
+    animation: none;
+  }
 }

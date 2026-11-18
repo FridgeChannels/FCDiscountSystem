@@ -1,0 +1,188 @@
+<Rive version="1" kind="fragment">
+    <Artboard defaultStateMachineId="0:7" width="500" height="500" styleId="0:5" name="Brand Bird" id="0:2">
+        <LayoutComponentStyle name="Artboard Style" id="0:5"/>
+
+        <RootBone x="272" y="196" name="Bird Head" id="0:14">
+            <Shape x="13" y="-4" name="Eye Right" id="0:15">
+                <Ellipse width="13" height="16" name="Path"/>
+                <Fill name="Ink"><SolidColor colorValue="FF28231F"/></Fill>
+            </Shape>
+            <Shape x="-15" y="-7" name="Eye Left" id="0:16">
+                <Ellipse width="13" height="16" name="Path"/>
+                <Fill name="Ink"><SolidColor colorValue="FF28231F"/></Fill>
+            </Shape>
+            <Shape x="18" y="-9" name="Eye Glint Right" id="0:17">
+                <Ellipse width="4" height="5" name="Path"/>
+                <Fill name="White"><SolidColor colorValue="FFFFFFFF"/></Fill>
+            </Shape>
+            <Shape x="-10" y="-12" name="Eye Glint Left" id="0:18">
+                <Ellipse width="4" height="5" name="Path"/>
+                <Fill name="White"><SolidColor colorValue="FFFFFFFF"/></Fill>
+            </Shape>
+            <Shape x="65" y="13" rotation="1.5708" name="Beak" id="0:19">
+                <Triangle width="44" height="36" name="Path"/>
+                <Fill name="Tangerine"><SolidColor colorValue="FFFF5D3A"/></Fill>
+            </Shape>
+            <Shape name="Head" id="0:20">
+                <Ellipse width="104" height="94" name="Path"/>
+                <Fill name="Honey"><SolidColor colorValue="FFFFB331"/></Fill>
+            </Shape>
+        </RootBone>
+
+        <RootBone x="250" y="253" name="Bird Body" id="0:21">
+            <Shape x="-25" y="59" rotation="-0.12" name="Left Foot" id="0:22">
+                <Ellipse width="32" height="11" name="Path"/>
+                <Fill name="Tangerine"><SolidColor colorValue="FFFF6A35"/></Fill>
+            </Shape>
+            <Shape x="26" y="59" rotation="0.12" name="Right Foot" id="0:23">
+                <Ellipse width="32" height="11" name="Path"/>
+                <Fill name="Tangerine"><SolidColor colorValue="FFFF6A35"/></Fill>
+            </Shape>
+            <Shape x="17" y="-17" name="Belly" id="0:24">
+                <Ellipse width="83" height="86" name="Path"/>
+                <Fill name="Cream"><SolidColor colorValue="FFFFDE91"/></Fill>
+            </Shape>
+            <Shape name="Body" id="0:25">
+                <Ellipse width="152" height="128" name="Path"/>
+                <Fill name="Honey"><SolidColor colorValue="FFFFB331"/></Fill>
+            </Shape>
+        </RootBone>
+
+        <RootBone x="220" y="230" name="Left Wing Root" id="0:26">
+            <Shape x="-51" y="0" rotation="-0.18" name="Left Wing" id="0:27">
+                <Ellipse width="150" height="54" name="Path"/>
+                <Fill name="Wing Gold"><SolidColor colorValue="FFE98B23"/></Fill>
+            </Shape>
+        </RootBone>
+        <RootBone x="280" y="230" name="Right Wing Root" id="0:28">
+            <Shape x="51" y="0" rotation="0.18" name="Right Wing" id="0:29">
+                <Ellipse width="150" height="54" name="Path"/>
+                <Fill name="Wing Gold"><SolidColor colorValue="FFE98B23"/></Fill>
+            </Shape>
+        </RootBone>
+        <RootBone x="177" y="251" name="Tail Root" id="0:30">
+            <Shape x="-25" y="-12" rotation="-0.62" name="Tail Feather Top" id="0:31">
+                <Ellipse width="58" height="26" name="Path"/>
+                <Fill name="Tail Gold"><SolidColor colorValue="FFE98B23"/></Fill>
+            </Shape>
+            <Shape x="-23" y="15" rotation="0.42" name="Tail Feather Bottom" id="0:32">
+                <Ellipse width="52" height="23" name="Path"/>
+                <Fill name="Tail Cream"><SolidColor colorValue="FFFFDE91"/></Fill>
+            </Shape>
+        </RootBone>
+
+        <AudioEvent assetId="0:81" name="Launch Whoosh" id="0:80"/>
+
+        <StateMachine name="Bird" id="0:7">
+            <StateMachineLayer name="Character" id="0:8">
+                <AnyState x="200" y="-120"/>
+                <ExitState x="480" y="-120"/>
+                <EntryState><StateTransition stateToId="0:12"/></EntryState>
+                <AnimationState x="160" y="45" animationId="0:33" id="0:12">
+                    <StateTransition stateToId="0:13" duration="120" enableExitTime="true" exitTime="100" exitTimeIsPercetange="true"/>
+                </AnimationState>
+                <AnimationState x="390" y="45" animationId="0:34" id="0:13"/>
+            </StateMachineLayer>
+        </StateMachine>
+
+        <LinearAnimation duration="18" name="Arrival" id="0:33">
+            <KeyedObject objectId="0:14">
+                <KeyedProperty propertyKey="13">
+                    <KeyFrameDouble value="130" frame="0" interpolationType="1"/>
+                    <KeyFrameDouble value="272" frame="18" interpolationType="1"/>
+                </KeyedProperty>
+            </KeyedObject>
+            <KeyedObject objectId="0:21">
+                <KeyedProperty propertyKey="13">
+                    <KeyFrameDouble value="108" frame="0" interpolationType="1"/>
+                    <KeyFrameDouble value="250" frame="18" interpolationType="1"/>
+                </KeyedProperty>
+            </KeyedObject>
+            <KeyedObject objectId="0:26">
+                <KeyedProperty propertyKey="13">
+                    <KeyFrameDouble value="78" frame="0" interpolationType="1"/>
+                    <KeyFrameDouble value="220" frame="18" interpolationType="1"/>
+                </KeyedProperty>
+            </KeyedObject>
+            <KeyedObject objectId="0:28">
+                <KeyedProperty propertyKey="13">
+                    <KeyFrameDouble value="138" frame="0" interpolationType="1"/>
+                    <KeyFrameDouble value="280" frame="18" interpolationType="1"/>
+                </KeyedProperty>
+            </KeyedObject>
+            <KeyedObject objectId="0:30">
+                <KeyedProperty propertyKey="13">
+                    <KeyFrameDouble value="35" frame="0" interpolationType="1"/>
+                    <KeyFrameDouble value="177" frame="18" interpolationType="1"/>
+                </KeyedProperty>
+            </KeyedObject>
+            <KeyedObject objectId="0:80">
+                <KeyedProperty propertyKey="395"><KeyFrameCallback frame="4"/></KeyedProperty>
+            </KeyedObject>
+        </LinearAnimation>
+
+        <LinearAnimation loopValue="1" duration="120" name="Flight" id="0:34">
+            <KeyedObject objectId="0:26">
+                <KeyedProperty propertyKey="15">
+                    <KeyFrameDouble value="-0.68" frame="0" interpolationType="0"/>
+                    <KeyFrameDouble value="0.44" frame="15" interpolationType="0"/>
+                    <KeyFrameDouble value="-0.68" frame="30" interpolationType="0"/>
+                    <KeyFrameDouble value="0.44" frame="45" interpolationType="0"/>
+                    <KeyFrameDouble value="-0.68" frame="60" interpolationType="0"/>
+                    <KeyFrameDouble value="0.44" frame="75" interpolationType="0"/>
+                    <KeyFrameDouble value="-0.68" frame="90" interpolationType="0"/>
+                    <KeyFrameDouble value="0.44" frame="105" interpolationType="0"/>
+                    <KeyFrameDouble value="-0.68" frame="120" interpolationType="0"/>
+                </KeyedProperty>
+            </KeyedObject>
+            <KeyedObject objectId="0:28">
+                <KeyedProperty propertyKey="15">
+                    <KeyFrameDouble value="0.68" frame="0" interpolationType="0"/>
+                    <KeyFrameDouble value="-0.44" frame="15" interpolationType="0"/>
+                    <KeyFrameDouble value="0.68" frame="30" interpolationType="0"/>
+                    <KeyFrameDouble value="-0.44" frame="45" interpolationType="0"/>
+                    <KeyFrameDouble value="0.68" frame="60" interpolationType="0"/>
+                    <KeyFrameDouble value="-0.44" frame="75" interpolationType="0"/>
+                    <KeyFrameDouble value="0.68" frame="90" interpolationType="0"/>
+                    <KeyFrameDouble value="-0.44" frame="105" interpolationType="0"/>
+                    <KeyFrameDouble value="0.68" frame="120" interpolationType="0"/>
+                </KeyedProperty>
+            </KeyedObject>
+            <KeyedObject objectId="0:21">
+                <KeyedProperty propertyKey="91">
+                    <KeyFrameDouble value="253" frame="0" interpolationType="1"/>
+                    <KeyFrameDouble value="245" frame="30" interpolationType="1"/>
+                    <KeyFrameDouble value="253" frame="60" interpolationType="1"/>
+                    <KeyFrameDouble value="245" frame="90" interpolationType="1"/>
+                    <KeyFrameDouble value="253" frame="120" interpolationType="1"/>
+                </KeyedProperty>
+            </KeyedObject>
+            <KeyedObject objectId="0:14">
+                <KeyedProperty propertyKey="15">
+                    <KeyFrameDouble value="-0.06" frame="0" interpolationType="1"/>
+                    <KeyFrameDouble value="0.08" frame="30" interpolationType="1"/>
+                    <KeyFrameDouble value="-0.02" frame="60" interpolationType="1"/>
+                    <KeyFrameDouble value="-0.06" frame="120" interpolationType="1"/>
+                </KeyedProperty>
+            </KeyedObject>
+            <KeyedObject objectId="0:15">
+                <KeyedProperty propertyKey="17">
+                    <KeyFrameDouble value="1" frame="0" interpolationType="0"/>
+                    <KeyFrameDouble value="0.12" frame="66" interpolationType="0"/>
+                    <KeyFrameDouble value="1" frame="70" interpolationType="0"/>
+                    <KeyFrameDouble value="1" frame="120" interpolationType="0"/>
+                </KeyedProperty>
+            </KeyedObject>
+            <KeyedObject objectId="0:16">
+                <KeyedProperty propertyKey="17">
+                    <KeyFrameDouble value="1" frame="0" interpolationType="0"/>
+                    <KeyFrameDouble value="0.12" frame="66" interpolationType="0"/>
+                    <KeyFrameDouble value="1" frame="70" interpolationType="0"/>
+                    <KeyFrameDouble value="1" frame="120" interpolationType="0"/>
+                </KeyedProperty>
+            </KeyedObject>
+        </LinearAnimation>
+    </Artboard>
+
+    <AudioAsset file="assets/brand-launch-whoosh.wav" volume="0.22" name="Brand launch whoosh" id="0:81"/>
+</Rive>

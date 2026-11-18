@@ -577,7 +577,20 @@ function AmazonProductAdditionalInfo({ brand, product, onChangeAddress }) {
 function AmazonProductScreen({ config, coupons, modules, navigate, discountMode = 'code' }) {
   const product = config.products.find((item) => item.id === config.currentProductId);
   const productSize = product.variant.match(/\d+\s*[- ]?\s*(?:bottles?|packs?|count|ct|pieces?|pcs|units?|cans?|bags?)/i)?.[0]?.replace(/\s+/g, ' ').trim() || product.variant;
-  const coupon = coupons[0];
+  const useSampleDiscount = new URLSearchParams(window.location.search).get('discountPreview') === 'sample';
+  const coupon = useSampleDiscount
+    ? {
+        id: 'amazon-discount-preview',
+        benefit: '10% off this product',
+        claimCode: 'PURA10B',
+        terms: {
+          validThrough: 'Sep 30, 2026',
+          usageLimit: 'One use per customer',
+          stackingRule: 'Cannot be combined with other coupons',
+          sellerName: config.brand.name,
+        },
+      }
+    : coupons[0];
   const { code, copied, copy } = useCouponCopy(coupon, config.fcId, product.id, { feedbackDuration: 2000 });
   const [quantity, setQuantity] = useState(1);
   const [couponTermsOpen, setCouponTermsOpen] = useState(false);

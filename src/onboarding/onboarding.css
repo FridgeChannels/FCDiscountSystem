@@ -1,0 +1,43 @@
+.tutorial-layer { position: fixed; inset: 0; z-index: 1100; pointer-events: none; font-family: system-ui, sans-serif; }
+.tutorial-shade,.tutorial-mask { position: fixed; background: rgba(8,31,24,.7); pointer-events: auto; }
+.tutorial-shade { inset: 0; }
+.tutorial-ring { position: fixed; border: 2px solid #f9e6a0; border-radius: 18px; box-shadow: 0 0 0 4px #f9e6a044, 0 0 24px #f9e6a088; pointer-events: none; }
+.tutorial-card { box-sizing: border-box; position: fixed; pointer-events: auto; padding: 20px; border: 1px solid #fff; border-radius: 22px; background: linear-gradient(145deg,#fffef3,#e7f1db); box-shadow: 0 15px 35px #0d302a66, inset 0 2px #fff; color: #254b3a; animation: tutorial-appear .25s ease both; }
+.tutorial-centered { left: 50%; top: 50%; width: min(340px, calc(100vw - 32px)); transform: translate(-50%,-50%); text-align: center; }
+.tutorial-card h2 { margin: 15px 0 8px; font: 700 23px/1.13 Georgia,serif; color: #173e30; }
+.tutorial-card p { margin: 0 0 12px; font-size: 13px; line-height: 1.5; }
+.tutorial-card strong { font-size: 12px; color: #266b4d; }
+.tutorial-close { position: absolute; right: 11px; top: 10px; border: 0; border-radius: 50%; width: 30px; height: 30px; background: #deead7; color: #315543; font-size: 22px; cursor: pointer; }
+.tutorial-progress { text-align: left; color: #6b8d70; font-size: 10px; font-weight: 800; letter-spacing: .08em; padding-right: 28px; }
+.tutorial-progress div { display: flex; gap: 4px; margin-top: 7px; }.tutorial-progress i { height: 4px; flex: 1; border-radius: 4px; background: #cfddc9; }.tutorial-progress i.is-active { background: #67a67b; }
+.tutorial-emblem { display: grid; place-items: center; margin: 16px auto 0; width: 49px; height: 49px; border-radius: 17px; background: linear-gradient(#fff2b5,#e5bd66); color: #5a6b35; box-shadow: 0 4px 0 #c3a563; font-size: 29px; }
+.tutorial-primary { width: 100%; padding: 12px; border: 0; border-radius: 13px; background: #287452; color: white; font-weight: 800; cursor: pointer; box-shadow: 0 4px 0 #18583d; }.tutorial-text-button { border: 0; background: none; color: #668071; margin: 15px 0 0; cursor: pointer; }
+.tutorial-skip { position: fixed; z-index: 1102; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); pointer-events: auto; padding: 9px 13px; border: 1px solid #ffffff88; border-radius: 30px; background: #163e31; color: white; font-size: 12px; cursor: pointer; }.tutorial-skip--modal { z-index: 10001; }
+@keyframes tutorial-appear { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .tutorial-card { animation: none; } }
+
+.tutorial-replay { margin-top: 10px; padding: 9px 14px; border: 0; border-radius: 10px; background: #287452; color: white; font-weight: 700; cursor: pointer; }
+.tutorial-modal-explanation { margin: 12px 20px; color: #476852; font: 12px/1.4 system-ui,sans-serif; }
+.tutorial-tooltip { padding: 16px 18px 18px; }
+.tutorial-tooltip::before { content: ''; position: absolute; top: -9px; left: 50%; width: 18px; height: 18px; background: #fffdf2; transform: translateX(-50%) rotate(45deg); border-radius: 3px; }
+.tutorial-progress { display: flex; align-items: center; gap: 14px; }.tutorial-progress > span { flex: none; padding: 6px 10px; border-radius: 20px; background: #ead7aa; color: #654a1e; }.tutorial-progress div { flex: 1; margin: 0; align-items: center; gap: 0; }.tutorial-progress i { height: 5px; position: relative; border-radius: 0; background: #d3c6aa; }.tutorial-progress i::after { content: ''; position: absolute; right: 0; top: 50%; width: 8px; height: 8px; border: 2px solid #d3c6aa; border-radius: 50%; background: #fffaf0; transform: translateY(-50%); }.tutorial-progress i.is-active::after { border-color: #7cac52; background: #25af3b; }
+.tutorial-content { display: grid; grid-template-columns: 62px 1fr; gap: 14px; align-items: center; margin-top: 18px; }.tutorial-content > img { width: 62px; height: 62px; object-fit: contain; }.tutorial-content > div { padding-left: 13px; border-left: 1px solid #ddd4bf; }.tutorial-content h2 { margin: 0 0 6px; font: 850 18px/1.1 system-ui,sans-serif; letter-spacing: -.03em; }.tutorial-content p { margin-bottom: 6px; font-size: 12px; }.tutorial-content strong { font-size: 11px; }
+/* The spotlight follows the rounded control instead of exposing square corners. */
+.tutorial-mask { background: transparent; }
+.tutorial-ring { box-sizing: border-box; border-radius: 21px; box-shadow: 0 0 0 9999px rgba(8,31,24,.7), 0 0 0 3px #ffe78a66, 0 0 22px #ffe78aaa; }
+.tutorial-ring { animation: tutorial-spotlight-pulse 1.5s ease-in-out infinite; }
+@keyframes tutorial-spotlight-pulse {
+  0%, 100% { border-color: #ffe78a; box-shadow: 0 0 0 9999px rgba(8,31,24,.7), 0 0 0 3px #ffe78a55, 0 0 14px #ffe78a77; }
+  50% { border-color: #fff8c4; box-shadow: 0 0 0 9999px rgba(8,31,24,.7), 0 0 0 5px #ffe78a99, 0 0 30px #ffe78aee; }
+}
+@media (prefers-reduced-motion: reduce) { .tutorial-ring { animation: none; } }
+/* A distinct pulsing outline stays visible against both the button and dimmed map. */
+.tutorial-ring { animation: none; border: 2px solid #ffe574; }
+.tutorial-ring::after { content: ''; position: absolute; inset: -4px; border: 4px solid #fff2a0; border-radius: inherit; pointer-events: none; animation: tutorial-outline-flash 1s ease-in-out infinite; }
+@keyframes tutorial-outline-flash {
+  0%, 100% { opacity: .25; box-shadow: 0 0 3px 0 #ffd63d; transform: scale(.96); }
+  50% { opacity: 1; box-shadow: 0 0 12px 4px #ffdb50, 0 0 30px 9px #ffbf00aa; transform: scale(1.06); }
+}
+@media (prefers-reduced-motion: reduce) { .tutorial-ring::after { animation: none; opacity: 1; } }
+/* Keep the dimmed surround above every map element while leaving the target clear. */
+.tutorial-layer .tutorial-ring { box-shadow: 0 0 0 9999px rgba(8,31,24,.72), 0 0 0 3px #ffe78a66, 0 0 22px #ffe78aaa; }
