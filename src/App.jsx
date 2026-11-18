@@ -4753,7 +4753,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
             <div className="game-hud-modal__overlay" onClick={() => setHudRewardsOpen(false)}>
               <section className="game-hud-modal game-hud-modal--rewards" role="dialog" aria-modal="true" aria-labelledby="hud-rewards-title" onClick={(event) => event.stopPropagation()}>
                 <button className="game-hud-modal__close" type="button" aria-label="Close rewards" onClick={() => setHudRewardsOpen(false)}>×</button>
-                <span className="game-hud-modal__eyebrow">YOUR COLLECTION</span><h2 id="hud-rewards-title">Rewards</h2>
+                <span className="game-hud-modal__eyebrow">YOUR COLLECTION</span><div className="rewards-modal-title"><i aria-hidden="true">❧</i><h2 id="hud-rewards-title">Rewards</h2><i aria-hidden="true">❧</i></div>
                 {targetUnlocked && !targetClaimed && targetPack && <div className="game-hud-modal__reward"><span>Ready to unlock</span><strong>{targetRewardLabel}</strong><button type="button" onClick={() => { setHudRewardsOpen(false); void issueTargetPack(); }}>Claim reward</button></div>}
                 <CouponWalletPage coupons={walletArchiveCoupons} brand={brand} copiedCode={walletCopiedCode} onCopy={handleWalletCopy} onClaim={handleShopNowDirect} />
               </section>
@@ -6040,7 +6040,7 @@ function LeaderboardSheet({ open, leaderboard, profile, onClose }) {
                 <span className="lb-podium-rank">#{player.rank}</span>
                 <span className="lb-podium-name">{player.name}</span>
                 <span className="lb-podium-coins">{player.coins}</span>
-                <div className="lb-podium-bar">{idx === 0 ? '🥈' : idx === 1 ? '🥇' : '🥉'}</div>
+                <div className="lb-podium-bar"><span>{player.rank}</span></div>
               </div>
             ))}
           </div>

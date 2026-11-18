@@ -191,7 +191,7 @@ export default function DailyGrindGameMap({
               {recentGain > 0 && <div className="credits-reference__earned" role="status">+{recentGain} credits earned</div>}
               <div className="credits-progress-track">
                 <div className="credits-stone__bar" role="progressbar" aria-label="Reward progress" aria-valuemin="0" aria-valuemax={progressMax} aria-valuenow={progressValue}><span className={recentGain ? 'is-gaining' : ''} style={{ width: `${progressPercent}%` }} /></div>
-                <div className="credits-progress-marker" style={{ left: `clamp(15px, ${progressPercent}%, calc(100% - 15px))` }} aria-hidden="true">{brandLogoUrl ? <img src={brandLogoUrl} alt="" /> : <span>{brandName.trim().charAt(0).toUpperCase() || '★'}</span>}</div>
+                <div className="credits-progress-marker" style={{ left: `clamp(22px, ${progressPercent}%, calc(100% - 22px))` }} aria-hidden="true">{brandLogoUrl ? <img src={brandLogoUrl} alt="" /> : <span>{brandName.trim().charAt(0).toUpperCase() || '★'}</span>}</div>
                 <span className="credits-progress-percent">{Math.round(progressPercent)}%</span>
               </div>
             </>}
