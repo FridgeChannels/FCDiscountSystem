@@ -3,6 +3,7 @@ import { fetchFcExperience, resolveSnFromUrl } from './lib/fcExperience.js';
 import { normalizeLogoUrl } from './lib/brandTheme.js';
 import { parseTouchIdFromUrl } from './lib/touchId.js';
 import { prefetchDtcEntry } from './api/client.js';
+import { buildScenario } from './reorder/fixtures.js';
 import { isShopifyOAuthPending } from './api/cache.js';
 import ExperienceLoading from './ExperienceLoading.jsx';
 import { notifyEmbedReady, trackEmbed } from './lib/investorEmbed.js';
@@ -84,6 +85,9 @@ function PendingShell({ ready, children }) {
  * Keeps a single logo loading shell until the destination first paint is ready.
  */
 export default function ExperienceRoot() {
+  const [offerBrandPreview] = useState(() => import.meta.env.DEV && new URLSearchParams(window.location.search).get('palette') === 'mosh'
+    ? buildScenario('mosh-product').brand
+    : null);
   const [phase, setPhase] = useState({ status: 'resolving' });
   const [contentReady, setContentReady] = useState(false);
   const [loadingBrand, setLoadingBrand] = useState({ logoUrl: null, brandName: null });
@@ -142,7 +146,9 @@ export default function ExperienceRoot() {
         if (seq !== resolveSeqRef.current) return;
 
         // Experience API already loaded magnet_brand_param — apply logo before destination boot.
-        const brand = brandFromExperience(result);
+        const brand = result.experience === 'dtc' && offerBrandPreview
+          ? { logoUrl: offerBrandPreview.logoImage, brandName: offerBrandPreview.name }
+          : brandFromExperience(result);
         if (brand.logoUrl) {
           setLogoSettled(false);
           setLoadingBrand(brand);
@@ -269,6 +275,7 @@ export default function ExperienceRoot() {
         <PendingShell ready={contentReady}>
           <DtcApp
             App={phase.App}
+            offerBrandPreview={offerBrandPreview}
             onEntryReady={markContentReady}
           />
         </PendingShell>
@@ -277,6 +284,6 @@ export default function ExperienceRoot() {
   );
 }
 
-function DtcApp({ App, onEntryReady }) {
-  return <App skipEntryGiftIntro onEntryReady={onEntryReady} />;
+function DtcApp({ App, onEntryReady, offerBrandPreview }) {
+  return <App skipEntryGiftIntro onEntryReady={onEntryReady} offerBrandPreview={offerBrandPreview} />;
 }

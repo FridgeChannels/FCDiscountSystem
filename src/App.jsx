@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useId, useMemo, useRef, useState, memo } from 'react';
 import { claimCoupon, claimInitialReward, claimTargetRewardPack, completeSurvey, fetchCouponWallet, fetchMagnetBrandParam, fetchPlayerProfile, fetchRewardPlan, fetchShopifyStatus, fetchSurveyQuestions, fetchTodayLeaderboard, observeCoupon, redeemCoupon, renewCycle, sampleResetCycle, startGameSession, submitSurveyAnswers, updatePlayerProfile, uploadPlayerAvatar } from './api/client.js';
 import {
   readCachedRewardPlan,
@@ -48,11 +48,12 @@ import {
   resolveSettlementCoupon,
 } from './api/mapPlan.js';
 import { mapApiWalletToLocal } from './api/mapWallet.js';
-import { couponDisplayMode, couponPercentNum, couponPaletteTierFor, enrichCouponDisplay, formatCouponConditions } from './api/couponDisplay.js';
+import { couponDisplayMode, couponPercentNum, couponPaletteTierFor, enrichCouponDisplay } from './api/couponDisplay.js';
 import {
   dedupeWalletCoupons,
   enrichWalletCoupons,
-  selectCompletedAvailableCoupons,
+  buildCouponOffers,
+  findIssuedPackCoupon,
   selectSettlementCouponsForCycle,
   selectWalletArchiveCoupons,
   isWalletCouponUsable,
@@ -60,7 +61,6 @@ import {
   selectPackRevealCoupons,
 } from './api/walletCoupons.js';
 import PlatformGameModal from './components/PlatformGameModal.jsx';
-import DailyGrindGameMap from './components/DailyGrindGameMap.jsx';
 import DevToolbar from './components/DevToolbar.jsx';
 import {
   applyDevSceneUi,
@@ -81,7 +81,7 @@ import {
 } from './dev/couponPacks.js';
 import { dbg, dbgError } from './lib/debug.js';
 import { createLogoTapDetector, isDemoForceRenewEnabled } from './lib/demoForceRenew.js';
-import { applyBrandTheme, applyShellBrandToGameStart, brandFromMagnetParam, isSampleMagnetParam } from './lib/brandTheme.js';
+import { applyBrandTheme, applyShellBrandToGameStart, brandFromMagnetParam, isSampleMagnetParam, offerPaletteStyle } from './lib/brandTheme.js';
 import { preloadRuntimeManifest } from './lib/runtimeRegistry.js';
 import { normalizeLeaderboardView, FALLBACK_RANK } from './lib/leaderboard.js';
 import {
@@ -95,17 +95,8 @@ import { getTouchIdErrorMessage, resolveTouchIdFromUrl } from './lib/touchId.js'
 // 阶段4:对不依赖每秒倒计时的叶子组件做 memo,
 // 避免倒计时每秒触发它们跟着整棵树一起重渲染。
 const Header = memo(HeaderBase);
-const Challenges = memo(
-  ChallengesBase,
-  (prev, next) =>
-    prev.challenges === next.challenges &&
-    prev.dailyCapReached === next.dailyCapReached &&
-    prev.pointsNeeded === next.pointsNeeded,
-);
-const RulesFooter = memo(
-  RulesFooterBase,
-  (prev, next) => prev.rulesOpen === next.rulesOpen,
-);
+const Challenges = memo(ChallengesBase);
+const RulesFooter = memo(RulesFooterBase);
 
 const INITIAL_SECONDS = 2 * 24 * 3600 + 4 * 3600 + 55 * 60;
 const DEFAULT_TOUCH_ID = 'A8SQN3V2OW';
@@ -546,7 +537,7 @@ function getArcPoint(progress) {
   };
 }
 
-export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
+export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBrandPreview } = {}) {
   const viewportRef = useRef(null);
   const entryReadyNotifiedRef = useRef(false);
   const skipEntryGiftIntroRef = useRef(skipEntryGiftIntro);
@@ -629,7 +620,6 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [countdownSeconds, setCountdownSeconds] = useState(INITIAL_SECONDS);
   const [tick, setTick] = useState(false);
-  const [rulesOpen, setRulesOpen] = useState(false);
   const [rewardLadderOpen, setRewardLadderOpen] = useState(false);
   const [copyState, setCopyState] = useState('Copy');
   const [activeModal, setActiveModal] = useState(null);
@@ -667,10 +657,6 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
   const [playerProfile, setPlayerProfile] = useState(null);
 
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
-  const [hudRewardsOpen, setHudRewardsOpen] = useState(false);
-  const [tutorialRewardsActive, setTutorialRewardsActive] = useState(false);
-  const [tutorialGameCompletion, setTutorialGameCompletion] = useState(0);
-  const [rewardNoticeSeen, setRewardNoticeSeen] = useState(false);
   const [leaderboardData, setLeaderboardData] = useState(null);
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletNavDirection, setWalletNavDirection] = useState('forward');
@@ -1245,7 +1231,9 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
       Boolean(claimRecord?.cycleId) &&
       Boolean(planCycleId) &&
       claimRecord.cycleId !== planCycleId;
-    const localWalletHasStaleCycle = readCouponWallet(touchId).some(
+    // Prior-cycle coupons belong on the combined shelf. Only the legacy welcome
+    // flow uses them as a hint that its first-visit sequence needs replaying.
+    const localWalletHasStaleCycle = !skipEntryGiftIntroRef.current && readCouponWallet(touchId).some(
       (row) => row.cycleId && planCycleId && row.cycleId !== planCycleId,
     );
     const welcomeDoneEarly = readWelcomeCompleted(touchId);
@@ -1256,7 +1244,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
       Boolean(planCycleId) &&
       cachedCycleId !== planCycleId;
     const sampleNeedsWelcomeReplay =
-      isSampleMagnetParam(magnetBrandParamRef.current) &&
+      !skipEntryGiftIntroRef.current && isSampleMagnetParam(magnetBrandParamRef.current) &&
       welcomeDoneEarly &&
       !welcomeCycleId &&
       typeof window !== 'undefined' &&
@@ -1320,6 +1308,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
       );
       // Gift-drop intro is globally cancelled: land on home after server-reset sync.
       if (skipEntryGiftIntroRef.current) {
+        void refreshCouponWallet();
         writeWelcomeCompleted(touchId, true, planCycleId);
         setWelcomeStep(3);
         setIntroActive(false);
@@ -1639,7 +1628,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     }
 
     return vm;
-  }, [touchId]);
+  }, [touchId, refreshCouponWallet]);
 
   const applyDevPreviewScene = useCallback((sceneId) => {
     const resolved = resolveDevScene(sceneId);
@@ -2213,21 +2202,17 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
   const targetThreshold = targetPack?.threshold ?? null;
   const targetCoupons = targetPack?.coupons ?? [];
   const targetCouponCount = targetCoupons.length;
-  const primaryTargetReward = couponTicketHeadline(targetCoupons[0]);
-  const targetRewardLabel = targetCouponCount === 1
-    ? `${primaryTargetReward} coupon`
-    : targetCouponCount > 1
-      ? `${primaryTargetReward} + ${targetCouponCount - 1} more rewards`
-      : null;
   const targetUnlocked = !targetPack
     || planCurrentTier >= 1
     || (targetThreshold != null && targetThreshold > 0 && points >= targetThreshold);
   const initialPackIssued = devScene
     ? walletHasPack(couponWallet, currentPack?.id)
     : isInitialPackIssued(activePlan, derivedPacks.startPack) || walletHasPack(couponWallet, currentPack?.id);
-  const targetPackIssued = devScene
-    ? walletHasPack(couponWallet, targetPack?.id)
-    : isTargetPackIssued(activePlan, derivedPacks.targetPack) || walletHasPack(couponWallet, targetPack?.id);
+  const cycleId = activePlan?.cycleId ?? rewardPlanId;
+  const walletHasTargetPack = targetCouponCount > 0 && targetCoupons.every(
+    coupon => findIssuedPackCoupon(couponWallet, targetPack, coupon, cycleId),
+  );
+  const targetPackIssued = walletHasTargetPack || (!devScene && isTargetPackIssued(activePlan, derivedPacks.targetPack));
   const currentPackClaimed = initialPackIssued;
   const targetClaimed = targetPackIssued;
   const currentPackIssuedCoupons = useMemo(() => {
@@ -2271,20 +2256,11 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     return enrichWalletCoupons([...walletByKey.values()], packCouponsForDisplay);
   }, [couponWallet, currentPack, targetPack, devScene, packCouponsForDisplay, walletRevealCoupons]);
 
-  const completedAvailableCoupons = useMemo(
-    () => selectCompletedAvailableCoupons(enrichedCouponWallet),
-    [enrichedCouponWallet],
-  );
-
   const walletArchiveCoupons = useMemo(
     () => selectWalletArchiveCoupons(enrichedCouponWallet),
     [enrichedCouponWallet],
   );
 
-  const walletBadgeCount = useMemo(
-    () => enrichedCouponWallet.filter((coupon) => isWalletCouponUsable(coupon)).length,
-    [enrichedCouponWallet],
-  );
   const targetProgressPct = targetThreshold ? Math.min((points / targetThreshold) * 100, 100) : 100;
   const targetDelta = targetThreshold ? Math.max(targetThreshold - points, 0) : 0;
   const singleCouponOnlyMode = useMemo(
@@ -2355,17 +2331,11 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
       && !showWelcomeRitual
       && (allRewardsClaimed || targetUnlockAcknowledged)
     );
-  const showRewardsPage = walletOpen;
-  const rewardNoticeKey = rewardPlanId && touchId ? `vivora-reward-notice:${touchId}:${rewardPlanId}` : null;
-  useEffect(() => {
-    try { setRewardNoticeSeen(Boolean(rewardNoticeKey && localStorage.getItem(rewardNoticeKey))); }
-    catch { setRewardNoticeSeen(false); }
-  }, [rewardNoticeKey]);
-  const acknowledgeRewardNotice = () => {
-    if (!targetClaimed && !giftReveal) return;
-    if (rewardNoticeKey) { try { localStorage.setItem(rewardNoticeKey, '1'); } catch { /* Storage may be unavailable. */ } }
-    setRewardNoticeSeen(true);
-  };
+  const isExpired = countdownSeconds <= 0;
+  const offers = buildCouponOffers(enrichedCouponWallet, {
+    startPack: currentPack, targetPack, cycleId, targetReached: targetUnlocked || targetUnlockAcknowledged,
+    ended: isExpired,
+  });
   const showRenewWelcomeLoading = renewFlowActive && !introActive && welcomeStep < 1;
 
   useEffect(() => {
@@ -2521,7 +2491,6 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     targetPack,
   ]);
   const isCurrentCouponClaimed = showClaimedScreen;
-  const isExpired = countdownSeconds <= 0;
   const time = useMemo(() => formatCountdown(countdownSeconds), [countdownSeconds]);
   const expiryDate = useMemo(() => formatExpiryDate(countdownSeconds), [countdownSeconds]);
   const urgent = countdownSeconds < 86400 && countdownSeconds > 0;
@@ -3235,18 +3204,6 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     return shopifyAuthStatus !== 'connected';
   }
 
-  function scrollToEarnSection() {
-    const section = document.querySelector('.earn-progress-section');
-    if (section) {
-      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      return;
-    }
-    const scroller = document.querySelector('.content-area');
-    if (scroller) {
-      scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' });
-    }
-  }
-
   function scheduleShopifyResume(resume) {
     if (typeof resume !== 'function') return;
     window.requestAnimationFrame(() => {
@@ -3785,7 +3742,8 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     try {
       await copyText(code);
     } catch {
-      // 复制失败时静默,用户仍可手动选择券码。
+      showInlineError('Copy unavailable', 'Press and hold the coupon code to copy it.');
+      return;
     }
     setWalletCopiedCode(code);
     setTimeout(() => setWalletCopiedCode((prev) => (prev === code ? null : prev)), 2000);
@@ -4005,6 +3963,20 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     }
   }
 
+  function retryOfferIssue(packType) {
+    const alreadyIssued = packType === 'target' ? targetClaimed : currentPackClaimed;
+    if (alreadyIssued) {
+      void refreshCouponWallet();
+      void reloadPlan({ refresh: true, background: true }).catch(() => {
+        showInlineError('Could not refresh coupons', 'Please try again.');
+      });
+    } else if (packType === 'target' && !singleCouponOnlyMode) {
+      void issueTargetPack();
+    } else {
+      void autoClaimInitialPack();
+    }
+  }
+
   function beginTargetPackUnlock() {
     if (!targetPack?.id || singleCouponOnlyMode || targetClaimed) return;
     if (autoIssuedPackRef.current === targetPack.id) return;
@@ -4061,7 +4033,6 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
   }, [currentPackClaimed, targetUnlocked, targetClaimed, targetPack?.id, devScene, singleCouponOnlyMode, renewFlowActive, renewGiftIntro]);
 
   function dismissTargetGiftReveal({ openWallet = false } = {}) {
-    acknowledgeRewardNotice();
     const coded = (giftReveal?.coupons ?? []).filter((coupon) => coupon?.code);
     if (rewardPlanId) setTargetUnlockAckCycleId(rewardPlanId);
     setGiftReveal(null);
@@ -4074,7 +4045,6 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
 
   async function handleSettlementComplete(settlement) {
     dbg('[FCDBG][App] settlement received', settlement);
-    setTutorialGameCompletion((value) => value + 1);
     clearGameSessionCache();
     setActiveModal(null);
     setGameStart(null);
@@ -4551,12 +4521,26 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     && (renewGiftIntro || (!renewFlowActive && hasInitialDiscount) || isReturnIntro);
   const brandIntroIsWelcome = renewGiftIntro || welcomeStep < 3;
   const showHome = !devScene || devScene === 'home' || devScene === 'completed';
+  const availableChallenges = shopifyAuthStatus === 'connected'
+    ? challenges.filter((challenge) => challenge.type !== 'shopify_connect')
+    : challenges;
   const displayedChallenges = isSurveySequenceTestMode()
     ? [
         ...(testSurveyChallenge ? [testSurveyChallenge] : []),
-        ...challenges.filter((challenge) => challenge.type !== 'survey'),
+        ...availableChallenges.filter((challenge) => challenge.type !== 'survey'),
       ]
-    : challenges;
+    : availableChallenges;
+  const showMoshWordmark = (offerBrandPreview?.name ?? brand.name)?.trim().toLowerCase() === 'mosh';
+  const brandArtworkUrl = showMoshWordmark ? '/rewards/mosh-wordmark.webp' : brand.logoUrl;
+  const offerPalette = offerBrandPreview?.colors;
+  const offerColors = useMemo(() => offerPaletteStyle(
+    offerPalette?.primary ?? brand.backgroundColor ?? brand.primaryColor,
+    offerPalette?.secondary ?? brand.buttonColor,
+  ), [offerPalette, brand.backgroundColor, brand.primaryColor, brand.buttonColor]);
+  const showUnlockOnShelf = skipEntryGiftIntro && showHome && giftReveal?.pack?.type === 'target';
+  useEffect(() => {
+    if (showUnlockOnShelf) dismissTargetGiftReveal();
+  }, [showUnlockOnShelf, giftReveal]);
 
   if (!touchIdValid) {
     return (
@@ -4569,33 +4553,16 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
     );
   }
 
-  const rewardHeader = (
-    <Header
-      brand={brand}
-      profile={displayProfile}
-      shopifyStatus={shopifyAuthStatus}
-      onOpenShopifyAccount={openShopifyAccountEntry}
-      onOpenWallet={() => {
-        if (!showRewardsPage) { setHudRewardsOpen(true); acknowledgeRewardNotice(); }
-        else { setWalletNavDirection('forward'); setWalletOpen(true); }
-      }}
-      onBackFromWallet={() => {
-        setWalletNavDirection('back');
-        setWalletOpen(false);
-      }}
-      walletOpen={walletOpen}
-      rewardsCompleted={completedMode}
-      walletCount={walletBadgeCount}
-      onLogoSecretTap={logoSecretEnabled ? handleLogoSecretTap : undefined}
-    />
-  );
-
   return (
+    <>
+    {showHome && <div className="offers-ambient" aria-hidden="true" style={offerColors} />}
     <div
-      className="mobile-viewport"
+      className={`mobile-viewport${showHome && !walletOpen ? ' rewards-home' : ''}`}
+      data-offers-wallet={showHome && walletOpen ? '' : undefined}
       data-screen-label="优惠券首页"
       ref={viewportRef}
       style={{
+        ...offerColors,
         ...((brand.buttonColor || brand.primaryColor)
           ? { '--brand-primary': brand.buttonColor || brand.primaryColor }
           : {}),
@@ -4671,104 +4638,63 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
 
       {showHome && (
       <>
-      {showRewardsPage && rewardHeader}
+      <Header
+        brand={brand}
+        profile={displayProfile}
+        shopifyStatus={shopifyAuthStatus}
+        onOpenShopifyAccount={openShopifyAccountEntry}
+        onBackFromWallet={() => {
+          setWalletNavDirection('back');
+          setWalletOpen(false);
+        }}
+        walletOpen={walletOpen}
+        offerLogo={showMoshWordmark ? (offerBrandPreview?.logoImage || brand.logoUrl || '/reorder/mosh/logo.png') : null}
+        rewardsCompleted={completedMode}
+        onLogoSecretTap={logoSecretEnabled ? handleLogoSecretTap : undefined}
+      />
 
-      {showRewardsPage ? (
+      {walletOpen ? (
         <CouponWalletPage
-          key={walletOpen ? 'wallet-archive' : completedMode ? 'completed-rewards' : 'wallet-active'}
-          coupons={walletOpen ? walletArchiveCoupons : completedAvailableCoupons}
-          brand={brand}
+          coupons={walletArchiveCoupons}
           copiedCode={walletCopiedCode}
           onCopy={handleWalletCopy}
           onClaim={handleShopNowDirect}
-          completed={completedMode && !walletOpen}
           navDirection={walletNavDirection}
-          time={time}
-          isExpired={isExpired}
-          urgent={urgent}
-          isSample={isSampleMagnet}
-          onReset={handleSampleReset}
         />
       ) : (
         <>
-          <main className="content-area is-island-world">
-            {rewardHeader}
-            <div className="reward-journey-shell">
-              <div hidden aria-hidden="true">
-              <TargetProgress
-                points={points}
-                threshold={targetThreshold}
-                progressPct={targetProgressPct}
-                delta={targetDelta}
-                couponCount={targetCouponCount}
-                coupons={targetCoupons}
-                unlocked={targetUnlocked}
-                claimed={targetClaimed}
-                time={time}
-                tick={tick}
-                urgent={urgent}
-                isExpired={isExpired}
-                coinGainSignal={coinGainSignal}
-                lastGainAmount={lastGainAmount}
-                onOpenWallet={() => setWalletOpen(true)}
-              />
-
-              <Challenges
-                challenges={displayedChallenges}
-                dailyCapReached={dailyCapReached}
-                pointsNeeded={targetUnlocked ? 0 : targetDelta}
-                upgradeMaxPoints={targetUnlocked ? 0 : (targetThreshold ?? 0)}
-                onOpen={openChallenge}
-                onOpenLeaderboard={() => { void syncLeaderboard(true); setLeaderboardOpen(true); }}
-              />
-              </div>
-              <DailyGrindGameMap
-                challenges={displayedChallenges}
-                disabled={planLoading || surveySubmitting || crediting || isExpired}
-                onOpen={openChallenge}
-                upgradeMaxPoints={targetUnlocked ? 0 : (targetThreshold ?? 0)}
-                countdownText={`${time.digits[0]}d ${time.digits[1]}h ${time.digits[2]}m ${time.digits[3]}s`}
-                isExpired={isExpired}
-                points={points}
-                threshold={targetThreshold}
-                delta={targetUnlocked ? 0 : targetDelta}
-                brandLogoUrl={brand.logoUrl}
-                brandName={brand.name}
-                targetRewardLabel={targetRewardLabel}
-                targetCouponLabel={targetCouponCount ? primaryTargetReward : null}
-                onLeaderboard={() => { void syncLeaderboard(true); setLeaderboardOpen(true); }}
-                onRewards={() => { setHudRewardsOpen(true); acknowledgeRewardNotice(); }}
-                rewardNotice={(targetClaimed && !rewardNoticeSeen) || walletBadgeCount > 0}
-                expiryDate={expiryDate}
-                urgent={urgent}
-                identity={touchId}
-                coinGainSignal={coinGainSignal}
-                lastGainAmount={lastGainAmount}
-                onTutorialRewardsChange={setTutorialRewardsActive}
-                rewardsOpen={hudRewardsOpen}
-                gameOpen={activeModal === 'platform-game'}
-                gameCompletion={tutorialGameCompletion}
-                rewardPresentationOpen={Boolean(giftReveal)}
-              />
-            </div>
-          </main>
-          {hudRewardsOpen && (
-            <div className="game-hud-modal__overlay" onClick={() => setHudRewardsOpen(false)}>
-              <section className="game-hud-modal game-hud-modal--rewards" role="dialog" aria-modal="true" aria-labelledby="hud-rewards-title" onClick={(event) => event.stopPropagation()}>
-                <button className="game-hud-modal__close" type="button" aria-label="Close rewards" onClick={() => setHudRewardsOpen(false)}>×</button>
-                <span className="game-hud-modal__eyebrow">YOUR COLLECTION</span><div className="rewards-modal-title"><i aria-hidden="true">❧</i><h2 id="hud-rewards-title">Rewards</h2><i aria-hidden="true">❧</i></div>
-                {targetUnlocked && !targetClaimed && targetPack && <div className="game-hud-modal__reward"><span>Ready to unlock</span><strong>{targetRewardLabel}</strong><button type="button" onClick={() => { setHudRewardsOpen(false); void issueTargetPack(); }}>Claim reward</button></div>}
-                <CouponWalletPage coupons={walletArchiveCoupons} brand={brand} copiedCode={walletCopiedCode} onCopy={handleWalletCopy} onClaim={handleShopNowDirect} />
-              </section>
-              {tutorialRewardsActive && <button type="button" className="tutorial-modal-next tutorial-modal-next--outside" onClick={(event) => { event.stopPropagation(); setHudRewardsOpen(false); }}>Next</button>}
-            </div>
-          )}
-          <LeaderboardSheet
-            open={leaderboardOpen}
+          <CouponOffers
+            key={`${touchId}-${cycleId ?? 'loading'}`}
+            offers={offers}
+            archive={walletArchiveCoupons}
+            showMoshWordmark={showMoshWordmark}
+            brandArtworkUrl={brandArtworkUrl}
+            onLogoSecretTap={logoSecretEnabled ? handleLogoSecretTap : undefined}
+            copiedCode={walletCopiedCode}
+            onCopy={handleWalletCopy}
+            onShop={handleShopNowDirect}
+            points={points}
+            threshold={targetThreshold}
+            delta={targetDelta}
+            progressPct={targetProgressPct}
+            time={time}
+            bundleCount={targetCouponCount}
+            challenges={displayedChallenges}
+            dailyCapReached={dailyCapReached}
+            onOpenChallenge={openChallenge}
+            suspendSheet={Boolean(activeModal || notification || giftReveal || newChallenge || shopifyAuthOverlay)}
+            onOpenLeaderboard={() => { void syncLeaderboard(true); setLeaderboardOpen(true); }}
+            loading={planLoading}
+            onReset={completedMode && isSampleMagnet ? handleSampleReset : null}
+            issuing={redeemingCoupon}
+            onRetryIssue={retryOfferIssue}
+          />
+          {leaderboardOpen && <LeaderboardSheet
+            brandArtworkUrl={brandArtworkUrl}
             leaderboard={leaderboardData}
             profile={displayProfile}
             onClose={() => setLeaderboardOpen(false)}
-          />
+          />}
         </>
       )}
       </>
@@ -4898,7 +4824,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
         />
       )}
 
-      {giftReveal && (
+      {giftReveal && !showUnlockOnShelf && (
         <GiftRevealModal
           pack={giftReveal.pack}
           coupons={giftReveal.coupons}
@@ -4939,6 +4865,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady } = {}) {
         />
       )}
     </div>
+    </>
   );
 }
 
@@ -5011,36 +4938,6 @@ function PackCouponSummary({ coupon, compact = false, showCondition = true, show
             <path d="M15 7v10" strokeDasharray="2 2" />
           </svg>
         </span>
-      </div>
-    </div>
-  );
-}
-
-function TargetBundleTicket({ coupons }) {
-  const list = (coupons ?? []).filter(Boolean);
-  if (!list.length) return null;
-  const countLabel = `${list.length} coupon${list.length === 1 ? '' : 's'} in target gift`;
-  return (
-    <div
-      className="target-coupon-scroll"
-      tabIndex={0}
-      role="region"
-      aria-label={countLabel}
-    >
-      <div
-        className="target-coupon-row"
-        data-coupon-count={list.length <= 2 ? list.length : 3}
-      >
-        {list.map((coupon, index) => (
-          <CouponTicket
-            key={coupon.couponId ? `${coupon.couponId}-${index}` : `${coupon.value}-${index}`}
-            coupon={coupon}
-            className="is-target-preview"
-            showDetails={false}
-            showCode={false}
-            showShop={false}
-          />
-        ))}
       </div>
     </div>
   );
@@ -5139,11 +5036,10 @@ function HeaderBase({
   profile,
   shopifyStatus,
   onOpenShopifyAccount,
-  onOpenWallet,
   onBackFromWallet,
   walletOpen = false,
+  offerLogo,
   rewardsCompleted = false,
-  walletCount = 0,
   onLogoSecretTap,
 }) {
   const connected = shopifyStatus === 'connected';
@@ -5179,35 +5075,26 @@ function HeaderBase({
 
   return (
     <header className="brand-header">
-      <div
+      {offerLogo ? (
+        <h1 className="offers-brand-logo" aria-label="MOSH offers">
+          <img data-entry-logo="" src={offerLogo} alt="MOSH logo" />
+        </h1>
+      ) : <div
         className={`brand-info${onLogoSecretTap ? ' brand-info--secret-tap' : ''}`}
         onClick={onLogoSecretTap}
       >
         {brand?.logoUrl ? (
-          <img className="brand-logo-img" src={brand.logoUrl} alt={`${brandName} logo`} />
+          <img data-entry-logo="" className="brand-logo-img" src={brand.logoUrl} alt={`${brandName} logo`} />
         ) : (
           <span className="brand-logo-fallback" aria-hidden="true">{brandInitial}</span>
         )}
         <span className="brand-name">{brandName}</span>
-      </div>
+      </div>}
       <div className="header-actions">
-        <button
-          className="wallet-entry-btn"
-          type="button"
-          aria-label={`My coupons${walletCount ? ` (${walletCount} available)` : ''}`}
-          title="My coupons"
-          onClick={onOpenWallet}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1a2 2 0 0 0 0 4v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a2 2 0 0 0 0-4V9Z" />
-            <path d="M15 7v10" strokeDasharray="2 2" />
-          </svg>
-          {walletCount > 0 && <span className="wallet-entry-badge">{walletCount}</span>}
-        </button>
         <button
           className={`account-entry-btn ${connected ? 'is-connected' : ''}`}
           type="button"
-          aria-label="Open profile"
+          aria-label="Open account profile"
           title="Profile"
           onClick={onOpenShopifyAccount}
         >
@@ -5219,6 +5106,7 @@ function HeaderBase({
             </span>
           )}
           {connected && <span className="account-entry-dot" aria-hidden="true" />}
+          <span>Account</span>
         </button>
       </div>
     </header>
@@ -5292,79 +5180,190 @@ function NewChallengeUnlocked({ reason, onStart, onReset, onDismiss, coupon, cou
   );
 }
 
-function TargetProgress({
-  points,
-  threshold,
-  progressPct,
-  delta,
-  couponCount,
-  coupons,
-  unlocked,
-  claimed,
-  time,
-  tick,
-  urgent,
-  isExpired,
-  coinGainSignal,
-  lastGainAmount,
-  onOpenWallet,
+function CouponOffers({
+  archive, showMoshWordmark, brandArtworkUrl, onLogoSecretTap,
+  offers, copiedCode, onCopy, onShop, points, threshold, delta, progressPct, time, bundleCount,
+  challenges, dailyCapReached, onOpenChallenge, suspendSheet, onOpenLeaderboard, loading,
+  onReset, issuing, onRetryIssue,
 }) {
-  const hasTarget = threshold != null;
-  const couponLabel = `${couponCount} coupon${couponCount === 1 ? '' : 's'}`;
+  const [selectedKey, setSelectedKey] = useState(null);
+  const selected = offers.find(offer => offer.key === selectedKey);
+  const selectedActionRef = useRef(null);
+  useEffect(() => {
+    if (suspendSheet || !selectedKey || selected?.state === 'locked' || selected?.state === 'pending') return;
+    if (selected?.state === 'ready') {
+      selectedActionRef.current?.focus({ preventScroll: true });
+      selectedActionRef.current?.closest('article')?.scrollIntoView({ block: 'nearest' });
+    }
+    setSelectedKey(null);
+  }, [selectedKey, selected?.state, suspendSheet]);
 
   return (
-    <section className="wallet target-progress" data-screen-label="奖励进度">
-      <div className="section-head">
-        <div>
-          <span className="section-tag">{unlocked ? 'Gift unlocked' : 'Target gift challenge'}</span>
-          <div className={`tg-countdown ${urgent ? 'is-urgent' : ''}`}>
-            <span className="tg-countdown-label">{isExpired ? 'Challenge ended' : 'Time left'}</span>
-            {!isExpired && (
-              <span className={`tg-countdown-value ${tick ? 'is-ticking' : ''}`}>
-                {time.digits[0]}d&nbsp; {time.digits[1]}h&nbsp; {time.digits[2]}m&nbsp; {time.digits[3]}s
-              </span>
-            )}
+    <>
+      <main className="content-area reward-home-content">
+        {showMoshWordmark ? (
+          <div className={`offers-wordmark${offers.length ? ' over-ticket' : ''}`} onClick={onLogoSecretTap}>
+            <img src={brandArtworkUrl} alt="mosh" width="900" height="335" />
           </div>
+        ) : <h1 className="offers-heading">Your offers</h1>}
+        <div className="offers-list">
+          {offers.map(offer => (
+            <OfferTicket key={offer.key} offer={offer}
+              actionRef={offer.key === selectedKey ? selectedActionRef : undefined}
+              points={points} threshold={threshold} delta={delta} progressPct={progressPct}
+              copied={copiedCode === offer.coupon.code} onCopy={onCopy} onShop={onShop}
+              onViewTasks={() => setSelectedKey(offer.key)} issuing={issuing} onRetryIssue={onRetryIssue} />
+          ))}
+          {!offers.length && <p className="offers-empty" role="status">
+            {loading ? 'Loading your offers…' : 'No current offers.'}
+          </p>}
         </div>
+        <PastCouponSections coupons={archive} />
+        <RulesFooter />
+        {onReset && <div className="completed-rewards-reset">
+          <button className="completed-rewards-reset-btn" type="button" onClick={onReset}>Reset</button>
+        </div>}
+      </main>
+      {selected?.state === 'locked' && !suspendSheet && (
+        <OfferTaskSheet coupon={selected.coupon} brandArtworkUrl={brandArtworkUrl} onClose={() => setSelectedKey(null)}
+          points={points} threshold={threshold} delta={delta} progressPct={progressPct} time={time}
+          bundleCount={bundleCount} challenges={challenges} dailyCapReached={dailyCapReached}
+          onOpenChallenge={onOpenChallenge} onOpenLeaderboard={onOpenLeaderboard} />
+      )}
+    </>
+  );
+}
+
+function OfferTicket({ offer, actionRef, points, threshold, delta, progressPct, copied, onCopy, onShop,
+  onViewTasks, issuing, onRetryIssue }) {
+  const { coupon, state } = offer;
+  const ready = state === 'ready';
+  const locked = state === 'locked';
+  const title = couponTicketHeadline(coupon);
+  const expiry = formatWalletExpiry(coupon.expiresAt);
+  const value = String(title).match(/^(.+?)\s+OFF$/i);
+  const action = ready ? 'Shop now' : locked ? 'View tasks' : issuing ? 'Preparing…' : 'Get coupon';
+  function activate() {
+    if (ready) onShop(coupon);
+    else if (locked) onViewTasks();
+    else onRetryIssue(offer.packType);
+  }
+  return (
+    <article className={`offer-ticket is-${state}`} aria-label={title}>
+      <div className="offer-ticket-paper">
+        <div className="offer-ticket-status">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            {locked ? <><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></> :
+              <><circle cx="12" cy="12" r="9" /><path d="m7.5 12 3 3 6-6" /></>}
+          </svg>
+          {ready ? 'Ready to use' : locked ? 'Locked' : 'Unlocked'}
+        </div>
+        <h2 className={String(title).length > 13 ? 'long-offer' : undefined}>
+          {value ? <>{value[1].replace(/(\d)\.00$/, '$1')} <em>off</em></> : title}
+        </h2>
+        {!locked && <span className="offer-signature" aria-hidden="true">DISCOUNT</span>}
+        {locked ? (
+          <>
+            <p>{delta} pts to unlock</p>
+            <div className="offer-mini-progress">
+              <span className="offer-track" aria-hidden="true"><i style={{ width: `${progressPct}%` }} /></span>
+              <span>{points} / {threshold} pts</span>
+            </div>
+          </>
+        ) : (
+          <p>{[coupon.conditions, expiry && `Expires ${expiry}`].filter(Boolean).join(' · ')}</p>
+        )}
       </div>
-
-      {!hasTarget ? (
-        <p className="tg-note">Your coupons are saved in your wallet — open them anytime.</p>
-      ) : (
-        <div className={`tg-card ${unlocked ? 'is-unlocked' : ''}`}>
-          <div className="tg-gift-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M20 12v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-8" />
-              <path d="M2 7h20v5H2z" />
-              <path d="M12 22V7" />
-              <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
-              <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
-            </svg>
-          </div>
-
-          <p className="tg-card-title">
-            {!unlocked
-              ? 'Unlock more rewards'
-              : `Unlocked · ${couponLabel} saved to My coupons`}
-          </p>
-
-          <div className="tg-coupon-list">
-            <TargetBundleTicket coupons={coupons} />
-          </div>
-
-          <div className="tg-bar">
-            <div className="tg-bar-fill" style={{ width: `${progressPct}%` }} />
-          </div>
-          <div className="tg-bar-meta">
-            <span className="tg-points">{points} / {threshold} pts</span>
-            {!unlocked && <span className="tg-remain">Need {delta} more</span>}
-          </div>
-          {unlocked && claimed && (
-            <button className="tg-claim-btn is-secondary" type="button" onClick={onOpenWallet}>Open my coupons</button>
-          )}
+      {ready && (
+        <div className="offer-code">
+          <b>{coupon.code}</b>
+          <button type="button" aria-label={`Copy ${coupon.code}`} onClick={() => onCopy(coupon.code)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M6 16H4V4h12v2"/></svg>
+            {copied ? 'Copied' : 'Copy'}
+          </button>
         </div>
       )}
-    </section>
+      <button ref={actionRef} type="button" className="offer-action" onClick={activate}
+        disabled={state === 'pending' && issuing} aria-label={`${action} · ${title}`}
+        aria-haspopup={locked ? 'dialog' : undefined}>
+        <span>{action}</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6" /></svg>
+      </button>
+    </article>
+  );
+}
+
+function RewardsSheet({ className, labelledBy, onClose, children }) {
+  const dialogRef = useRef(null);
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    const host = dialog.closest('.mobile-viewport');
+    const align = () => {
+      const rect = host.getBoundingClientRect();
+      dialog.style.left = `${rect.left + host.clientLeft}px`;
+      dialog.style.width = `${host.clientWidth}px`;
+      dialog.style.bottom = `${Math.max(0, window.innerHeight - rect.bottom)}px`;
+    };
+    align();
+    dialog.showModal();
+    const observer = new ResizeObserver(align);
+    observer.observe(host);
+    window.addEventListener('resize', align);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', align);
+      dialog.close();
+    };
+  }, []);
+  return (
+    <dialog ref={dialogRef} className={`rewards-sheet ${className}`} aria-labelledby={labelledBy}
+      onCancel={event => { event.preventDefault(); onClose(); }}
+      onClick={event => { if (event.target === dialogRef.current) onClose(); }}>
+      <div className="offer-sheet-body">
+        <button className="offer-sheet-close" type="button" autoFocus onClick={onClose}>Close <span aria-hidden="true">×</span></button>
+        {children}
+      </div>
+    </dialog>
+  );
+}
+
+function OfferTaskSheet({ coupon, brandArtworkUrl, points, threshold, delta, progressPct, time, bundleCount, challenges,
+  dailyCapReached, onOpenChallenge, onOpenLeaderboard, onClose }) {
+  const title = String(couponTicketHeadline(coupon));
+  const discount = title.match(/^(.+?)\s+off$/i);
+  return (
+    <RewardsSheet className="offer-task-sheet" labelledBy="offer-tasks-title" onClose={onClose}>
+      <header className="offer-sheet-heading">
+        <h2 id="offer-tasks-title">
+          <span className="offer-sheet-unlock">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+            Unlock
+          </span>
+          <span className={discount ? 'offer-sheet-value' : 'offer-sheet-value is-text'}>
+            {discount ? <>{discount[1].replace(/(\d)\.00$/, '$1')} <em>off</em></> : title}
+          </span>
+        </h2>
+        {brandArtworkUrl && <img className="offer-sheet-brand-art" src={brandArtworkUrl} alt="" />}
+      </header>
+      <div className="offer-sheet-content">
+        <div className="offer-sheet-meter">
+          <div className="offer-sheet-progress">
+            <strong>{delta} pts to go</strong><span>{points} / {threshold} pts</span>
+          </div>
+          <div className="offer-track" role="progressbar" aria-label="Coupon progress" aria-valuenow={Math.min(points, threshold)} aria-valuemax={threshold}>
+            <i style={{ width: `${progressPct}%` }} />
+          </div>
+          {bundleCount > 1 && <p className="offer-bundle-note">This goal unlocks all {bundleCount} coupons together.</p>}
+        </div>
+        <Challenges challenges={challenges} dailyCapReached={dailyCapReached} upgradeMaxPoints={threshold} onOpen={onOpenChallenge} />
+        <div className="offer-sheet-footer">
+          <button className="home-leaderboard" type="button" onClick={onOpenLeaderboard}>
+            <span className="leaderboard-entry-icon" aria-hidden="true" /> Leaderboard
+          </button>
+          <span>Ends in {time.days || time.hours ? time.short : `${time.mins}m ${time.secs}s`}</span>
+        </div>
+      </div>
+    </RewardsSheet>
   );
 }
 
@@ -5374,175 +5373,59 @@ function rewardPercent(coupon) {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-function RatingIcons({ count, type }) {
-  const safeCount = Math.max(1, Math.min(3, Number.parseInt(count, 10) || 1));
-  return (
-    <span className={`challenge-rating-icons is-${type}`} aria-hidden="true">
-      {Array.from({ length: safeCount }).map((_, index) => (
-        type === 'reward'
-          ? <i className="coin-ic challenge-rating-coin" key={index} />
-          : <i className="challenge-rating-bolt" key={index} />
-      ))}
-    </span>
-  );
+const taskArt = {
+  bridge_cross: 'bridge-cross',
+  draw_bridge: 'bridge-cross',
+  crossy_road: 'crossy-road',
+  circlepath: 'circle-path',
+  circle_path: 'circle-path',
+  memory_match: 'memory-match',
+  dodge_plane: 'dodge-plane',
+  shopify_connect: 'shopify-connect',
+  survey: 'survey',
+};
+
+function ChallengeCardIcon({ challenge }) {
+  const template = challenge.type === 'game' ? challenge.templateKey : challenge.type;
+  const art = taskArt[template?.trim().toLowerCase().replace(/[\s-]+/g, '_')];
+  const source = art ? `/rewards/tasks/${art}.webp` : challenge.iconUrl;
+  const [failedSource, setFailedSource] = useState(null);
+  return source && failedSource !== source
+    ? <img src={source} alt="" decoding="async" onError={() => setFailedSource(source)} />
+    : <span aria-hidden="true">{challenge.icon}</span>;
 }
 
-function ChallengeCardIcon({ challenge, isShopifyConnect }) {
-  const [imgFailed, setImgFailed] = useState(false);
-
-  if (isShopifyConnect) {
-    return (
-      <img
-        className="challenge-card-icon"
-        src="/gift-opening/shopify-icon.webp"
-        alt=""
-        aria-hidden="true"
-      />
-    );
-  }
-
-  if (challenge.type === 'game') {
-    return (
-      <span className="challenge-fallback-icon is-game-emoji" aria-hidden="true">
-        {challenge.icon}
-      </span>
-    );
-  }
-
-  if (challenge.iconUrl && !imgFailed) {
-    return (
-      <img
-        className="challenge-card-icon"
-        src={challenge.iconUrl}
-        alt=""
-        aria-hidden="true"
-        loading="lazy"
-        decoding="async"
-        onError={() => setImgFailed(true)}
-      />
-    );
-  }
+function ChallengesBase({ challenges, dailyCapReached, upgradeMaxPoints, onOpen }) {
+  const gameRewardCap = Math.max(5, Math.round(Number(upgradeMaxPoints) || 0));
 
   return (
-    <span className="challenge-fallback-icon" aria-hidden="true">
-      {challenge.icon}
-    </span>
-  );
-}
-
-function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, upgradeMaxPoints, onOpen, onOpenLeaderboard }) {
-  return (
-    <section className="earn-progress-section" data-screen-label="挑战任务">
-      <div className="section-head stacked">
-        <div className="section-head-with-lb">
-          <span className="section-tag">{pointsNeeded > 0 ? 'Choose a challenge' : 'Keep playing & earning'}</span>
-          <button className="leaderboard-entry-btn" type="button" onClick={onOpenLeaderboard}>
-            <span className="leaderboard-entry-icon" aria-hidden="true" />
-            <span>Leaderboard</span>
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M7 4l6 6-6 6" />
-            </svg>
-          </button>
-        </div>
-        <span className="section-note">
-          {pointsNeeded > 0
-            ? `Every challenge moves you closer to your gift · ${pointsNeeded} pts left`
-            : 'Updated daily · New challenges every day'}
-        </span>
-      </div>
-      <div className="challenges-list">
+    <section aria-label="Recommended tasks">
+      <h3 className="offer-tasks-heading">Earn points</h3>
+      <div className="home-challenge-list">
         {challenges.length === 0 ? (
-          <div className="challenges-empty" role="status">
-            <span className="challenges-empty-icon" aria-hidden="true">🎮</span>
-            <div>
-              <strong>New challenges are on the way</strong>
-              <p>Check back shortly for the next games and rewards.</p>
-            </div>
-          </div>
+          <p className="home-challenges-empty">Check back for more challenges.</p>
         ) : challenges.map((challenge) => {
-          const pts = challenge.reward.replace(/[^0-9]/g, '');
-          const ptsValue = Number.parseInt(pts, 10);
-          const showRewardPill = Number.isFinite(ptsValue) && ptsValue > 0;
-          const isShopifyConnect = challenge.type === 'shopify_connect';
-          const isSurvey = challenge.type === 'survey';
           const isGame = challenge.type === 'game';
-          const badgeLabel = isGame ? 'Game' : challenge.badge;
-          const isDisabled = dailyCapReached && !isShopifyConnect;
-          const gameRewardCap = Number.isFinite(Number(upgradeMaxPoints))
-            ? Math.max(5, Math.round(Number(upgradeMaxPoints)))
-            : 5;
-          const gameRewardAmount = `5~${gameRewardCap}`;
-          const rewardPillAmount = isShopifyConnect ? gameRewardCap : gameRewardAmount;
-          const openCurrentChallenge = () => {
-            if (isDisabled) return;
-            onOpen(challenge);
-          };
+          const isShopifyConnect = challenge.type === 'shopify_connect';
+          const disabled = dailyCapReached && !isShopifyConnect;
+          const difficulty = ['Easy', 'Medium', 'Hard'][challenge.difficultyLevel - 1] || 'Game';
+          const rewardText = isGame
+            ? (gameRewardCap > 5 ? `5–${gameRewardCap} pts` : '5 pts')
+            : (challenge.pointsOffered > 0 ? `${challenge.pointsOffered} pts` : isShopifyConnect ? '' : challenge.desc);
+          const action = disabled ? 'Cap reached' : isGame ? 'Play' : challenge.cta;
           return (
-            <div
-              className={`challenge-card ${isGame ? 'is-game-card' : ''} ${isSurvey ? 'is-survey-card' : ''} ${isShopifyConnect ? 'is-shopify-card' : ''} ${isDisabled ? 'is-disabled' : ''}`}
-              key={challenge.id}
-              style={isShopifyConnect ? { background: 'linear-gradient(135deg, #f6f9f4 0%, #eaf0e6 100%)', borderColor: 'rgba(94, 128, 62, 0.18)' } : undefined}
-              onClick={openCurrentChallenge}
-              role="button"
-              tabIndex={isDisabled ? -1 : 0}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  openCurrentChallenge();
-                }
-              }}
-            >
-              <div className="challenge-icon-wrapper">
-                <ChallengeCardIcon challenge={challenge} isShopifyConnect={isShopifyConnect} />
-              </div>
-              <div className="challenge-card-body">
-                <span className="challenge-badge">{badgeLabel}</span>
-                <h4 className="challenge-title">{challenge.title}</h4>
-                {isGame ? (
-                  <div className="challenge-game-meta">
-                    <div className="challenge-rating-row" aria-label={`Difficulty ${challenge.difficultyLevel} of 3`}>
-                      <span>Difficulty</span>
-                      <RatingIcons count={challenge.difficultyLevel} type="difficulty" />
-                    </div>
-                  </div>
-                ) : (
-                  <p className="challenge-desc">{challenge.desc}</p>
-                )}
-              </div>
-              <button
-                className={
-                  isGame
-                    ? 'btn btn-play shopify-connect-btn game-reward-btn'
-                    : (isShopifyConnect ? 'btn btn-play shopify-connect-btn' : 'btn btn-outline btn-play')
-                }
-                id={challenge.type === 'survey' ? 'take-survey-btn' : `play-${challenge.id}-btn`}
-                disabled={isDisabled}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  openCurrentChallenge();
-                }}
-              >
-                {isDisabled ? (
-                  <span>Cap Reached</span>
-                ) : isGame ? (
-                  <span className="btn-play-reward game-reward-pill">
-                    +{gameRewardAmount}<i className="coin-ic" aria-hidden="true" />
-                  </span>
-                ) : isShopifyConnect ? (
-                  <>
-                    <span className="btn-play-reward game-reward-pill">
-                      +{rewardPillAmount}<i className="coin-ic" aria-hidden="true" />
-                    </span>
-                    <span className="btn-play-label">{challenge.cta}</span>
-                  </>
-                ) : (
-                  <>
-                    {showRewardPill && <span className="btn-play-reward">+{pts}<i className="coin-ic" aria-hidden="true" /></span>}
-                    <span className="btn-play-label">{challenge.cta}</span>
-                  </>
-                )}
-              </button>
-            </div>
+            <button className="home-challenge-row" type="button" key={challenge.id} disabled={disabled}
+              id={challenge.type === 'survey' ? 'take-survey-btn' : `play-${challenge.id}-btn`}
+              onClick={() => onOpen(challenge)}>
+              <span className="home-game-art" aria-hidden="true">
+                <ChallengeCardIcon challenge={challenge} />
+              </span>
+              <span className="home-game-copy">
+                <strong>{challenge.title}</strong>
+                <small>{rewardText && <><b>{rewardText}</b> · </>}{isGame ? difficulty : challenge.badge}</small>
+              </span>
+              <span className="home-game-action">{action}{!disabled && <span aria-hidden="true"> ›</span>}</span>
+            </button>
           );
         })}
       </div>
@@ -5550,20 +5433,21 @@ function ChallengesBase({ challenges, dailyCapReached, pointsNeeded, upgradeMaxP
   );
 }
 
-function RulesFooterBase({ rulesOpen, onToggle }) {
+function RulesFooterBase() {
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const rulesId = useId();
   return (
     <footer className="rules-footer">
       <div className="accordion-item">
-        <button className="accordion-trigger" onClick={onToggle}>
-          <span>How does it work?</span>
+        <button className="accordion-trigger" type="button" aria-expanded={rulesOpen} aria-controls={rulesId} onClick={() => setRulesOpen(value => !value)}>
+          <span>Points &amp; coupon rules</span>
           <span className="accordion-icon">{rulesOpen ? '−' : '+'}</span>
         </button>
-        <div className={`accordion-content ${rulesOpen ? 'open' : ''}`}>
+        <div id={rulesId} className={`accordion-content ${rulesOpen ? 'open' : ''}`} hidden={!rulesOpen}>
           <ol className="rules-list">
             <li>Complete the quick games or surveys to earn points.</li>
-            <li>Reach the single target to unlock the complete coupon gift.</li>
-            <li>When you reach the target, every coupon is automatically saved to My coupons.</li>
-            <li>Your coupons stay organized in My coupons until used or expired.</li>
+            <li>Reach the points target to unlock the coupons shown on this page.</li>
+            <li>Choose Shop now on a ready coupon to use it before it expires.</li>
           </ol>
         </div>
       </div>
@@ -5991,88 +5875,76 @@ function ShopifyAuthorizationPage({ brand, source, onContinue, onSkip }) {
   );
 }
 
-function LeaderboardSheet({ open, leaderboard, profile, onClose }) {
-  const displayProfile = normalizeProfile(profile);
-  const view = normalizeLeaderboardView(leaderboard, displayProfile.nickname, leaderboard?.currentUserCoins ?? 0);
-  const { topPlayers, aroundYou, currentUserRank } = view;
-  const topPodium = topPlayers.length ? topPlayers : view.players.slice(0, 3);
-  const aroundPlayers = aroundYou.length ? aroundYou : view.players.slice(
-    Math.max(0, currentUserRank - 3),
-    Math.min(view.players.length, currentUserRank + 2),
-  );
-
-  const avatarColors = ['#5c6e58', '#b89855', '#a08447', '#6b7e65', '#7a8c75', '#8b6b3d'];
-  const getAvatarColor = (player) => {
-    if (player.isCurrentUser) return displayProfile.avatarColor;
-    if (player.avatarColor) return player.avatarColor;
-    return avatarColors[player.name.charCodeAt(0) % avatarColors.length];
-  };
-  const playerAvatarImage = (player) => {
-    if (player.isCurrentUser && displayProfile.avatarImageUrl) return displayProfile.avatarImageUrl;
-    return player.avatarImageUrl || '';
-  };
-  const playerInitial = (player) => (
-    player.isCurrentUser ? profileInitial(displayProfile) : player.name.charAt(0)
-  );
-
-  if (!open) return null;
-
+function LeaderboardAvatar({ player, profile }) {
+  const image = (player.isCurrentUser && profile.avatarImageUrl) || player.avatarImageUrl;
+  const color = (player.isCurrentUser && profile.avatarColor) || player.avatarColor;
+  const initial = player.isCurrentUser ? profileInitial(profile) : player.name.charAt(0);
+  const [failedImage, setFailedImage] = useState(null);
   return (
-    <div className="leaderboard-overlay" onClick={onClose}>
-      <div className="leaderboard-sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="leaderboard-handle" />
-        <div className="leaderboard-head">
-          <div>
-            <h3>Today's Game Leaderboard</h3>
-            <p>Ranked by coins earned from games today.</p>
-          </div>
-          <button className="leaderboard-close" onClick={onClose}>&times;</button>
-        </div>
+    <span className="lb-avatar" style={color ? { backgroundColor: color } : undefined} aria-hidden="true">
+      {image && image !== failedImage
+        ? <img src={image} alt="" onError={() => setFailedImage(image)} />
+        : initial}
+    </span>
+  );
+}
 
-        <div className="lb-section-title lb-podium-title">Top Players</div>
-        <div className="lb-podium-section">
-          <div className="lb-podium">
-            {[topPodium[1], topPodium[0], topPodium[2]].filter(Boolean).map((player, idx) => (
-              <div className="lb-podium-player" key={`${player.rank}-${player.name}`}>
-                <div className="lb-podium-avatar" style={{ background: getAvatarColor(player) }}>
-                  {playerAvatarImage(player) ? (
-                    <img src={playerAvatarImage(player)} alt="" />
-                  ) : (
-                    playerInitial(player)
-                  )}
-                </div>
-                <span className="lb-podium-rank">#{player.rank}</span>
-                <span className="lb-podium-name">{player.name}</span>
-                <span className="lb-podium-coins">{player.coins}</span>
-                <div className="lb-podium-bar"><span>{player.rank}</span></div>
-              </div>
+function LeaderboardSheet({ leaderboard, profile, brandArtworkUrl, onClose }) {
+  const displayProfile = normalizeProfile(profile);
+  const { topPlayers, aroundYou, currentUserRank, currentUserCoins } = normalizeLeaderboardView(
+    leaderboard, displayProfile.nickname, leaderboard?.currentUserCoins ?? 0,
+  );
+  const leaders = topPlayers.slice(0, 3);
+  return (
+    <RewardsSheet className="leaderboard-sheet" labelledBy="leaderboard-title" onClose={onClose}>
+      <header className="offer-sheet-heading lb-heading">
+        <div>
+          <p className="lb-period">Today’s games</p>
+          <h2 id="leaderboard-title">Leaderboard</h2>
+        </div>
+        {brandArtworkUrl && <img className="offer-sheet-brand-art" src={brandArtworkUrl} alt="" />}
+      </header>
+
+      <div className="offer-sheet-content lb-content">
+        <dl className="lb-standing">
+          <div><dt>Your rank</dt><dd>#{currentUserRank}</dd></div>
+          <div><dt>Your coins today</dt><dd>{currentUserCoins}</dd></div>
+        </dl>
+
+        <section aria-labelledby="lb-top-title">
+          <div className="lb-section-head">
+            <h3 id="lb-top-title">Top players</h3><span>Coins today</span>
+          </div>
+          <ol className="lb-podium" data-count={leaders.length}>
+            {leaders.map(player => (
+              <li className="lb-podium-player" data-rank={player.rank} key={`${player.rank}-${player.name}`}>
+                <LeaderboardAvatar player={player} profile={displayProfile} />
+                <span className="lb-player-name" title={player.name}>{player.name}</span>
+                <span className="lb-score">{player.coins}</span>
+                <span className="lb-step">#{player.rank}</span>
+              </li>
             ))}
-          </div>
-        </div>
+          </ol>
+        </section>
 
-        <div className="lb-around-section">
-          <div className="lb-section-title">Around You</div>
-          <div className="lb-around-list">
-            {aroundPlayers.map((player) => (
-              <div className={`lb-row ${player.isCurrentUser ? 'is-current-user' : ''}`} key={`${player.rank}-${player.name}`}>
+        <section aria-labelledby="lb-around-title">
+          <div className="lb-section-head">
+            <h3 id="lb-around-title">Around you</h3><span>Coins today</span>
+          </div>
+          <ul className="lb-around-list">
+            {aroundYou.map(player => (
+              <li className="lb-row" key={`${player.rank}-${player.name}`} aria-current={player.isCurrentUser ? 'true' : undefined}>
                 <span className="lb-row-rank">#{player.rank}</span>
-                <div className="lb-row-avatar" style={{ background: getAvatarColor(player) }}>
-                  {playerAvatarImage(player) ? (
-                    <img src={playerAvatarImage(player)} alt="" />
-                  ) : (
-                    playerInitial(player)
-                  )}
-                </div>
-                <div className="lb-row-info">
-                  <div className="lb-row-name">{player.name}</div>
-                </div>
-                <span className="lb-row-coins">{player.coins}</span>
-              </div>
+                <LeaderboardAvatar player={player} profile={displayProfile} />
+                <span className="lb-player-name" title={player.name}>{player.name}</span>
+                {player.isCurrentUser && <span className="lb-you">You</span>}
+                <span className="lb-score">{player.coins}</span>
+              </li>
             ))}
-          </div>
-        </div>
+          </ul>
+        </section>
       </div>
-    </div>
+    </RewardsSheet>
   );
 }
 
@@ -6171,18 +6043,9 @@ function CouponTicket({
   brand = null,
 }) {
   const expiry = formatWalletExpiry(coupon.expiresAt);
-  const conditions = coupon.conditions || formatCouponConditions(coupon);
-  const restrictionDetails = coupon.restrictions ? formatCouponConditions(coupon) : '';
-  const conditionSummary = conditions.split(/\s*[·\n]\s*/)[0];
+  const conditions = coupon.conditions || 'No minimum';
   const displayCode = coupon.code || coupon.mockCode;
   const mode = couponDisplayMode(coupon);
-  const brandName = brand?.name?.trim();
-  const shopAriaLabel = brandName
-    ? `Visit ${brandName}'s official website`
-    : 'Visit the brand’s official website';
-  const shopTitle = brandName
-    ? `Opens ${brandName}'s official website`
-    : 'Opens the brand’s official website';
 
   if (featured) {
     return (
@@ -6219,11 +6082,9 @@ function CouponTicket({
           </span>
         </div>
         {showShop && (
-          <button className="cwticket-stub" type="button" aria-label={shopAriaLabel} title={shopTitle} onClick={onShop}>
+          <button className="cwticket-stub" type="button" aria-label="Shop with coupon" onClick={onShop}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m13 5 7 7-7 7" /></svg>
-            <span className="cwticket-stub-text">
-              {brandName ? <>Visit {brandName}<br />Official site</> : <>Visit official<br />website</>}
-            </span>
+            <span className="cwticket-stub-text">Shop now</span>
           </button>
         )}
       </div>
@@ -6235,7 +6096,7 @@ function CouponTicket({
         <div className="cwticket-value">
           <CouponValueFace coupon={coupon} />
         </div>
-        {showDetails && <details className="cwticket-terms"><summary>{conditionSummary}<span aria-hidden="true">⌄</span></summary><div>{conditions}{restrictionDetails && restrictionDetails !== conditions && <p>{restrictionDetails}</p>}{expiry && <p>Expires {expiry}</p>}</div></details>}
+        {showDetails && <div className="cwticket-cond">{conditions}</div>}
         {showDetails && expiry && <div className="cwticket-expire">Expires {expiry}</div>}
         {showCode && displayCode && (
           <div className="cwticket-code">
@@ -6264,22 +6125,19 @@ function CouponTicket({
         )}
       </div>
       {showShop && (
-        <button className="cwticket-stub" type="button" aria-label={shopAriaLabel} title={shopTitle} onClick={onShop}>
+        <button className="cwticket-stub" type="button" aria-label="Shop with coupon" onClick={onShop}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14" /><path d="m13 5 7 7-7 7" /></svg>
-          <span className="cwticket-stub-text">
-            {brandName ? <>Visit {brandName}<br />Official site</> : <>Visit official<br />website</>}
-          </span>
+          <span className="cwticket-stub-text">Shop now</span>
         </button>
       )}
     </div>
   );
 }
 
-function WalletTicket({ coupon, brand, copiedCode, onCopy, onClaim }) {
+function WalletTicket({ coupon, copiedCode, onCopy, onClaim }) {
   return (
     <CouponTicket
       coupon={coupon}
-      brand={brand}
       copied={copiedCode === coupon.code}
       onCopy={onCopy}
       onShop={onClaim}
@@ -6424,119 +6282,46 @@ function GiftRevealModal({ pack, coupons, brand, copiedCode, onCopy, onShop, onO
   );
 }
 
-function CompletedRewardsIntro({ couponCount, time, isExpired, urgent }) {
-  return (
-    <div className={`completed-rewards-shell ${urgent ? 'is-urgent' : ''}`}>
-      <img
-        className="completed-rewards-gift"
-        src="/rewards/target-gift.webp"
-        alt=""
-        aria-hidden="true"
-      />
-      <section className={`completed-rewards-intro ${urgent ? 'is-urgent' : ''}`}>
-        <div className="completed-rewards-copy-block">
-          <p className="completed-rewards-eyebrow">All rewards unlocked</p>
-          <h2>You earned the full reward set.</h2>
-          <p className="completed-rewards-copy">
-            All {couponCount} coupons are ready to use. Pick your favorites before the event ends.
-          </p>
-        </div>
-        <div className="completed-rewards-timer">
-          <span>{isExpired ? 'Event ended' : 'Time left to use'}</span>
-          {!isExpired && (
-            <strong>
-              {time.digits[0]}d&nbsp; {time.digits[1]}h&nbsp; {time.digits[2]}m&nbsp; {time.digits[3]}s
-            </strong>
-          )}
-        </div>
-      </section>
-    </div>
-  );
+function PastCouponSections({ coupons }) {
+  const used = coupons.filter(coupon => coupon.status === 'used');
+  const expired = coupons.filter(coupon => coupon.status === 'expired' || (coupon.status === 'active' && !isWalletCouponUsable(coupon)));
+  return [['Used', used], ['Expired', expired]].map(([label, entries]) => entries.length > 0 && (
+    <section key={label} aria-label={`${label} coupons`}>
+      <h2 className="cwallet-section-label">{label} · {entries.length}</h2>
+      <div className="cwallet-ticket-grid">
+        {entries.map(coupon => (
+          <InactiveTicket key={walletCouponKey(coupon) ?? coupon.code} coupon={coupon} label={label} />
+        ))}
+      </div>
+    </section>
+  ));
 }
 
-function CouponWalletPage({
-  coupons,
-  brand = null,
-  copiedCode,
-  onCopy,
-  onClaim,
-  completed = false,
-  navDirection = 'forward',
-  time,
-  isExpired = false,
-  urgent = false,
-  isSample = false,
-  onReset,
-}) {
+function CouponWalletPage({ coupons, copiedCode, onCopy, onClaim, navDirection = 'forward' }) {
   const list = coupons ?? [];
-  const active = completed
-    ? list
-    : list.filter((coupon) => coupon.status === 'active' && isWalletCouponUsable(coupon));
-  const used = completed ? [] : list.filter((coupon) => coupon.status === 'used');
-  const expired = completed
-    ? []
-    : list.filter((coupon) => coupon.status === 'expired' || (coupon.status === 'active' && !isWalletCouponUsable(coupon)));
-  const showSampleReset = completed && isSample && typeof onReset === 'function';
+  const active = list.filter(coupon => isWalletCouponUsable(coupon));
 
   return (
     <main
-      className={`content-area cwallet-page ${completed ? 'is-completed' : ''} ${navDirection === 'back' ? 'is-nav-back' : 'is-nav-forward'}`}
-      data-screen-label={completed ? '全部奖励' : '我的优惠券'}
+      className={`content-area cwallet-page ${navDirection === 'back' ? 'is-nav-back' : 'is-nav-forward'}`}
+      data-screen-label="我的优惠券"
     >
-      {completed && (
-        <CompletedRewardsIntro
-          couponCount={active.length}
-          time={time}
-          isExpired={isExpired}
-          urgent={urgent}
-        />
-      )}
       {list.length === 0 ? (
         <div className="cwallet-empty">No coupons yet.<br />Claim a reward to add it here.</div>
       ) : (
         <>
           {active.length > 0 && (
             <>
-              {!completed && <div className="cwallet-section-label">Available · {active.length}</div>}
+              <div className="cwallet-section-label">Available · {active.length}</div>
               <div className="cwallet-ticket-grid">
                 {active.map((coupon) => (
-                  <WalletTicket key={walletCouponKey(coupon) ?? coupon.code} coupon={coupon} brand={brand} copiedCode={copiedCode} onCopy={onCopy} onClaim={onClaim} />
+                  <WalletTicket key={walletCouponKey(coupon) ?? coupon.code} coupon={coupon} copiedCode={copiedCode} onCopy={onCopy} onClaim={onClaim} />
                 ))}
               </div>
             </>
           )}
-          {used.length > 0 && (
-            <>
-              <div className="cwallet-section-label">Used · {used.length}</div>
-              <div className="cwallet-ticket-grid">
-                {used.map((coupon) => (
-                  <InactiveTicket key={walletCouponKey(coupon) ?? coupon.code} coupon={coupon} label="Used" />
-                ))}
-              </div>
-            </>
-          )}
-          {expired.length > 0 && (
-            <>
-              <div className="cwallet-section-label">Expired · {expired.length}</div>
-              <div className="cwallet-ticket-grid">
-                {expired.map((coupon) => (
-                  <InactiveTicket key={walletCouponKey(coupon) ?? coupon.code} coupon={coupon} label="Expired" />
-                ))}
-              </div>
-            </>
-          )}
+          <PastCouponSections coupons={list} />
         </>
-      )}
-      {showSampleReset && (
-        <div className="completed-rewards-reset">
-          <button className="completed-rewards-reset-btn" type="button" onClick={onReset}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M3 12a9 9 0 1 0 3-6.7" />
-              <path d="M3 4v5h5" />
-            </svg>
-            <span>Reset</span>
-          </button>
-        </div>
       )}
     </main>
   );

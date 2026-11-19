@@ -41,8 +41,6 @@
 
 /* ---------- Full-page wallet ---------- */
 .cwallet-page {
-  width: 100%;
-  align-self: stretch;
   padding-top: 18px;
   padding-bottom: 32px;
   background: var(--bg-color);
@@ -577,10 +575,6 @@
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0.5px;
-  max-width: 100%;
-  line-height: 1.05;
-  text-align: center;
-  overflow-wrap: anywhere;
 }
 
 /* Notches biting into the perforation */
@@ -970,11 +964,6 @@
 
 .reward-journey .challenges-list {
   margin: 0;
-}
-
-/* The island map is the visible task picker; keep the original list in the DOM but hide it here. */
-.reward-journey .earn-progress-section > .challenges-list {
-  display: none;
 }
 
 /* Bottom challenges as a vertical list (full-width row cards, page scroll) */
@@ -2693,294 +2682,515 @@
   }
 }
 
-/* ---------- DTC home: restrained 2.5D skin (visual-only) ---------- */
-.mobile-viewport[data-screen-label="优惠券首页"] {
-  --font-serif: var(--font-sans);
-  background:
-    radial-gradient(ellipse at 82% 18%, color-mix(in srgb, var(--brand-secondary, #b89855) 8%, transparent), transparent 34%),
-    linear-gradient(155deg, #f6f4ed 0%, color-mix(in srgb, var(--bg-color) 72%, #e4e9e2) 100%);
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .brand-header {
-  border-bottom-color: transparent;
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .brand-name {
-  color: #172b21;
-  letter-spacing: -0.035em;
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .wallet-entry-btn,
-.mobile-viewport[data-screen-label="优惠券首页"] .account-entry-btn {
-  background: linear-gradient(145deg, #fff 0%, #f0f2ec 100%);
-  border-color: rgba(25, 47, 36, 0.08);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    0 3px 0 rgba(28, 54, 41, 0.07),
-    0 9px 18px rgba(28, 54, 41, 0.12);
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .content-area {
-  background: transparent;
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .reward-journey {
-  isolation: isolate;
-  transform-style: preserve-3d;
-  border-color: rgba(34, 51, 39, 0.08);
-  background:
-    radial-gradient(ellipse at 86% 4%, color-mix(in srgb, var(--brand-secondary, #b89855) 13%, transparent), transparent 40%),
-    linear-gradient(145deg, #f1efe8 0%, #e8ebe3 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.94),
-    0 2px 0 rgba(33, 48, 37, 0.035),
-    0 12px 24px rgba(42, 55, 43, 0.085);
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .reward-journey::before {
-  content: '';
-  position: absolute;
-  z-index: 0;
-  top: -64px;
-  right: -56px;
-  width: 210px;
-  height: 210px;
-  border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--brand-secondary, #b89855) 23%, transparent), transparent 70%);
-  filter: blur(6px);
+/* The offer shelf and wallet share one mobile frame and one brand-colored backdrop. */
+.experience-destination:has(> .offers-ambient) { isolation: isolate; }
+.offers-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
   pointer-events: none;
+  background: var(--offer-background, var(--offer-paper));
 }
-
-.mobile-viewport[data-screen-label="优惠券首页"] .reward-journey::after {
-  content: '';
-  position: absolute;
-  z-index: 0;
-  inset: 1px;
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: inherit;
-  pointer-events: none;
+.rewards-home, .mobile-viewport[data-offers-wallet] {
+  --home-ink: color-mix(in srgb, var(--offer-ink) 24%, #242128);
+  --home-muted: color-mix(in srgb, var(--offer-ink) 10%, #625f66);
+  --home-accent: var(--offer-ink);
+  --home-paper: var(--offer-background, var(--offer-paper));
+  background: var(--home-paper);
 }
-
-.mobile-viewport[data-screen-label="优惠券首页"] .reward-journey-shell .reward-journey-gift {
-  filter:
-    drop-shadow(0 5px 4px rgba(41, 48, 37, 0.11))
-    drop-shadow(0 15px 14px rgba(41, 48, 37, 0.17));
-  animation: dtc-gift-float 5.5s ease-in-out infinite;
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .section-tag {
-  color: color-mix(in srgb, var(--brand-primary) 82%, #14251b 18%);
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .section-note,
-.mobile-viewport[data-screen-label="优惠券首页"] .tg-countdown-label,
-.mobile-viewport[data-screen-label="优惠券首页"] .tg-countdown-value,
-.mobile-viewport[data-screen-label="优惠券首页"] .tg-card-title,
-.mobile-viewport[data-screen-label="优惠券首页"] .tg-note,
-.mobile-viewport[data-screen-label="优惠券首页"] .tg-points,
-.mobile-viewport[data-screen-label="优惠券首页"] .tg-remain {
-  color: #26372c;
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .tg-countdown-label,
-.mobile-viewport[data-screen-label="优惠券首页"] .section-note {
-  color: #667168;
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .tg-countdown-value,
-.mobile-viewport[data-screen-label="优惠券首页"] .tg-card-title,
-.mobile-viewport[data-screen-label="优惠券首页"] .tg-note,
-.mobile-viewport[data-screen-label="优惠券首页"] .tg-points,
-.mobile-viewport[data-screen-label="优惠券首页"] .tg-remain {
-  color: #26372c;
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .tg-bar {
-  background: rgba(34, 51, 39, 0.12);
-  box-shadow: inset 0 1px 2px rgba(34, 51, 39, 0.12);
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .tg-bar-fill {
-  background: linear-gradient(90deg, var(--brand-primary), color-mix(in srgb, var(--brand-primary) 68%, #fff 32%));
-  box-shadow: 0 0 12px color-mix(in srgb, var(--brand-primary) 24%, transparent);
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .challenges-list .challenge-card {
-  border-color: rgba(255, 255, 255, 0.92);
-  border-radius: 18px;
-  background: linear-gradient(145deg, #fff 0%, #f8f8f3 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 1),
-    0 2px 0 rgba(23, 49, 35, 0.055),
-    0 7px 14px rgba(23, 49, 35, 0.075);
-  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .challenges-list .challenge-icon-wrapper {
-  position: relative;
-  isolation: isolate;
-  overflow: visible;
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  border-radius: 14px;
-  background: linear-gradient(145deg, #e8eee5 0%, #d2ddcf 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.98),
-    2px 2px 0 #c3d0c0,
-    4px 4px 0 #aebfae,
-    6px 9px 13px rgba(32, 55, 39, 0.17);
-  transform: perspective(260px) rotateY(-11deg) rotateX(7deg);
-  transform-style: preserve-3d;
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .challenges-list .is-game-card .challenge-icon-wrapper {
-  overflow: visible;
-  border: 0;
+.rewards-home > .content-area, .mobile-viewport[data-offers-wallet] > .content-area { position: relative; }
+.mobile-viewport[data-offers-wallet] .cwallet-page { background: transparent; }
+.rewards-home .brand-header {
+  flex: 0 0 auto;
+  padding: 10px 18px;
+  gap: 10px;
   background: transparent;
-  box-shadow: none;
-  transform: none;
+  color: var(--offer-on-background, var(--home-ink));
+  box-shadow: 0 1px color-mix(in srgb, var(--offer-ink) 9%, transparent);
 }
 
-.mobile-viewport[data-screen-label="优惠券首页"] .challenges-list .is-game-card .challenge-icon-wrapper::before,
-.mobile-viewport[data-screen-label="优惠券首页"] .challenges-list .is-game-card .challenge-icon-wrapper::after {
-  content: none;
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .challenges-list .is-game-card .is-game-emoji {
-  position: relative;
-  z-index: 2;
+.rewards-home .brand-info { gap: 5px; }
+.rewards-home .header-actions { flex-shrink: 0; gap: 6px; }
+.rewards-home .header-actions button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 5px;
+  width: auto;
+  height: 44px;
+  padding: 0 7px;
+  background: transparent;
+  box-shadow: none;
+  border: 0;
+  border-radius: 12px;
+  color: inherit;
+  font: 700 .76rem/1 var(--font-sans);
+}
+.rewards-home .header-actions button:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+.rewards-home :is(.account-entry-avatar, .account-entry-avatar-img) { width: 23px; height: 23px; }
+.rewards-home .account-entry-dot { left: 23px; bottom: 10px; width: 7px; height: 7px; }
+
+.reward-home-content {
+  padding: 23px 18px max(22px, env(safe-area-inset-bottom));
+  gap: 0;
+  color: var(--offer-on-background, var(--home-ink));
+}
+.offers-heading {
+  margin: 0 0 19px;
+  color: inherit;
+  font: 650 clamp(1.95rem, 8.2vw, 2.26rem)/1.14 var(--font-serif);
+  letter-spacing: -.045em;
+}
+.offers-brand-logo {
+  display: grid;
+  align-content: center;
+  width: 98px;
+  height: 44px;
+  margin: 0;
+  overflow: hidden;
+  background: var(--home-paper);
+}
+.offers-brand-logo img {
+  display: block;
   width: 100%;
-  height: 100%;
-  font-size: 2.1rem;
-  line-height: 1;
-  transform: perspective(180px) rotateY(-13deg) rotateX(8deg) rotateZ(-5deg) translate3d(-1px, -2px, 7px);
-  transform-style: preserve-3d;
-  text-shadow:
-    0 -1px 0 rgba(255, 255, 255, 0.95),
-    0 1px 0 rgba(255, 255, 255, 0.92),
-    0 2px 0 #dce8d6,
-    0 4px 0 #b9cdb5,
-    0 6px 0 #8ea98d,
-    0 9px 7px rgba(32, 55, 39, 0.28);
-  filter: drop-shadow(0 6px 5px rgba(32, 55, 39, 0.16));
+  height: auto;
+  mix-blend-mode: multiply;
 }
-
-.mobile-viewport[data-screen-label="优惠券首页"] .challenge-title {
-  color: #172b21;
-  letter-spacing: -0.025em;
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .challenge-desc,
-.mobile-viewport[data-screen-label="优惠券首页"] .challenge-game-meta {
-  color: #667268;
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .challenges-list .game-reward-btn {
-  border-color: color-mix(in srgb, var(--brand-secondary, #b89855) 56%, transparent);
-  background: linear-gradient(145deg, #f6d697 0%, #e8b95f 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.72),
-    0 3px 0 rgba(105, 73, 27, 0.2),
-    0 7px 12px rgba(105, 73, 27, 0.13);
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .leaderboard-entry-btn {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.96),
-    0 3px 0 rgba(23, 49, 35, 0.07),
-    0 8px 15px rgba(23, 49, 35, 0.1);
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .rules-footer {
-  border-top-color: rgba(23, 49, 35, 0.1);
-}
-
-.mobile-viewport[data-screen-label="优惠券首页"] .accordion-trigger {
-  color: #44564a;
-}
-
-/* Keep the wallet screen on the same centered phone canvas as the home screen. */
-.mobile-viewport:has(.cwallet-page) {
-  width: min(100vw, 440px);
-  min-width: min(100vw, 440px);
-  max-width: 100%;
-  align-self: center;
-}
-
-@media (max-width: 480px) {
-  .mobile-viewport:has(.cwallet-page) {
-    width: 100%;
-    min-width: 100%;
-  }
-}
-
-@keyframes dtc-gift-float {
-  0%, 100% { transform: translate3d(0, 0, 14px) rotate(2deg); }
-  50% { transform: translate3d(0, -4px, 14px) rotate(1deg); }
-}
-
-@media (hover: hover) and (prefers-reduced-motion: no-preference) {
-  .mobile-viewport[data-screen-label="优惠券首页"] .challenges-list .challenge-card:hover {
-    transform: translateY(-2px);
-    border-color: color-mix(in srgb, var(--brand-primary) 28%, #fff);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.98),
-      0 4px 0 rgba(23, 49, 35, 0.08),
-      0 16px 26px rgba(23, 49, 35, 0.17);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mobile-viewport[data-screen-label="优惠券首页"] .reward-journey-shell .reward-journey-gift {
-    animation: none;
-  }
-}
-
-/* Make the available coupon's primary shopping action easy to spot. */
-.cwticket.is-colored:not(.is-featured):not(.is-inactive):not(.is-settlement-used):not(.is-settlement-earned):not(.is-target-preview) {
-  grid-template-columns: minmax(0, 1fr) 88px;
-}
-
-.cwticket.is-colored:not(.is-featured):not(.is-inactive):not(.is-settlement-used):not(.is-settlement-earned):not(.is-target-preview) .cwticket-stub {
-  width: 100%;
-  min-height: 88px;
-  gap: 8px;
-  padding: 10px 5px;
-  border-left: 1px solid rgba(255,255,255,.24);
-  color: #fff;
-  background: linear-gradient(155deg,#12bfc0 0%,#07999f 56%,#08777f 100%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.26), inset 1px 0 0 rgba(255,255,255,.12), 0 3px 10px rgba(0,111,116,.2);
-  text-shadow: 0 1px 2px rgba(0,54,59,.28);
-}
-
-.cwticket.is-colored:not(.is-featured):not(.is-inactive):not(.is-settlement-used):not(.is-settlement-earned):not(.is-target-preview) .cwticket-stub svg {
-  width: 19px;
-  height: 19px;
-  stroke-width: 2.6;
-}
-
-.cwticket.is-colored:not(.is-featured):not(.is-inactive):not(.is-settlement-used):not(.is-settlement-earned):not(.is-target-preview) .cwticket-stub-text {
-  font-size: .63rem;
-  font-weight: 850;
-  letter-spacing: 0;
-}
-
-.cwticket.is-colored:not(.is-featured):not(.is-inactive):not(.is-settlement-used):not(.is-settlement-earned):not(.is-target-preview) .cwticket-stub:focus-visible {
+.offers-wordmark {
+  --ticket-overlap: clamp(9px, 2.9vw, 13px);
   position: relative;
-  z-index: 2;
-  outline: 3px solid #fff;
-  outline-offset: -5px;
-  filter: brightness(1.08);
+  z-index: 1;
+  width: min(83%, 296px);
+  margin: 0 auto 16px;
+  pointer-events: none;
+  filter: drop-shadow(1px 3px 2px #34104738);
 }
+.offers-wordmark img { display: block; width: 100%; height: auto; }
+/* The ticket hides the baseline; the curled terminal of the h sits over its edge. */
+.offers-wordmark.over-ticket { margin-bottom: calc(-1 * var(--ticket-overlap)); }
+.offers-wordmark.over-ticket img {
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 87% 100%,
+    87% calc(100% - var(--ticket-overlap)), 0 calc(100% - var(--ticket-overlap)));
+}
+.offers-wordmark::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 var(--ticket-overlap);
+  pointer-events: auto;
+}
+.offers-list { display: grid; gap: 17px; }
+.offer-ticket {
+  --ticket-radius: 17px;
+  --stub-width: clamp(92px, 28%, 109px);
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--stub-width);
+  min-width: 0;
+  border-radius: var(--ticket-radius);
+  background: #eef0ef;
+  color: #373b3b;
+  box-shadow: 0 2px 3px #1e172309, inset 0 0 0 1px #33383b17;
+}
+.offer-ticket-paper {
+  min-width: 0;
+  position: relative;
+  padding: 16px 18px;
+}
+.offer-ticket-status { display: inline-flex; align-items: center; gap: 5px; font: 650 .73rem/1.3 var(--font-sans); }
+.offer-ticket svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.offer-ticket h2 { margin: 6px 0; font: 650 2.2rem/1.06 var(--font-serif); letter-spacing: -.055em; overflow-wrap: anywhere; }
+.offer-ticket h2 em { font-size: .7em; font-weight: 450; font-style: italic; }
+.offer-ticket h2.long-offer { font-size: 1.48rem; letter-spacing: -.026em; line-height: 1.18; }
+.offer-ticket p, .offer-mini-progress { font: 550 .76rem/1.4 var(--font-sans); }
+.offer-action {
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 44px;
+  padding: 0 10px;
+  color: #344038;
+  background: none;
+  font: 700 .81rem/1.25 var(--font-sans);
+  cursor: pointer;
+}
+.offer-action::after { content: ''; position: absolute; inset: 0; z-index: 1; border-radius: var(--ticket-radius); }
+.offer-action:focus-visible::after { outline: 3px solid var(--offer-ink); outline-offset: 3px; }
+.offer-action svg { width: 16px; height: 16px; flex-shrink: 0; }
+.offer-action:disabled { cursor: default; }
 
-@media (max-width: 480px) {
-  .cwticket.is-colored:not(.is-featured):not(.is-inactive):not(.is-settlement-used):not(.is-settlement-earned):not(.is-target-preview) {
-    grid-template-columns: minmax(0, 1fr) 76px;
+/* A horizontal perforation separates the denomination from the redeemable stub. */
+.offer-ticket:is(.is-ready, .is-pending) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  color: var(--offer-paper);
+  background: color-mix(in srgb, var(--offer-ink) 76%, #20152a);
+  box-shadow: 0 13px 22px -13px color-mix(in srgb, var(--offer-ink) 54%, transparent),
+    0 3px 6px #1c13241a, inset 0 -2px 0 #0c07162b;
+}
+:is(.is-ready, .is-pending) .offer-ticket-paper {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  container-type: inline-size;
+  padding: 18px 20px 17px;
+  border-radius: var(--ticket-radius) var(--ticket-radius) 0 0;
+  background:
+    radial-gradient(ellipse at 93% 28%, color-mix(in srgb, var(--offer-paper) 14%, transparent), transparent 61%),
+    linear-gradient(115deg, color-mix(in srgb, var(--offer-ink) 79%, #21122c), var(--offer-ink) 73%);
+  box-shadow: inset 0 1px 0 #ffffff30;
+}
+:is(.is-ready, .is-pending) .offer-ticket-paper::before, :is(.is-ready, .is-pending) .offer-ticket-paper::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  width: 6px;
+  height: 12px;
+  bottom: -6px;
+  background: var(--home-paper);
+  pointer-events: none;
+}
+:is(.is-ready, .is-pending) .offer-ticket-paper::before { left: 0; border-radius: 0 8px 8px 0; }
+:is(.is-ready, .is-pending) .offer-ticket-paper::after { right: 0; border-radius: 8px 0 0 8px; }
+:is(.is-ready, .is-pending) .offer-ticket-status {
+  grid-column: 1 / -1;
+  justify-self: start;
+  background: color-mix(in srgb, var(--offer-paper) 11%, transparent);
+  border-radius: 20px;
+  padding: 4px 9px 4px 7px;
+  box-shadow: inset 0 0 0 1px #ffffff28;
+}
+:is(.is-ready, .is-pending) .offer-ticket-paper h2 {
+  position: relative;
+  grid-column: 1;
+  margin: 8px 0 7px;
+  font-size: clamp(3.1rem, 16vw, 4.35rem);
+  line-height: 1;
+  font-weight: 550;
+}
+:is(.is-ready, .is-pending) .offer-ticket-paper h2.long-offer { font-size: 1.8rem; line-height: 1.14; }
+.offer-ticket.is-ready .offer-ticket-paper h2 {
+  --value-rim: color-mix(in srgb, var(--offer-paper) 76%, var(--offer-ink));
+  --value-edge: color-mix(in srgb, var(--offer-paper) 47%, var(--offer-ink));
+  --value-base: color-mix(in srgb, var(--offer-ink) 68%, #19101f);
+  color: var(--offer-paper);
+  margin-bottom: 12px;
+  font-weight: 675;
+  transform-origin: left center;
+  transform: translateY(-.045em) rotate(-1.5deg);
+  /* The three hard edges give the letters thickness; the last shadow lands on the ticket. */
+  filter: drop-shadow(.008em .012em 0 var(--value-rim))
+          drop-shadow(.016em .024em 0 var(--value-edge))
+          drop-shadow(.023em .033em 0 var(--value-base))
+          drop-shadow(.025em .065em .035em rgb(22 8 30 / .56));
+}
+.offer-ticket.is-ready .offer-ticket-paper h2 em { font-weight: 525; }
+@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+  .offer-ticket.is-ready .offer-ticket-paper h2 {
+    background: linear-gradient(155deg, white 12%, var(--offer-paper) 42%, var(--value-rim) 76%, var(--offer-paper));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .offer-ticket.is-ready .offer-ticket-paper h2 {
+    animation: coupon-value-lift .38s cubic-bezier(.2,.8,.25,1);
+  }
+  @keyframes coupon-value-lift {
+    from { transform: translateY(.035em) scale(.975); }
+    to { transform: translateY(-.045em) rotate(-1.5deg); }
+  }
+}
+@media (forced-colors: active) {
+  .offer-ticket.is-ready .offer-ticket-paper h2 { background: none; color: CanvasText; filter: none; }
+}
+:is(.is-ready, .is-pending) .offer-ticket-paper p { position: relative; grid-column: 1 / -1; font-size: .78rem; }
+.offer-signature {
+  grid-column: 2;
+  place-self: center;
+  position: relative;
+  pointer-events: none;
+  user-select: none;
+  color: color-mix(in srgb, var(--offer-paper) 75%, transparent);
+  font: 600 clamp(1rem, 6.2cqi, 1.6rem)/1.1 'Dancing Script', 'Brush Script MT', 'Snell Roundhand', cursive;
+  transform: rotate(-12deg);
+}
+.offer-signature::after {
+  content: '';
+  position: absolute;
+  inset: calc(100% + 2px) 1% auto 24%;
+  height: 4px;
+  border-top: 1.5px solid currentColor;
+  border-radius: 50%;
+  transform: rotate(-3deg);
+}
+.offer-code {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  align-items: center;
+  gap: 0 7px;
+  padding: 7px 0 8px 20px;
+}
+.offer-ticket:is(.is-ready, .is-pending)::after {
+  content: '';
+  position: absolute;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  align-self: start;
+  inset-inline: 8px;
+  height: 1px;
+  pointer-events: none;
+  background: repeating-linear-gradient(90deg, #ffffff55 0 4px, transparent 4px 8px);
+}
+.offer-code b { position: relative; z-index: 2; max-width: 100%; user-select: all; overflow-wrap: anywhere; font: 650 .83rem/1.4 ui-monospace, monospace; letter-spacing: .045em; }
+.offer-code button { position: relative; z-index: 2; display: inline-flex; gap: 4px; align-items: center; min-height: 44px; padding: 2px; font: 600 .74rem var(--font-sans); color: var(--offer-paper); background: none; border: 0; cursor: pointer; }
+.offer-code svg { width: 13px; height: 13px; }
+.offer-ticket:is(.is-ready, .is-pending) .offer-action {
+  align-self: center;
+  margin: 10px 14px 10px 7px;
+  padding: 0 13px;
+  gap: 9px;
+  min-height: 44px;
+  border-radius: 11px;
+  color: var(--offer-ink);
+  background: var(--offer-paper);
+  box-shadow: 0 2px 4px #15091e25;
+}
+/* An unlocked offer may briefly await its code. Keep its action in the same place. */
+.offer-ticket.is-pending .offer-action { grid-column: 2; }
+.offer-ticket.is-locked .offer-action {
+  position: static;
+  flex-direction: column-reverse;
+  gap: 7px;
+  border-radius: 0 var(--ticket-radius) var(--ticket-radius) 0;
+  color: #3d4440;
+  background: #33383d07;
+}
+.offer-ticket.is-locked .offer-action::before {
+  content: '';
+  position: absolute;
+  right: var(--stub-width);
+  width: 1px;
+  inset-block: 8px;
+  background: repeating-linear-gradient(to bottom, #61656658 0 3px, transparent 3px 7px);
+}
+.offer-ticket.is-locked::before, .offer-ticket.is-locked::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  right: calc(var(--stub-width) - 5px);
+  width: 10px;
+  height: 5px;
+  background: var(--home-paper);
+  pointer-events: none;
+}
+.offer-ticket.is-locked::before { top: 0; border-radius: 0 0 8px 8px; }
+.offer-ticket.is-locked::after { bottom: 0; border-radius: 8px 8px 0 0; }
+.offer-mini-progress, .offer-sheet-progress { display: flex; align-items: center; gap: 8px; }
+.offer-mini-progress { margin-top: 8px; font-size: .71rem; font-variant-numeric: tabular-nums; }
+.offer-track { display: block; overflow: hidden; height: 5px; border-radius: 4px; background: color-mix(in srgb, var(--offer-ink) 12%, white); }
+.offer-track i { display: block; height: 100%; border-radius: inherit; background: var(--offer-ink); transition: width .25s ease-out; }
+.offer-mini-progress .offer-track { width: 59px; height: 4px; background: #cdd1ce; }
+.offer-mini-progress .offer-track i { background: #6b736e; }
+.offers-empty { font-size: .82rem; line-height: 1.45; color: var(--home-muted); }
+.rewards-sheet {
+  --sheet-primary: var(--offer-primary, var(--offer-ink));
+  --sheet-on-primary: var(--offer-on-primary, var(--offer-paper));
+  --sheet-on-background: var(--offer-on-background, var(--home-ink));
+  --sheet-card: color-mix(in srgb, var(--offer-paper) 38%, white);
+  --sheet-inset: clamp(14px, 4.5vw, 22px);
+  position: fixed;
+  inset: auto;
+  box-sizing: border-box;
+  max-width: 100%;
+  max-height: min(88dvh, 680px);
+  margin: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  border: 0;
+  border-radius: 24px 24px 0 0;
+  padding: 0;
+  background: var(--home-paper);
+  color: var(--sheet-on-background);
+  box-shadow: 0 -6px 32px color-mix(in srgb, var(--offer-ink) 23%, transparent);
+  font-family: var(--font-sans);
+}
+.rewards-sheet::backdrop {
+  background: linear-gradient(to bottom,
+    color-mix(in srgb, var(--home-ink, #281f30) 54%, transparent),
+    color-mix(in srgb, var(--home-ink, #281f30) 68%, transparent));
+}
+.rewards-home:has(.leaderboard-sheet[open]) .offer-task-sheet::backdrop { background: transparent; }
+.offer-sheet-body { display: flow-root; }
+.offer-sheet-close {
+  position: sticky;
+  top: 8px;
+  z-index: 2;
+  display: flex;
+  width: max-content;
+  min-height: 44px;
+  align-items: center;
+  gap: 6px;
+  margin: 0 10px -44px auto;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--sheet-primary) 92%, var(--sheet-on-primary));
+  color: var(--sheet-on-primary);
+  font: 650 .78rem/1 var(--font-sans);
+  cursor: pointer;
+}
+.offer-sheet-close span { font-size: 1.15rem; font-weight: 400; }
+.offer-sheet-heading {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 18px var(--sheet-inset) 32px;
+  background: var(--sheet-primary);
+  color: var(--sheet-on-primary);
+}
+.offer-sheet-brand-art {
+  flex: none;
+  width: 34%;
+  height: clamp(36px, 10vw, 46px);
+  margin-top: 38px;
+  object-fit: contain;
+  object-position: right bottom;
+  pointer-events: none;
+}
+.offer-sheet-heading h2 { flex: 1; min-width: 0; margin: 0; }
+.offer-sheet-unlock {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 650 .78rem/1.4 var(--font-sans);
+}
+.offer-sheet-unlock svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.offer-sheet-value {
+  display: block;
+  margin-top: 4px;
+  font: 550 clamp(2.65rem, 12vw, 3.55rem)/1.05 var(--font-serif);
+  letter-spacing: -.055em;
+  overflow-wrap: anywhere;
+}
+.offer-sheet-value em { font-size: .72em; font-weight: 450; }
+.offer-sheet-heading h2:only-child .offer-sheet-value { max-width: calc(100% - 70px); }
+.offer-sheet-value.is-text { font-size: 1.9rem; letter-spacing: -.03em; }
+.offer-sheet-content { padding: 0 var(--sheet-inset) max(8px, env(safe-area-inset-bottom)); }
+.offer-sheet-meter {
+  position: relative;
+  margin-top: -18px;
+  padding: 13px 15px 15px;
+  border-radius: 12px;
+  color: var(--home-ink);
+  background: var(--sheet-card);
+  box-shadow: 0 5px 12px -7px color-mix(in srgb, var(--offer-ink) 42%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--offer-ink) 13%, transparent);
+}
+.offer-sheet-progress { justify-content: space-between; flex-wrap: wrap; margin-bottom: 9px; font-variant-numeric: tabular-nums; }
+.offer-sheet-progress strong { font: 750 .98rem/1.2 var(--font-sans); }
+.offer-sheet-progress span { color: var(--home-muted); font-size: .76rem; }
+.offer-sheet-meter .offer-track { height: 6px; }
+.offer-bundle-note { margin: 8px 0 0; font-size: .78rem; line-height: 1.4; color: var(--home-muted); }
+.offer-tasks-heading { margin: 18px 0 8px; font: 700 1.25rem/1.2 var(--font-serif); letter-spacing: -.025em; }
+.home-challenge-list {
+  display: grid;
+  gap: 1px;
+  border-radius: 15px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--offer-ink) 13%, var(--sheet-card));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--offer-ink) 11%, transparent);
+}
+.home-challenge-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 70px;
+  padding: 7px 12px 7px 7px;
+  border: 0;
+  background: var(--sheet-card);
+  color: var(--home-ink);
+  text-align: left;
+  cursor: pointer;
+}
+.home-challenge-row:not(:disabled):hover { background: var(--offer-paper); }
+.home-challenge-row:disabled { cursor: default; }
+.rewards-sheet button:focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
+.home-game-art {
+  flex: 0 0 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--offer-paper);
+  font-size: 24px;
+}
+.home-game-art img { display: block; width: 100%; height: 100%; object-fit: contain; border-radius: inherit; }
+.home-game-copy { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.home-game-copy strong { font: 700 1.04rem/1.18 var(--font-serif); overflow-wrap: anywhere; }
+.home-game-copy small { color: var(--home-muted); font: 500 .74rem/1.35 var(--font-sans); overflow-wrap: anywhere; }
+.home-game-copy small b { color: var(--offer-ink); font-weight: 700; }
+.home-game-action {
+  flex: 0 0 auto;
+  max-width: 38%;
+  padding: 8px 11px;
+  border-radius: 9px;
+  background: var(--sheet-primary);
+  color: var(--sheet-on-primary);
+  font: 700 .79rem/1.25 var(--font-sans);
+  overflow-wrap: anywhere;
+}
+.home-challenge-row:disabled .home-game-action { background: #eae7eb; color: #56505b; }
+.home-challenges-empty { background: var(--sheet-card); padding: 14px; color: var(--home-muted); font-size: .84rem; }
+.offer-sheet-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 12px;
+  min-height: 44px;
+  margin-top: 4px;
+  color: var(--offer-on-background, var(--home-muted));
+  font-size: .74rem;
+}
+.home-leaderboard {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: 650 .76rem/1.2 var(--font-sans);
+  cursor: pointer;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .rewards-sheet[open] { animation: offer-sheet-arrive .2s cubic-bezier(.18,.75,.2,1); }
+  @keyframes offer-sheet-arrive {
+    from { transform: translateY(20px); opacity: .6; }
+    to { transform: none; opacity: 1; }
+  }
+}
+.reward-home-content .rules-footer { margin-top: 9px; padding: 0 3px; }
+.reward-home-content .accordion-trigger { min-height: 44px; }
+.reward-home-content :is(.accordion-trigger, .rules-list li, .offers-empty),
+.mobile-viewport[data-offers-wallet] .cwallet-empty { color: var(--offer-on-background, var(--home-muted)); }
+:is(.reward-home-content, .mobile-viewport[data-offers-wallet]) .cwallet-section-label { color: var(--offer-on-background, var(--home-ink)); }
+.reward-home-content .accordion-content.open { max-height: none; }
 
-  .cwticket.is-colored:not(.is-featured):not(.is-inactive):not(.is-settlement-used):not(.is-settlement-earned):not(.is-target-preview) .cwticket-stub {
-    min-height: 80px;
-  }
+@media (max-width: 360px) {
+  .rewards-home .brand-header { padding-inline: 10px; }
+  .rewards-home .header-actions { gap: 0; }
+  .rewards-home .brand-name { font-size: 1.05rem; }
+  .reward-home-content { padding-inline: 12px; }
+  .offer-ticket-paper { padding-inline: 12px; }
+  .home-game-action { padding-inline: 8px; }
 }

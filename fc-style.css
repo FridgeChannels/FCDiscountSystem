@@ -61,14 +61,14 @@ body {
   overflow-x: clip;
 }
 
-.experience-destination {
+/* Size the rewards shell from its parent, even when a coupon has very little text. */
+.experience-destination:has(> .mobile-viewport) {
   width: 100%;
-  max-width: 100%;
-  min-width: 0;
 }
 
 .mobile-viewport {
   width: min(100%, 440px);
+  margin-inline: auto;
   max-width: 100%;
   min-width: 0;
   flex: 1;
@@ -663,6 +663,8 @@ body {
   max-width: 100%;
   overflow-x: clip;
   overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
   padding: 20px 20px 24px;
   display: flex;
   flex-direction: column;

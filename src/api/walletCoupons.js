@@ -104,6 +104,42 @@ export function selectCompletedAvailableCoupons(coupons = [], nowMs = Date.now()
   );
 }
 
+export function findIssuedPackCoupon(wallet, pack, coupon, cycleId) {
+  const id = coupon.couponId ?? coupon.campaignId;
+  return wallet.find(entry => {
+    if (!entry.code) return false;
+    if (entry.cycleId && cycleId && entry.cycleId !== cycleId) return false;
+    if (!entry.cycleId && entry.packId && entry.packId !== pack.id) return false;
+    if (coupon.code && entry.code === coupon.code) return true;
+    return id != null && entry.couponId != null && String(entry.couponId) === String(id);
+  });
+}
+
+/** One shelf entry per offer. A used or expired issuance also consumes its plan slot. */
+export function buildCouponOffers(wallet, { startPack, targetPack, cycleId, targetReached, ended }) {
+  const ready = selectCompletedAvailableCoupons(wallet).map(coupon => ({
+    key: walletIdentityKey(coupon), coupon, state: 'ready',
+  }));
+  const remaining = [];
+  for (const pack of [startPack, targetPack]) {
+    if (!pack) continue;
+    for (const [index, coupon] of pack.coupons.entries()) {
+      const id = coupon.couponId ?? coupon.campaignId;
+      const key = `${pack.id}:${id ?? index}`;
+      const issued = findIssuedPackCoupon(wallet, pack, coupon, cycleId);
+      if (issued) {
+        const offer = ready.find(item => item.coupon === issued);
+        if (offer) offer.key = key;
+        continue;
+      }
+      if (ended || isWalletCouponExpired(coupon)) continue;
+      const locked = pack === targetPack && pack.threshold > 0 && !targetReached && !coupon.issued;
+      remaining.push({ key, coupon, state: locked ? 'locked' : 'pending', packType: pack.type });
+    }
+  }
+  return [...ready, ...remaining];
+}
+
 /** 我的卡包：历史全部券，按获得时间倒序。 */
 export function selectWalletArchiveCoupons(coupons = []) {
   return sortWalletCouponsByAcquiredAt(coupons);

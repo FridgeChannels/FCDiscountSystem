@@ -139,6 +139,27 @@ function darken(hex, ratio = 0.12) {
   return `#${hh(rgb.r)}${hh(rgb.g)}${hh(rgb.b)}`;
 }
 
+/** The coupon face needs dark ink and pale paper even when a brand supplies two light colors. */
+export function offerPaletteStyle(primary, secondary) {
+  const colors = [primary, secondary].filter(color => hexToRgb(color));
+  colors.sort((a, b) => relativeLuminance(hexToRgb(a)) - relativeLuminance(hexToRgb(b)));
+  const ink = colors[0] || '#315d4c';
+  const paper = colors[1] || '#f6f1df';
+  const primaryRgb = hexToRgb(primary);
+  const background = hexToRgb(secondary);
+  const luminance = background ? relativeLuminance(background) : 1;
+  return {
+    ...(primaryRgb && {
+      '--offer-primary': '#' + primary.trim().replace(/^#/, ''),
+      '--offer-on-primary': relativeLuminance(primaryRgb) > 0.179 ? '#0d0911' : '#fff',
+    }),
+    ...(background && { '--offer-background': '#' + secondary.trim().replace(/^#/, '') }),
+    ...(luminance < 0.5 && { '--offer-on-background': luminance <= 0.18 ? '#fff' : '#101010' }),
+    '--offer-ink': relativeLuminance(hexToRgb(ink)) > 0.17 ? darken(ink, 0.48) : ink,
+    '--offer-paper': relativeLuminance(hexToRgb(paper)) > 0.77 ? paper : `color-mix(in srgb, ${paper} 15%, white)`,
+  };
+}
+
 /**
  * Apply brand colors to document-level CSS variables.
  *  - buttonColor (or legacy primaryColor) → --brand-primary (+ hover + readable text)
