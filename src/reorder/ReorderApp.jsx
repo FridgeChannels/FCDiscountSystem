@@ -169,6 +169,7 @@ function MarketplaceIcon({ name, size = 24 }) {
   if (name === 'menu') return <svg {...common}><path d="M4 7h16M4 12h16M4 17h16" /></svg>;
   if (name === 'search') return <svg {...common}><circle cx="10.5" cy="10.5" r="5.5" /><path d="m15 15 4.5 4.5" /></svg>;
   if (name === 'star') return <svg {...common} fill="currentColor" stroke="none"><path d="m12 3 2.5 5.1 5.6.8-4.1 4 1 5.6-5-2.7-5 2.7 1-5.6-4.1-4 5.6-.8Z" /></svg>;
+  if (name === 'bag') return <svg {...common}><path d="M5 8h14l-1.2 12H6.2L5 8Z" /><path d="M9 8V6a3 3 0 0 1 6 0v2M9.5 12h.01M14.5 12h.01" /></svg>;
   return null;
 }
 
@@ -190,17 +191,10 @@ function ProductArt({ product, size = 'hero' }) {
 
 function MarketplaceProductHero({ product, brand }) {
   const [cutoutUrl, setCutoutUrl] = useState('');
-  const [processing, setProcessing] = useState(false);
-  const [processingMessage, setProcessingMessage] = useState('');
   const [cutoutFailed, setCutoutFailed] = useState(false);
-  const [cutoutError, setCutoutError] = useState('');
   const imageUrl = product?.image || '';
   const preparedCutout = product?.visualAssets?.cutout || product?.heroImage || '';
   const scene = product?.visualAssets?.scene || product?.heroScene || {};
-  const background = scene.background || brand?.colors?.background || '#0b251a';
-  const surface = scene.surface || '#153b2a';
-  const accent = scene.accent || brand?.colors?.accent || '#c9a276';
-
   useEffect(() => {
     let active = true;
     let cutoutWorker;
@@ -209,12 +203,8 @@ function MarketplaceProductHero({ product, brand }) {
     let aiCutoutReady = false;
     setCutoutUrl('');
     setCutoutFailed(false);
-    setCutoutError('');
-    setProcessingMessage('');
     if (preparedCutout) {
       setCutoutUrl(preparedCutout);
-      setProcessing(false);
-      setProcessingMessage('');
       return undefined;
     }
 
@@ -223,20 +213,14 @@ function MarketplaceProductHero({ product, brand }) {
     if (cached) {
       cutoutObjectUrl = URL.createObjectURL(cached);
       setCutoutUrl(cutoutObjectUrl);
-      setProcessing(false);
       return () => URL.revokeObjectURL(cutoutObjectUrl);
     }
 
-    const reportError = (error) => {
+    const reportError = () => {
       if (!active) return;
       setCutoutFailed(!quickCutoutReady);
-      setCutoutError(error || 'Could not prepare this product image.');
-      setProcessing(false);
-      setProcessingMessage('');
     };
-    setProcessing(true);
-    if (!preparedCutout && imageUrl) {
-      setProcessingMessage('Preparing product cutout…');
+    if (imageUrl) {
       const requestId = `${Date.now()}-${Math.random()}`;
       cutoutWorker = new Worker(new URL('./productCutout.worker.js', import.meta.url), { type: 'module' });
       cutoutWorker.onmessage = (event) => {
@@ -249,15 +233,13 @@ function MarketplaceProductHero({ product, brand }) {
           if (cutoutObjectUrl) URL.revokeObjectURL(cutoutObjectUrl);
           cutoutObjectUrl = URL.createObjectURL(event.data.blob);
           setCutoutUrl(cutoutObjectUrl);
-          setProcessing(false);
-          setProcessingMessage('');
           cutoutWorker.terminate();
         } else if (event.data.type === 'error') {
-          reportError(event.data.message);
+          reportError();
           cutoutWorker.terminate();
         }
       };
-      cutoutWorker.onerror = () => { reportError('Could not prepare this product image.'); cutoutWorker?.terminate(); };
+      cutoutWorker.onerror = () => { reportError(); cutoutWorker?.terminate(); };
       fetchProductImageBlob(imageUrl).then((blob) => {
         if (!active) return;
         cutoutWorker?.postMessage({ id: requestId, blob });
@@ -267,10 +249,7 @@ function MarketplaceProductHero({ product, brand }) {
           cutoutObjectUrl = URL.createObjectURL(previewBlob);
           setCutoutUrl(cutoutObjectUrl);
         }).catch(() => {});
-      }).catch((error) => reportError(error.message));
-    } else {
-      setProcessing(false);
-      setProcessingMessage('');
+      }).catch(reportError);
     }
     return () => {
       active = false;
@@ -280,13 +259,10 @@ function MarketplaceProductHero({ product, brand }) {
   }, [imageUrl, preparedCutout]);
 
   return (
-    <div className="marketplace-hero__stage" style={{ '--hero-bg': background, '--hero-surface': surface, '--hero-accent': accent }}>
-      <span className="marketplace-hero__wash" />
-      <span className="marketplace-hero__floor" />
-      <span className="marketplace-hero__contact" />
+    <div className="marketplace-hero__stage" style={{ '--poster-color': scene.background, '--poster-light': scene.accent }}>
+      <span className="marketplace-hero__contact" aria-hidden="true" />
       {cutoutUrl && <img className="marketplace-hero__bottle" src={cutoutUrl} alt={`${product.name}, ${product.variant}`} />}
       {cutoutFailed && !cutoutUrl && imageUrl && <img className="marketplace-hero__source-image" src={imageUrl} alt={`${product.name}, ${product.variant}`} />}
-      {(processing || cutoutFailed) && <span className={`marketplace-hero__status${cutoutFailed ? ' marketplace-hero__status--error' : ''}`} role="status" title={cutoutError}>{cutoutFailed ? 'Showing original product image' : processingMessage}</span>}
     </div>
   );
 }
@@ -446,143 +422,14 @@ function DemoShippingAddress() {
   );
 }
 
-function AmazonProductAdditionalInfo({ brand, product, onChangeAddress }) {
-  const [deliveryNoticeVisible, setDeliveryNoticeVisible] = useState(true);
-  const [selectedPack, setSelectedPack] = useState(0);
-  const [saved, setSaved] = useState(false);
-  const variantParts = product.variant.split(',').map((part) => part.trim());
-  const flavor = variantParts.find((part) => !/\d+\s*[- ]?\s*(bottles?|packs?|count|ct|pieces?|pcs|units?|cans?|bags?)/i.test(part)) || variantParts[0] || 'Original';
-  const packageCount = product.variant.match(/\d+\s*[- ]?\s*(?:bottles?|packs?|count|ct|pieces?|pcs|units?|cans?|bags?)/i)?.[0]?.replace(/\s+/g, ' ').trim() || '12 Bottles';
-
-  return (
-    <section className="marketplace-extra-info" aria-label="More product information">
-      <div className="marketplace-extra-info__intro">
-        <h2>Product information</h2>
-        <span>Sample data · scroll to explore</span>
-      </div>
-
-      {deliveryNoticeVisible && (
-        <aside className="marketplace-delivery-notice">
-          <p>We’re showing items that ship to Singapore. Change your delivery address to see other available options.</p>
-          <div><button type="button" onClick={() => setDeliveryNoticeVisible(false)}>Dismiss</button><button type="button" onClick={onChangeAddress}>Change address</button></div>
-        </aside>
-      )}
-
-      <details className="marketplace-info-accordion" open>
-        <summary>Top highlights</summary>
-        <dl className="marketplace-highlights-table">
-          <div><dt>Type</dt><dd>Beverage</dd></div>
-          <div><dt>Flavor</dt><dd>{flavor}</dd></div>
-          <div><dt>Product benefits</dt><dd>Refreshing fruit flavor; a convenient drink for breakfast or on the go.</dd></div>
-          <div><dt>Number of items</dt><dd>{packageCount.match(/\d+/)?.[0] || '12'}</dd></div>
-          <div><dt>Unit count</dt><dd>{packageCount}</dd></div>
-          <div><dt>Brand</dt><dd>{brand.name}</dd></div>
-        </dl>
-        <ul className="marketplace-feature-list">
-          <li>Includes {packageCount} of {product.name}.</li>
-          <li>Made for easy serving at home, at breakfast, or while traveling.</li>
-          <li>Packaged for convenient storage and everyday use.</li>
-          <li>Enjoy chilled as part of a balanced routine.</li>
-        </ul>
-      </details>
-
-      <section className="marketplace-info-section marketplace-buying-options" aria-labelledby="marketplace-options-title">
-        <h3 id="marketplace-options-title">Size options</h3>
-        <div className="marketplace-option-list">
-          {[
-            { label: packageCount, offers: '1 option', price: '$59.99' },
-            { label: '24 Bottles', offers: '3 options', price: '$109.99' },
-          ].map((option, index) => (
-            <button className={'marketplace-option' + (selectedPack === index ? ' marketplace-option--selected' : '')} key={option.label} type="button" aria-pressed={selectedPack === index} onClick={() => setSelectedPack(index)}>
-              <span><b>{option.label}</b><small>{option.offers} from {option.price}</small></span>
-              {selectedPack === index && <span className="marketplace-option__check" aria-hidden="true">✓</span>}
-            </button>
-          ))}
-        </div>
-        <button className="marketplace-buying-options__all" type="button">See all buying options <span aria-hidden="true">›</span></button>
-      </section>
-
-      <section className="marketplace-info-section" aria-labelledby="marketplace-details-title">
-        <h3 id="marketplace-details-title">Product details</h3>
-        <details className="marketplace-info-accordion">
-          <summary>Nutritional info</summary>
-          <dl className="marketplace-highlights-table marketplace-highlights-table--compact">
-            <div><dt>Serving size</dt><dd>1 bottle (240 ml)</dd></div>
-            <div><dt>Calories</dt><dd>110</dd></div>
-            <div><dt>Total fat</dt><dd>0 g</dd></div>
-            <div><dt>Total sugars</dt><dd>22 g</dd></div>
-            <div><dt>Vitamin C</dt><dd>100% daily value</dd></div>
-          </dl>
-        </details>
-        <details className="marketplace-info-accordion">
-          <summary>Ingredients</summary>
-          <p>Orange juice, filtered water, natural flavor. Example copy for layout preview; final ingredients will come from product data.</p>
-        </details>
-      </section>
-
-      <details className="marketplace-info-accordion marketplace-info-accordion--section">
-        <summary>Product specifications</summary>
-        <dl className="marketplace-highlights-table">
-          <div><dt>Brand</dt><dd>{brand.name}</dd></div>
-          <div><dt>Product</dt><dd>{product.name}</dd></div>
-          <div><dt>Flavor</dt><dd>{flavor}</dd></div>
-          <div><dt>Unit count</dt><dd>{packageCount}</dd></div>
-          <div><dt>ASIN</dt><dd>{product.asin || 'B0DEMO1234'}</dd></div>
-        </dl>
-      </details>
-
-      <details className="marketplace-info-accordion marketplace-info-accordion--section">
-        <summary>About the brand</summary>
-        <p>{brand.name} makes convenient products for everyday routines. This brand description is sample copy for the product information layout.</p>
-      </details>
-
-      <section className="marketplace-info-section" aria-labelledby="marketplace-gallery-title">
-        <div className="marketplace-info-section__heading">
-          <h3 id="marketplace-gallery-title">Product image gallery</h3>
-          <div className="marketplace-gallery-actions"><button type="button" aria-label={saved ? 'Remove from list' : 'Save to list'} onClick={() => setSaved((value) => !value)}>{saved ? '♥' : '♡'}</button><button type="button" aria-label="Share product">↗</button></div>
-        </div>
-        <div className="marketplace-gallery-grid">
-          <div className="marketplace-gallery-tile marketplace-gallery-tile--hero"><span>Product image</span></div>
-          <div className="marketplace-gallery-tile marketplace-gallery-tile--facts"><span>Nutrition facts</span></div>
-          <div className="marketplace-gallery-tile marketplace-gallery-tile--pack"><span>Package details</span></div>
-        </div>
-      </section>
-
-      <details className="marketplace-info-accordion marketplace-info-accordion--section">
-        <summary>Videos</summary>
-        <div className="marketplace-video-preview"><span className="marketplace-video-preview__play" aria-hidden="true">▶</span><span><b>Get to know {product.name}</b><small>Product overview · 0:45</small></span></div>
-      </details>
-
-      <details className="marketplace-info-accordion marketplace-info-accordion--section">
-        <summary>Additional details</summary>
-        <dl className="marketplace-highlights-table">
-          <div><dt>Storage</dt><dd>Store in a cool, dry place. Chill before serving.</dd></div>
-          <div><dt>Package type</dt><dd>Multi-unit pack</dd></div>
-          <div><dt>Seller</dt><dd>{brand.name}</dd></div>
-        </dl>
-      </details>
-
-      <button className="marketplace-report-link" type="button">⚑ <span>Report an issue with this product or seller</span></button>
-
-      <section className="marketplace-manufacturer" aria-labelledby="marketplace-manufacturer-title">
-        <h3 id="marketplace-manufacturer-title">From the manufacturer</h3>
-        <h4>Good ingredients, made for everyday moments</h4>
-        <div className="marketplace-manufacturer-banner"><b>{brand.name}</b><span>Real ingredients, thoughtfully made</span></div>
-        <div className="marketplace-manufacturer-points"><span>Simple to enjoy</span><span>Made for your routine</span><span>A refreshing choice</span></div>
-      </section>
-    </section>
-  );
-}
-
 function AmazonProductScreen({ config, coupons, modules, navigate, discountMode = 'code' }) {
   const product = config.products.find((item) => item.id === config.currentProductId);
-  const productSize = product.variant.match(/\d+\s*[- ]?\s*(?:bottles?|packs?|count|ct|pieces?|pcs|units?|cans?|bags?)/i)?.[0]?.replace(/\s+/g, ' ').trim() || product.variant;
   const useSampleDiscount = new URLSearchParams(window.location.search).get('discountPreview') === 'sample';
   const coupon = useSampleDiscount
     ? {
         id: 'amazon-discount-preview',
         benefit: '10% off this product',
-        claimCode: 'PURA10B',
+        claimCode: config.brand.id === 'mosh' ? 'MOSH10' : 'PURA10B',
         terms: {
           validThrough: 'Sep 30, 2026',
           usageLimit: 'One use per customer',
@@ -592,10 +439,9 @@ function AmazonProductScreen({ config, coupons, modules, navigate, discountMode 
       }
     : coupons[0];
   const { code, copied, copy } = useCouponCopy(coupon, config.fcId, product.id, { feedbackDuration: 2000 });
-  const [quantity, setQuantity] = useState(1);
+  const quantity = 1;
   const [couponTermsOpen, setCouponTermsOpen] = useState(false);
   const [couponApplied, setCouponApplied] = useState(false);
-  const [productInfoTab, setProductInfoTab] = useState(0);
   const addressDialogRef = useRef(null);
   const [demoAddressSelected, setDemoAddressSelected] = useState(() => {
     try { return sessionStorage.getItem(DEMO_ADDRESS_KEY) === 'true'; }
@@ -621,38 +467,29 @@ function AmazonProductScreen({ config, coupons, modules, navigate, discountMode 
     navigate('amazon-success');
   };
   return (
-    <main className="marketplace-screen marketplace-screen--2p5d marketplace-screen--product" aria-label={`${product.name} product page demo`}>
+    <main className="marketplace-screen marketplace-screen--2p5d marketplace-screen--product" data-brand={config.brand.id}
+      style={{ '--brand-primary': config.brand.colors?.primary || '#004d3d', '--brand-secondary': config.brand.colors?.secondary || '#fff2db' }}
+      aria-label={`${product.name} product page demo`}>
       <section className="marketplace-product marketplace-product--2p5d" aria-label="Product information" tabIndex={0}>
         <header className="marketplace-header marketplace-header--with-account">
-          <button className="marketplace-icon-button" type="button" onClick={() => navigate('landing')} aria-label="Back to reorder page"><Icon name="back" size={25} /></button>
           <span className="marketplace-brand" aria-label={config.brand.name}><BrandWordmark brand={config.brand} /></span>
           <button
             className="marketplace-account-button"
             type="button"
+            aria-label={demoAddressSelected ? 'Delivery address' : 'Link Amazon'}
+            title={demoAddressSelected ? 'Delivery address' : 'Link Amazon'}
             aria-haspopup="dialog"
             aria-controls="marketplace-address-dialog"
             onClick={() => addressDialogRef.current?.showModal()}
           >
-            {demoAddressSelected ? 'Delivery address' : 'Link Amazon'}
+            <MarketplaceIcon name="bag" size={22} />
           </button>
         </header>
         <MarketplaceProductHero product={product} brand={config.brand} />
         <div className="marketplace-product-copy marketplace-product-copy--2p5d">
-          <a className="marketplace-store" href={config.brand.amazonStoreUrl} target="_blank" rel="noopener noreferrer">Visit the {config.brand.name} Store</a>
-          {productInfoTab === 0 ? (
-            <div className="marketplace-info-page" id="marketplace-info-panel-0" role="tabpanel" aria-labelledby="marketplace-info-tab-0">
+          <a className="marketplace-store" href={config.brand.storeUrl || config.brand.amazonStoreUrl} target="_blank" rel="noopener noreferrer">Visit the {config.brand.name} Store</a>
+          <div className="marketplace-info-page">
               <h1>{product.name}, {product.variant}</h1>
-              <p className="marketplace-variant"><b>Size:</b> {productSize}</p>
-              <div className="marketplace-rating" aria-label="Rated 4.8 out of 5"><span>4.8</span><span className="marketplace-stars"><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /><MarketplaceIcon name="star" size={15} /></span><button type="button">128 ratings</button></div>
-              {discountMode === 'price' ? (
-                <div className="marketplace-price marketplace-price--discount" aria-label="Discounted price $53.99, was $59.99, 10% off">
-                  <span className="marketplace-price__current"><sup>$</sup>53<span>99</span></span>
-                  <del>$59.99</del>
-                  <span className="marketplace-price__saving">10% off</span>
-                </div>
-              ) : (
-                <div className="marketplace-price"><sup>$</sup>59<span>99</span></div>
-              )}
               {coupon && discountMode === 'code' && (
                 <section className="marketplace-coupon marketplace-coupon--compact" aria-label="Available coupon">
                   <strong className="marketplace-coupon__benefit">{coupon.benefit}</strong>
@@ -667,18 +504,9 @@ function AmazonProductScreen({ config, coupons, modules, navigate, discountMode 
                   <span><b>{couponApplied ? 'Coupon applied' : 'Apply coupon'}</b><small>Save 10% at checkout</small></span>
                 </button>
               )}
-              <div className="marketplace-quantity" aria-label="Quantity"><span>Quantity</span><button type="button" onClick={() => setQuantity((current) => Math.max(1, current - 1))} aria-label="Reduce quantity">−</button><b>{quantity}</b><button type="button" onClick={() => setQuantity((current) => current + 1)} aria-label="Increase quantity">+</button></div>
-            </div>
-          ) : (
-            <div className="marketplace-info-panel" id="marketplace-info-panel-1" role="tabpanel" aria-labelledby="marketplace-info-tab-1">
-              <AmazonProductAdditionalInfo brand={config.brand} product={product} onChangeAddress={() => addressDialogRef.current?.showModal()} />
-            </div>
-          )}
+          </div>
           <footer className="marketplace-action">
-            <div className="marketplace-info-dots" role="tablist" aria-label="Product information pages">
-              {[0, 1].map((tab) => <button key={tab} id={`marketplace-info-tab-${tab}`} role="tab" type="button" aria-label={`Page ${tab + 1}`} aria-selected={productInfoTab === tab} aria-controls={`marketplace-info-panel-${tab}`} onClick={() => setProductInfoTab(tab)} />)}
-            </div>
-            <button type="button" onClick={placeDemoOrder}>Place order · ${orderTotal}</button>
+            <button type="button" onClick={placeDemoOrder}>Place order</button>
             {modules.showVoluntarySurvey && <VoluntarySurveyCard survey={config.survey} navigate={navigate} marketplace />}
           </footer>
         </div>
@@ -803,13 +631,14 @@ export default function ReorderApp({
   const navigate = useCallback((name, values = {}) => {
     if (live && !LIVE_VIEWS.has(name) && name !== 'landing') return;
     const params = new URLSearchParams(window.location.search);
+    if (!initialResolved && scenario === 'mosh-product') params.set('scenario', scenario);
     if (name === 'landing') params.delete('view');
     else params.set('view', name);
     ['step', 'coupon'].forEach((key) => values[key] != null ? params.set(key, String(values[key])) : params.delete(key));
     window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
     setView(readView(allowedViews));
     window.scrollTo({ top: 0, behavior: 'instant' });
-  }, [allowedViews, live]);
+  }, [allowedViews, live, initialResolved, scenario]);
   if (resolved.status === 'resolving') {
     if (suppressLocalLoading || typeof onEntryReady === 'function') return null;
     return <LoadingScreen />;

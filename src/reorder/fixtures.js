@@ -14,7 +14,7 @@ export const BASE_BRAND = {
 };
 
 export const BASE_PRODUCTS = [
-  { id: 'sea-salt-crackers', sellerId: 'pura-foods', sku: 'MSC-SEA-6', asin: 'B0FCSEA001', name: 'PURA Orange Juice', variant: 'Original Orange, 12 Bottles', image: '/reorder/pura-orange-juice.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCSEA001?tag=fc-reorder-20` },
+  { id: 'sea-salt-crackers', sellerId: 'pura-foods', sku: 'MSC-SEA-6', asin: 'B0FCSEA001', name: 'PURA Orange Juice', variant: 'Original Orange, 12 Bottles', image: '/reorder/pura-orange-juice.png', visualAssets: { cutout: '/reorder/pura-orange-juice-cutout.png' }, amazonUrl: `${AMAZON_BASE}/dp/B0FCSEA001?tag=fc-reorder-20` },
   { id: 'smoky-chili-crisps', sellerId: 'pura-foods', sku: 'MSC-CHILI-6', asin: 'B0FCCHI002', name: 'Smoky Chili Protein Crisps', variant: '6-pack', image: '/reorder/smoky-chili-crisps.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCCHI002?tag=fc-reorder-20` },
   { id: 'classic-sea-salt-crisps', sellerId: 'pura-foods', sku: 'MSC-CLASSIC-6', asin: 'B0FCCLA003', name: 'Classic Sea Salt Protein Crisps', variant: '6-pack', image: '/reorder/classic-sea-salt-crisps.png', amazonUrl: `${AMAZON_BASE}/dp/B0FCCLA003?tag=fc-reorder-20` },
 ];
@@ -57,6 +57,7 @@ const DIRECT_COUPON = {
 const clone = (value) => JSON.parse(JSON.stringify(value));
 export const SCENARIO_NAMES = [
   'landing',
+  'mosh-product',
   'direct-coupon',
   'coupon-survey',
   'survey-only',
@@ -72,6 +73,31 @@ const baseConfig = () => ({
 export function buildScenario(name = 'landing') {
   const config = baseConfig();
   config.scenario = name;
+  if (name === 'mosh-product') {
+    const image = '/reorder/mosh/high-protein-variety.webp';
+    const product = {
+      id: 'mosh-high-protein-variety-10', sellerId: 'mosh',
+      name: 'High Protein Variety Pack', variant: '10 bars', image,
+      amazonUrl: `${AMAZON_BASE}/s?k=MOSH+High+Protein+Variety+Pack`,
+      visualAssets: { cutout: image },
+    };
+    return {
+      ...config,
+      batchId: 'mosh-product-preview',
+      brand: {
+        id: 'mosh', name: 'mosh', logoText: 'mosh', logoImage: '/reorder/mosh/logo.png',
+        storeUrl: 'https://moshlife.com/', amazonStoreUrl: `${AMAZON_BASE}/s?k=MOSH+protein+bars`,
+        colors: { primary: '#681cab', secondary: '#fbeaff' },
+      },
+      currentProductId: product.id, products: [product],
+      survey: { ...config.survey, id: 'mosh-product-feedback', description: 'Tell mosh what matters most when you use this product.' },
+      coupons: [{
+        ...DIRECT_COUPON, id: 'mosh-demo-10', sellerId: product.sellerId,
+        eligibleProductIds: [product.id], eligibleAsins: [], amazonUrl: product.amazonUrl,
+        codes: ['MOSH10'], terms: { ...TERMS, sellerName: 'mosh' },
+      }],
+    };
+  }
   if (name === 'survey-only') config.survey = clone(BASE_SURVEY);
   else if (name === 'direct-coupon') config.coupons = [clone(DIRECT_COUPON)];
   else if (name === 'coupon-survey') { config.survey = clone(BASE_SURVEY); config.coupons = [clone(DIRECT_COUPON)]; }

@@ -24,6 +24,7 @@ export function resolveScenario(location = window.location) {
   if (legacy === 'replacement') return 'discontinued';
   const scenario = params.get('scenario');
   if (SCENARIO_NAMES.includes(scenario)) return scenario;
+  if (params.get('view') === 'amazon-product') return 'mosh-product';
   if (['code', 'coupon', 'price'].includes(params.get('discount'))) return 'direct-coupon';
   return 'landing';
 }
