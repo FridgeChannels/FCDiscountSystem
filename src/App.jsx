@@ -194,8 +194,7 @@ function shopifyAccountLabel(binding) {
   );
 }
 
-const PROFILE_AVATAR_OPTIONS = ['#477e25', '#78c523', '#a7c82c', '#ffcb35', '#e7a51a', '#b68420'];
-const LEGACY_PROFILE_AVATAR_OPTIONS = ['#a08447', '#5c6e58', '#b89855', '#6b7e65', '#8b6b3d', '#7a8c75'];
+const PROFILE_AVATAR_OPTIONS = ['#a08447', '#5c6e58', '#b89855', '#6b7e65', '#8b6b3d', '#7a8c75'];
 const DEFAULT_PROFILE = {
   nickname: 'You',
   avatarColor: '#a08447',
@@ -210,7 +209,7 @@ function normalizeProfile(profile) {
   const rawNickname = String(profile?.nickname ?? '').trim();
   const nickname = rawNickname.slice(0, 32)
     || (displayCode ? formatLeaderboardId(brandName || 'Player', displayCode) : DEFAULT_PROFILE.nickname);
-  const avatarColor = [...PROFILE_AVATAR_OPTIONS, ...LEGACY_PROFILE_AVATAR_OPTIONS].includes(profile?.avatarColor)
+  const avatarColor = PROFILE_AVATAR_OPTIONS.includes(profile?.avatarColor)
     ? profile.avatarColor
     : DEFAULT_PROFILE.avatarColor;
   return {
@@ -2118,11 +2117,11 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
       window.requestAnimationFrame(() => {
         if (entryReadyNotifiedRef.current) return;
         entryReadyNotifiedRef.current = true;
-        onEntryReady();
+        onEntryReady({ name: brand.name, logoUrl: brand.logoUrl, primaryColor: brand.backgroundColor || brand.primaryColor, secondaryColor: brand.buttonColor });
       });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [onEntryReady, planLoading, rewardPlanFetched, skipEntryGiftIntro, touchIdValid]);
+  }, [onEntryReady, planLoading, rewardPlanFetched, skipEntryGiftIntro, touchIdValid, brand]);
 
   useEffect(() => {
     const onPageShow = async () => {
@@ -3017,10 +3016,10 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     const unlocked = resolveUnlockedCoupon(discounts, currentStepIndex);
     if (!unlocked?.tier) return undefined;
     const receiptKey = tierReceiptSessionKey(touchId, rewardPlanId, unlocked.tier);
-    if (localStorage.getItem(receiptKey)) return undefined;
+    if (sessionStorage.getItem(receiptKey)) return undefined;
 
     const timer = window.setTimeout(() => {
-      if (localStorage.getItem(receiptKey)) return;
+      if (sessionStorage.getItem(receiptKey)) return;
       triggerCelebration(points);
     }, 450);
     return () => window.clearTimeout(timer);
@@ -3048,13 +3047,6 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
   function triggerLoginBonusAnimation(pts, targetBalance, onComplete) {
     const viewport = viewportRef.current;
     if (!viewport) return;
-
-    // Game settlements use this animation path directly (they do not go through
-    // addPoints), so publish the same real-earn signal for the Credits HUD.
-    if (Number(pts) > 0) {
-      setLastGainAmount(Number(pts));
-      setCoinGainSignal((signal) => signal + 1);
-    }
 
     const card = document.createElement('div');
     card.className = 'login-bonus-card';
@@ -3631,7 +3623,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
   function triggerCelebration(updatedPoints) {
     const unlocked = resolveUnlockedCoupon(discounts, currentStepIndex);
     if (rewardPlanId && unlocked?.tier != null) {
-      localStorage.setItem(tierReceiptSessionKey(touchId, rewardPlanId, unlocked.tier), '1');
+      sessionStorage.setItem(tierReceiptSessionKey(touchId, rewardPlanId, unlocked.tier), '1');
     }
     setUnlockToastSignal((s) => s + 1);
     setTargetPulse('ready unlocking');
@@ -5797,7 +5789,7 @@ function ProfilePage({ brand, offerBrandPreview, profile, binding, shopifyStatus
 
           <div className="profile-field">
             <span>Leaderboard ID</span>
-            <div className="profile-input-wrap"><input
+            <input
               className="profile-leaderboard-id-input"
               value={draft.nickname}
               maxLength={32}
@@ -5810,7 +5802,7 @@ function ProfilePage({ brand, offerBrandPreview, profile, binding, shopifyStatus
                   nickname: event.target.value.slice(0, 32),
                 }));
               }}
-            /><span className="profile-input-edit" aria-hidden="true">✎</span></div>
+            />
             <small className="profile-field-hint" id="leaderboard-id-hint">
               Shown on the leaderboard. Up to 32 characters.
             </small>
@@ -5821,19 +5813,19 @@ function ProfilePage({ brand, offerBrandPreview, profile, binding, shopifyStatus
             <div className="profile-avatar-options" role="radiogroup" aria-label="Avatar color">
               {PROFILE_AVATAR_OPTIONS.map((color) => (
                 <button
-                  className={`profile-avatar-option ${draft.avatarColor === color || LEGACY_PROFILE_AVATAR_OPTIONS[PROFILE_AVATAR_OPTIONS.indexOf(color)] === draft.avatarColor ? 'is-selected' : ''}`}
+                  className={`profile-avatar-option ${draft.avatarColor === color ? 'is-selected' : ''}`}
                   key={color}
                   type="button"
                   style={{ background: color }}
                   aria-label={`Use avatar color ${color}`}
-                  aria-pressed={draft.avatarColor === color || LEGACY_PROFILE_AVATAR_OPTIONS[PROFILE_AVATAR_OPTIONS.indexOf(color)] === draft.avatarColor}
+                  aria-pressed={draft.avatarColor === color}
                   onClick={() => {
                     if (draft.avatarColor === color && draft.avatarImageUrl) return;
                     if (draft.avatarImageUrl) setClearAvatarImage(true);
                     setDraft((value) => ({ ...value, avatarColor: color, avatarImageUrl: '' }));
                   }}
                 >
-                  
+                  {draft.avatarColor === color && <span>{draftInitial}</span>}
                 </button>
               ))}
             </div>
@@ -5851,7 +5843,7 @@ function ProfilePage({ brand, offerBrandPreview, profile, binding, shopifyStatus
               <img src="/gift-opening/shopify-icon.webp" alt="" />
             </div>
             <div className="profile-shopify-copy">
-              {connected && binding?.shopifyCustomerId ? <><span className="profile-customer-label">Customer</span><strong>{binding.shopifyCustomerId}</strong></> : <strong>{connected ? accountLabel : 'Connect Shopify'}</strong>}
+              <strong>{connected ? accountLabel : 'Connect Shopify'}</strong>
               {connected ? (
                 <>
                   {binding?.email && <p>{binding.email}</p>}

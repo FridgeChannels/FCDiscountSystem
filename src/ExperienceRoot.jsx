@@ -2,9 +2,10 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { fetchFcExperience, resolveSnFromUrl } from './lib/fcExperience.js';
 import { normalizeLogoUrl } from './lib/brandTheme.js';
 import { parseTouchIdFromUrl } from './lib/touchId.js';
-import { prefetchDtcEntry } from './api/client.js';
-import { buildScenario } from './reorder/fixtures.js';
+import { prefetchMagnetBrandParam, prefetchDtcEntry } from './api/client.js';
 import { isShopifyOAuthPending } from './api/cache.js';
+import { buildScenario } from './reorder/fixtures.js';
+import { resolveFcConfiguration, resolveFcId, resolveScenario } from './reorder/reorderService.js';
 import ExperienceLoading from './ExperienceLoading.jsx';
 import { notifyEmbedReady, trackEmbed } from './lib/investorEmbed.js';
 
@@ -23,30 +24,29 @@ function bootDtcApp() {
 }
 
 async function resolveAsinConfiguration(fcId) {
-  const [{ resolveFcConfiguration, resolveScenario }] = await Promise.all([
-    import('./reorder/reorderService.js'),
+  const [config] = await Promise.all([
+    resolveFcConfiguration({ fcId, scenario: resolveScenario(), mode: 'live' }),
     import('./reorder/ReorderApp.jsx'),
   ]);
-  return resolveFcConfiguration({ fcId, scenario: resolveScenario(), mode: 'live' });
+  return config;
 }
 
-function brandFromExperience(result) {
-  const raw = typeof result?.brandLogo === 'string' ? result.brandLogo.trim() : '';
-  // Preload the same-origin URL that the particle canvas will use.
-  const logoUrl = raw ? normalizeLogoUrl(raw) : null;
-  return {
-    logoUrl,
-    brandName: result?.brandName ?? null,
-  };
+function openingBrand(source = {}) {
+  const logo = source.brandLogo || source.logoUrl || source.logoImage;
+  return Object.fromEntries(Object.entries({
+    logoUrl: logo && normalizeLogoUrl(logo),
+    brandName: source.brandName || source.name,
+    primary: source.colors?.primary || source.primaryColor,
+    secondary: source.colors?.secondary || source.secondaryColor,
+    logoBlendMode: source.logoBlendMode,
+  }).filter(([, value]) => Boolean(value)));
 }
 
-/** Warm the brand logo as soon as experience returns so loading can swap quickly. */
-function preloadLogo(url) {
-  if (!url || typeof window === 'undefined') return;
-  const img = new Image();
-  img.decoding = 'async';
-  img.crossOrigin = 'anonymous';
-  img.src = url;
+function getPreviewEntry() {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has('scenario') && !(import.meta.env.DEV && !resolveSnFromUrl())) return null;
+  const config = { ...buildScenario(resolveScenario()), fcId: resolveFcId() };
+  return { status: 'asin_plus_preview', resolved: { status: config.status, config } };
 }
 
 function ErrorScreen({ title, detail, onRetry }) {
@@ -63,11 +63,13 @@ function ErrorScreen({ title, detail, onRetry }) {
   );
 }
 
-function PendingShell({ ready, children }) {
+function PendingShell({ ready, revealed, destinationRef, children }) {
   return (
     <div
       className="experience-destination"
-      aria-hidden={!ready}
+      ref={destinationRef}
+      inert={!revealed}
+      aria-hidden={!revealed}
       style={ready ? undefined : {
         visibility: 'hidden',
         position: 'fixed',
@@ -85,58 +87,46 @@ function PendingShell({ ready, children }) {
  * Keeps a single logo loading shell until the destination first paint is ready.
  */
 export default function ExperienceRoot() {
+  const [preview] = useState(getPreviewEntry);
   const [offerBrandPreview] = useState(() => import.meta.env.DEV && new URLSearchParams(window.location.search).get('palette') === 'mosh'
     ? buildScenario('mosh-product').brand
     : null);
-  const [phase, setPhase] = useState({ status: 'resolving' });
+  const [phase, setPhase] = useState(preview || { status: 'resolving' });
   const [contentReady, setContentReady] = useState(false);
-  const [loadingBrand, setLoadingBrand] = useState({ logoUrl: null, brandName: null });
-  const [logoSettled, setLogoSettled] = useState(true);
+  const [loadingBrand, setLoadingBrand] = useState(() => openingBrand(preview?.resolved.config.brand || {}));
+  const destinationRef = useRef(null);
   const [loadingOverlayDismissed, setLoadingOverlayDismissed] = useState(false);
   const contentReadyRef = useRef(false);
   const resolveSeqRef = useRef(0);
   const amazonProductPreview = new URLSearchParams(window.location.search).get('view') === 'amazon-product';
 
-  const markContentReady = useCallback(() => {
+  const markContentReady = useCallback((destinationBrand) => {
     if (contentReadyRef.current) return;
+    if (destinationBrand) setLoadingBrand(current => ({ ...openingBrand(destinationBrand), ...current }));
     contentReadyRef.current = true;
     setContentReady(true);
   }, []);
 
-  const markLogoSettled = useCallback(() => {
-    setLogoSettled(true);
+  const dismissOpening = useCallback(() => {
+    setLoadingOverlayDismissed(true);
   }, []);
 
   const resolve = () => {
     const seq = ++resolveSeqRef.current;
     contentReadyRef.current = false;
     setContentReady(false);
-    setLoadingBrand({ logoUrl: null, brandName: null });
-    setLogoSettled(true);
+    setLoadingBrand({});
     setLoadingOverlayDismissed(false);
-
-    const params = new URLSearchParams(window.location.search);
-    if (params.has('scenario')) {
-      setPhase({ status: 'asin_plus_preview' });
-      markContentReady();
-      return;
-    }
 
     const sn = resolveSnFromUrl();
     if (!sn) {
-      // The bare local development URL is the default preview entry point.
-      // Deployed customer links still require a magnet serial number.
-      if (import.meta.env.DEV) {
-        setPhase({ status: 'asin_plus_preview' });
-        markContentReady();
-        return;
-      }
       setPhase({ status: 'unknown', reason: 'missing_sn' });
       markContentReady();
       return;
     }
 
     setPhase({ status: 'resolving', sn });
+    const brandRequest = prefetchMagnetBrandParam(sn);
 
     // DTC is the common destination; warm its JS while experience resolves (stylesheets wait for the result).
     import('./App.jsx').catch(() => {});
@@ -145,23 +135,25 @@ export default function ExperienceRoot() {
       .then(async (result) => {
         if (seq !== resolveSeqRef.current) return;
 
-        // Experience API already loaded magnet_brand_param — apply logo before destination boot.
-        const brand = result.experience === 'dtc' && offerBrandPreview
-          ? { logoUrl: offerBrandPreview.logoImage, brandName: offerBrandPreview.name }
-          : brandFromExperience(result);
-        if (brand.logoUrl) {
-          setLogoSettled(false);
-          setLoadingBrand(brand);
-          preloadLogo(brand.logoUrl);
-        } else {
-          setLoadingBrand(brand);
-          setLogoSettled(true);
-        }
+        const brand = openingBrand(result.experience === 'dtc' && offerBrandPreview ? offerBrandPreview : result);
+        setLoadingBrand(brand);
+
+        // Older router responses contain just the name and logo. Enrich the
+        // palette concurrently, and ignore a different brand on a dual-channel SN.
+        brandRequest.then((param) => {
+          if (!param || seq !== resolveSeqRef.current) return;
+          const theme = openingBrand(param);
+          const sameName = brand.brandName && theme.brandName
+            && brand.brandName.trim().toLowerCase() === theme.brandName.trim().toLowerCase();
+          if ((brand.brandName || brand.logoUrl) && !sameName && (!brand.logoUrl || brand.logoUrl !== theme.logoUrl)) return;
+          setLoadingBrand(current => ({ ...current, ...theme, ...brand }));
+        }).catch(() => {});
 
         if (result.experience === 'asin_plus') {
           const resolvedSn = result.sn || sn;
           const config = await resolveAsinConfiguration(resolvedSn);
           if (seq !== resolveSeqRef.current) return;
+          if (config.brand) setLoadingBrand(current => ({ ...openingBrand(config.brand), ...current }));
           setPhase({
             status: 'asin_plus',
             sn: resolvedSn,
@@ -200,24 +192,18 @@ export default function ExperienceRoot() {
   };
 
   useEffect(() => {
+    if (preview) return;
     resolve();
-  }, []);
+    return () => { resolveSeqRef.current += 1; };
+  }, [preview]);
 
   const hasDestination = phase.status === 'dtc' || phase.status === 'asin_plus';
-  const waitingForDestination = hasDestination && !contentReady;
-
   useEffect(() => {
     if (hasDestination && contentReady) notifyEmbedReady(phase.status);
     else if (phase.status === 'error' || phase.status === 'unknown') {
       trackEmbed('experience_error', { status: phase.status, reason: phase.reason || phase.detail || null });
     }
   }, [hasDestination, contentReady, phase.status, phase.reason, phase.detail]);
-  const waitingForLogo = Boolean(loadingBrand.logoUrl) && !logoSettled;
-  const showLoading = phase.status === 'resolving'
-    || waitingForDestination
-    || waitingForLogo;
-  const keepLoadingOverlay = showLoading || !loadingOverlayDismissed;
-
   if (phase.status === 'error') {
     return (
       <ErrorScreen
@@ -240,50 +226,32 @@ export default function ExperienceRoot() {
 
   return (
     <>
-      {keepLoadingOverlay ? (
+      {!loadingOverlayDismissed && (
         <ExperienceLoading
-          logoUrl={loadingBrand.logoUrl}
-          readyToExit={!showLoading}
-          onLogoReady={markLogoSettled}
-          onLogoError={markLogoSettled}
-          onExitComplete={() => setLoadingOverlayDismissed(true)}
+          key={loadingBrand.logoUrl || loadingBrand.brandName || 'pending'}
+          {...loadingBrand}
+          destinationRef={destinationRef}
+          readyToExit={contentReady}
+          onExitComplete={dismissOpening}
         />
-      ) : null}
-
-      {phase.status === 'asin_plus_preview' ? (
-        <Suspense fallback={<ExperienceLoading />}>
-          <ReorderApp mode="preview" />
-        </Suspense>
-      ) : null}
-
-      {phase.status === 'asin_plus' ? (
-        <PendingShell ready={contentReady}>
-          <Suspense fallback={null}>
+      )}
+      <PendingShell ready={contentReady} revealed={loadingOverlayDismissed} destinationRef={destinationRef}>
+        <Suspense fallback={null}>
+          {(phase.status === 'asin_plus_preview' || phase.status === 'asin_plus') && (
             <ReorderApp
-              mode={amazonProductPreview ? 'preview' : 'live'}
+              mode={preview || amazonProductPreview ? 'preview' : 'live'}
               sn={phase.sn}
               experienceMeta={phase.experience}
               initialResolved={phase.resolved}
               onEntryReady={markContentReady}
               suppressLocalLoading
             />
-          </Suspense>
-        </PendingShell>
-      ) : null}
-
-      {phase.status === 'dtc' && phase.App ? (
-        <PendingShell ready={contentReady}>
-          <DtcApp
-            App={phase.App}
-            offerBrandPreview={offerBrandPreview}
-            onEntryReady={markContentReady}
-          />
-        </PendingShell>
-      ) : null}
+          )}
+          {phase.status === 'dtc' && phase.App && (
+            <phase.App skipEntryGiftIntro onEntryReady={markContentReady} offerBrandPreview={offerBrandPreview} />
+          )}
+        </Suspense>
+      </PendingShell>
     </>
   );
-}
-
-function DtcApp({ App, onEntryReady, offerBrandPreview }) {
-  return <App skipEntryGiftIntro onEntryReady={onEntryReady} offerBrandPreview={offerBrandPreview} />;
 }

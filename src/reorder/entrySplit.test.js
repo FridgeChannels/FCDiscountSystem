@@ -13,14 +13,14 @@ test('T4/T5 live entry uses ExperienceRoot and dedicated experience API', () => 
   assert.match(main, /ExperienceRoot/);
   assert.match(root, /fetchFcExperience/);
   assert.match(root, /brandLogo/);
-  assert.match(root, /waitingForLogo|logoSettled/);
   assert.match(root, /ExperienceLoading/);
   assert.match(root, /resolveFcConfiguration/);
   assert.match(root, /skipEntryGiftIntro/);
   assert.doesNotMatch(root, /\/api\/reorder\/consumer/);
   const loading = readFileSync(resolve('src/ExperienceLoading.jsx'), 'utf8');
   assert.match(loading, /logoUrl/);
-  assert.match(loading, /onLogoReady/);
+  assert.match(loading, /data-entry-logo/);
+  assert.match(loading, /useReducedMotion/);
   assert.doesNotMatch(loading, /logo-cutout|LOADING_LOGO_FALLBACK|fc-logo/);
   assert.match(vite, /\/api\/fc\/experience/);
   assert.match(vite, /\/api\/reorder/);

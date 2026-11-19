@@ -163,7 +163,7 @@ function Icon({ name, size = 24 }) {
 }
 
 function BrandWordmark({ brand }) {
-  if (brand.logoImage) return <img className="brand-logo" src={brand.logoImage} alt={brand.name} />;
+  if (brand.logoImage) return <img data-entry-logo="" className="brand-logo" src={brand.logoImage} alt={brand.name} />;
   return <div className="wordmark">{brand.logoText}</div>;
 }
 
@@ -570,14 +570,14 @@ export default function ReorderApp({
   const navigate = useCallback((name, values = {}) => {
     if (live && !LIVE_VIEWS.has(name) && name !== 'landing') return;
     const params = new URLSearchParams(window.location.search);
-    if (!initialResolved && scenario === 'mosh-product') params.set('scenario', scenario);
+    if (!sn && !live && scenario === 'mosh-product') params.set('scenario', scenario);
     if (name === 'landing') params.delete('view');
     else params.set('view', name);
     ['step', 'coupon'].forEach((key) => values[key] != null ? params.set(key, String(values[key])) : params.delete(key));
     window.history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
     setView(readView(allowedViews));
     window.scrollTo({ top: 0, behavior: 'instant' });
-  }, [allowedViews, live, initialResolved, scenario]);
+  }, [allowedViews, live, sn, scenario]);
   if (resolved.status === 'resolving') {
     if (suppressLocalLoading || typeof onEntryReady === 'function') return null;
     return <LoadingScreen />;

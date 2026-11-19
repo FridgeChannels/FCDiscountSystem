@@ -35,10 +35,15 @@ function takePrefetchedGet(key) {
 
 function prefetchGet(path) {
   const key = `GET ${buildApiUrl(path)}`;
-  if (prefetchedGets.has(key)) return;
+  if (prefetchedGets.has(key)) return prefetchedGets.get(key).promise;
   const promise = request(path);
   promise.catch(() => {});
   prefetchedGets.set(key, { promise, at: Date.now() });
+  return promise;
+}
+
+export function prefetchMagnetBrandParam(touchId) {
+  return prefetchGet(`/api/fc/magnet-brand-param?touchId=${encodeURIComponent(touchId)}`);
 }
 
 /**
@@ -47,7 +52,7 @@ function prefetchGet(path) {
  */
 export function prefetchDtcEntry(touchId, { includeRewardPlan = true } = {}) {
   if (!touchId) return;
-  prefetchGet(`/api/fc/magnet-brand-param?touchId=${encodeURIComponent(touchId)}`);
+  prefetchMagnetBrandParam(touchId);
   prefetchGet(`/api/fc/shopify-status?touchId=${encodeURIComponent(touchId)}&refresh=1`);
   if (includeRewardPlan) prefetchGet(`/api/fc/reward-plan?touchId=${encodeURIComponent(touchId)}`);
   prefetchGet(`/api/fc/player-profile?touchId=${encodeURIComponent(touchId)}`);

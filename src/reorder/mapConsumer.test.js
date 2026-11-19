@@ -40,7 +40,7 @@ test('maps magnet_brand_param payload without asin to product CTA', () => {
   const config = mapConsumerExperienceToConfig({
     state: 'ready',
     source: 'magnet_brand_param',
-    brand: { name: 'PURA JUICE', logoUrl: null },
+    brand: { name: 'PURA JUICE', logoUrl: null, primaryColor: '#024e42', secondaryColor: '#fff2db' },
     product: {
       id: 'magnet-brand-99',
       name: 'PURA Orange Juice',
@@ -72,6 +72,8 @@ test('maps magnet_brand_param payload without asin to product CTA', () => {
   assert.equal(config.products[0].image, 'https://cdn.example.com/product.png');
   assert.equal(config.products[0].amazonUrl, 'https://www.amazon.com/dp/B0FCSEA001?tag=fc');
   assert.equal(config.brand.amazonStoreUrl, 'https://www.amazon.com/stores/PURA');
+  assert.equal(config.brand.colors.primary, '#024e42');
+  assert.equal(config.brand.colors.secondary, '#fff2db');
 });
 
 test('T5 maps multi savings without demo routes in config', () => {

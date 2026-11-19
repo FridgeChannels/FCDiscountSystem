@@ -112,7 +112,11 @@ export function mapConsumerExperienceToConfig(experience, fcId) {
       logoImage: brand.logoUrl || '',
       amazonStoreUrl: experience.fallback?.url || amazon.storefrontUrl || '',
       contactUrl: '',
-      colors: { primary: '#004d3d', accent: '#ff8a00' },
+      colors: {
+        primary: brand.colors?.primary || brand.primaryColor || '#004d3d',
+        secondary: brand.colors?.secondary || brand.secondaryColor,
+        accent: '#ff8a00',
+      },
     },
     currentProductId: mappedProduct.id,
     products: [mappedProduct],

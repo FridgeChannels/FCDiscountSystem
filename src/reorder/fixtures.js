@@ -10,7 +10,7 @@ export const SHIPPING_ADDRESS = [
 export const BASE_BRAND = {
   id: 'pura', name: 'PURA JUICE', logoText: 'PURA JUICE', logoImage: '/reorder/pura-juice-logo.svg',
   amazonStoreUrl: `${AMAZON_BASE}/stores/PURA`, contactUrl: 'mailto:hello@pura.example',
-  colors: { primary: '#004d3d', accent: '#ff8a00' },
+  colors: { primary: '#004d3d', secondary: '#fff2db', accent: '#ff8a00' },
 };
 
 export const BASE_PRODUCTS = [
@@ -85,7 +85,7 @@ export function buildScenario(name = 'landing') {
       ...config,
       batchId: 'mosh-product-preview',
       brand: {
-        id: 'mosh', name: 'mosh', logoText: 'mosh', logoImage: '/reorder/mosh/logo.png',
+        id: 'mosh', name: 'mosh', logoText: 'mosh', logoImage: '/reorder/mosh/logo.png', logoBlendMode: 'multiply',
         storeUrl: 'https://moshlife.com/', amazonStoreUrl: `${AMAZON_BASE}/s?k=MOSH+protein+bars`,
         colors: { primary: '#681cab', secondary: '#fbeaff' },
       },
