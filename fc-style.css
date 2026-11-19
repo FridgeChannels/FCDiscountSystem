@@ -3705,6 +3705,12 @@ body {
 }
 
 .profile-save-btn {
+  display: flex;
+  flex: 0 0 50px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 50px;
   border: none;
   background: linear-gradient(180deg, color-mix(in srgb, var(--profile-primary) 88%, white), var(--profile-primary));
   color: var(--profile-on-primary, #fff);

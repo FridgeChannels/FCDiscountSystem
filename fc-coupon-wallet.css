@@ -3024,8 +3024,22 @@
   font-weight: 800;
   transition: transform .14s ease, box-shadow .14s ease, filter .14s ease;
 }
-.offer-ticket.is-ready .offer-action span { flex: 1; text-align: center; }
+.offer-ticket.is-ready .offer-action { position: relative; }
+.offer-ticket.is-ready .offer-action span {
+  position: absolute;
+  left: 50%;
+  flex: none;
+  transform: translateX(-50%);
+  max-width: calc(100% - 100px);
+  overflow: hidden;
+  white-space: nowrap;
+  text-align: center;
+}
 .offer-ticket.is-ready .offer-action svg {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
   box-sizing: border-box;
   width: 36px;
   height: 36px;
