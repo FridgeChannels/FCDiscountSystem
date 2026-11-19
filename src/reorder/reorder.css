@@ -456,25 +456,6 @@ button:focus-visible, a:focus-visible { outline: 3px solid #006b57; outline-offs
 .marketplace-brand { justify-self: center; display: flex; align-items: center; }
 .marketplace-brand .brand-logo { width: 124px; height: 36px; filter: brightness(0) invert(1); }
 .marketplace-brand .wordmark { color: #fff; font-size: 1rem; letter-spacing: .16em; }
-.marketplace-header--with-account { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
-.marketplace-header--with-account .marketplace-brand { grid-column: 2; }
-.marketplace-header--with-account .brand-logo { width: clamp(88px, 29vw, 124px); }
-.marketplace-account-button {
-  justify-self: end;
-  min-height: 44px;
-  padding: .25rem .5rem;
-  border: 1px solid rgba(255, 209, 152, .42);
-  border-radius: 999px;
-  background: #1e392c;
-  color: #ffe2b8;
-  font-size: .75rem;
-  font-weight: 700;
-  line-height: 1.2;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.marketplace-account-button:hover { background: #2d4a39; }
-.marketplace-account-button:focus-visible { outline-color: #ffd198; }
 .marketplace-product { padding: 1.5rem 1rem 2rem; }
 .marketplace-image { height: 268px; display: grid; place-items: center; background: #fff; }
 .marketplace-image img { width: 82%; height: 82%; object-fit: contain; }
@@ -675,41 +656,6 @@ button:focus-visible, a:focus-visible { outline: 3px solid #006b57; outline-offs
 .marketplace-address__content { display: flex; align-items: flex-start; gap: .625rem; }
 .marketplace-address__content > svg { flex: 0 0 auto; margin-top: .125rem; color: #28733d; }
 .marketplace-address__lines { min-width: 0; display: grid; font-size: .875rem; line-height: 1.45; }
-.marketplace-address-dialog {
-  position: fixed;
-  width: min(calc(100% - 2rem), 390px);
-  max-height: calc(100dvh - 2rem);
-  padding: 1.25rem;
-  border: 1px solid #e6d7be;
-  border-radius: 24px;
-  background: linear-gradient(145deg, #fffdf5, #f0ead9);
-  color: #17251a;
-  box-shadow: 0 20px 48px rgba(0, 0, 0, .3);
-}
-.marketplace-address-dialog::backdrop { background: rgba(7, 24, 17, .64); }
-.marketplace-address-dialog h2 { margin: 0; font-size: 1.25rem; }
-.marketplace-address-dialog p { margin: .5rem 0 .875rem; color: #4e5f51; font-size: .875rem; }
-.marketplace-address-dialog .marketplace-address__lines {
-  color: #174b31;
-}
-.marketplace-address-dialog .marketplace-address__content {
-  padding: .75rem .875rem;
-  border-radius: 12px;
-  background: #e9f0e4;
-  color: #174b31;
-}
-.marketplace-address-dialog__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
-.marketplace-address-dialog__actions button {
-  min-height: 44px;
-  padding: .375rem .875rem;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  font-size: .875rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-.marketplace-address-dialog__actions .marketplace-address-dialog__secondary { border-color: #ccd5c6; background: #fffdf5; color: #174b31; }
-.marketplace-address-dialog__primary { background: #f28b24; color: #102419; }
 .marketplace-product-copy--2p5d .marketplace-details { margin-top: 1rem; padding-top: .75rem; }
 .marketplace-action .voluntary-survey-card {
   min-height: 44px;
@@ -925,7 +871,6 @@ button:focus-visible, a:focus-visible { outline: 3px solid #006b57; outline-offs
 
 /* One poster: backdrop and lettering, raised card, product silhouette, controls. */
 .marketplace-screen--product {
-  --poster-red: #d52b25;
   background: #080808;
   isolation: isolate;
 }
@@ -937,24 +882,12 @@ button:focus-visible, a:focus-visible { outline: 3px solid #006b57; outline-offs
   isolation: isolate;
 }
 .marketplace-screen--product .marketplace-header {
+  grid-template-columns: 1fr;
   padding: max(17px, env(safe-area-inset-top)) 5.4% 0;
   background: transparent;
   pointer-events: none;
 }
-.marketplace-screen--product .marketplace-header button {
-  width: clamp(44px, 13cqw, 58px);
-  aspect-ratio: 1;
-  min-height: 44px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  color: #fff;
-  pointer-events: auto;
-}
-.marketplace-screen--product .marketplace-account-button { background: var(--poster-red); }
-.marketplace-screen--product .marketplace-header button:focus-visible { outline-color: #fff; }
+.marketplace-screen--product .brand-logo { width: clamp(88px, 29vw, 124px); }
 .marketplace-hero__stage {
   position: relative;
   flex: 1 0 auto;
@@ -1126,7 +1059,6 @@ button:focus-visible, a:focus-visible { outline: 3px solid #006b57; outline-offs
 .marketplace-action a:focus-visible { outline-color: #ff5149; }
 
 .marketplace-screen--product[data-brand="mosh"] {
-  --poster-red: var(--brand-primary);
   --mosh-ink: color-mix(in srgb, var(--brand-primary) 24%, #09060a);
 }
 [data-brand="mosh"] .marketplace-hero__stage::before {

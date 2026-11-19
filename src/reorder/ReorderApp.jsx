@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { composeConsumerModules, getCouponCode, isSafeAmazonUrl } from './domain.js';
-import { SHIPPING_ADDRESS } from './fixtures.js';
 import { clearSurveyProgress, emitTelemetry, markClaimCodeCopied, readSurveyProgress, resolveFcConfiguration, resolveFcId, resolveScenario, startReorderSurvey, submitReorderSurvey, writeSurveyProgress, writeSurveyResponse } from './reorderService.js';
 import './reorder.css';
 
 const PREVIEW_VIEWS = new Set(['landing', 'coupon-list', 'survey', 'survey-thanks', 'amazon-product', 'amazon-success']);
 const LIVE_VIEWS = new Set(['landing', 'coupon-list', 'survey', 'survey-thanks']);
 const PRODUCT_PRICE = 59.99;
-const DEMO_ADDRESS_KEY = 'fc-reorder:demo-shipping-address-selected';
 const productVisualCache = new Map();
 
 async function fetchProductImageBlob(imageUrl) {
@@ -161,15 +159,6 @@ function Icon({ name, size = 24 }) {
   if (name === 'ticket') return <svg {...common}><path d="M4 7a2 2 0 0 0 2-2h12a2 2 0 0 0 2 2v3a2 2 0 0 0 0 4v3a2 2 0 0 0-2 2H6a2 2 0 0 0-2-2v-3a2 2 0 0 0 0-4Z" /><path d="M12 8v8" /></svg>;
   if (name === 'store') return <svg {...common}><path d="M4 10h16v10H4Z" /><path d="M3 10 5 4h14l2 6M7 14h4v6H7Z" /></svg>;
   if (name === 'lock') return <svg {...common}><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>;
-  return null;
-}
-
-function MarketplaceIcon({ name, size = 24 }) {
-  const common = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true };
-  if (name === 'menu') return <svg {...common}><path d="M4 7h16M4 12h16M4 17h16" /></svg>;
-  if (name === 'search') return <svg {...common}><circle cx="10.5" cy="10.5" r="5.5" /><path d="m15 15 4.5 4.5" /></svg>;
-  if (name === 'star') return <svg {...common} fill="currentColor" stroke="none"><path d="m12 3 2.5 5.1 5.6.8-4.1 4 1 5.6-5-2.7-5 2.7 1-5.6-4.1-4 5.6-.8Z" /></svg>;
-  if (name === 'bag') return <svg {...common}><path d="M5 8h14l-1.2 12H6.2L5 8Z" /><path d="M9 8V6a3 3 0 0 1 6 0v2M9.5 12h.01M14.5 12h.01" /></svg>;
   return null;
 }
 
@@ -411,17 +400,6 @@ function CouponListScreen({ config, coupons, navigate, live = false }) {
   return <main className="screen coupon-list-screen" aria-label={`Available coupons for ${product.name}, ${product.variant}`}><BrandHeader brand={config.brand} onBack={() => navigate('landing')} /><section className="coupon-list-heading"><h1>Available coupons</h1></section><div className="coupon-list">{coupons.map((coupon) => <CouponListItem key={coupon.id} config={config} coupon={coupon} product={product} live={live} />)}</div><div className="coupon-list-shop"><AmazonCta product={product} brand={config.brand}>Shop on Amazon</AmazonCta><p className="amazon-reassurance"><Icon name="lock" size={18} /> Opens Amazon</p></div></main>;
 }
 
-function DemoShippingAddress() {
-  return (
-    <div className="marketplace-address__content">
-      <Icon name="location" size={21} />
-      <div className="marketplace-address__lines">
-        {SHIPPING_ADDRESS.map((line) => <span key={line}>{line}</span>)}
-      </div>
-    </div>
-  );
-}
-
 function AmazonProductScreen({ config, coupons, modules, navigate, discountMode = 'code' }) {
   const product = config.products.find((item) => item.id === config.currentProductId);
   const useSampleDiscount = new URLSearchParams(window.location.search).get('discountPreview') === 'sample';
@@ -442,23 +420,9 @@ function AmazonProductScreen({ config, coupons, modules, navigate, discountMode 
   const quantity = 1;
   const [couponTermsOpen, setCouponTermsOpen] = useState(false);
   const [couponApplied, setCouponApplied] = useState(false);
-  const addressDialogRef = useRef(null);
-  const [demoAddressSelected, setDemoAddressSelected] = useState(() => {
-    try { return sessionStorage.getItem(DEMO_ADDRESS_KEY) === 'true'; }
-    catch { return false; }
-  });
   const discountEligible = discountMode === 'price' || (discountMode === 'coupon' && couponApplied);
   const unitPrice = discountEligible ? Number((PRODUCT_PRICE * 0.9).toFixed(2)) : PRODUCT_PRICE;
   const orderTotal = (unitPrice * quantity).toFixed(2);
-
-  const updateDemoAddress = (selected) => {
-    setDemoAddressSelected(selected);
-    try {
-      if (selected) sessionStorage.setItem(DEMO_ADDRESS_KEY, 'true');
-      else sessionStorage.removeItem(DEMO_ADDRESS_KEY);
-    } catch { /* The demo still works for the current page. */ }
-    addressDialogRef.current?.close();
-  };
 
   const placeDemoOrder = () => {
     const order = { orderNumber: 'Demo-114-20260909', quantity, productId: product.id, total: orderTotal };
@@ -471,19 +435,8 @@ function AmazonProductScreen({ config, coupons, modules, navigate, discountMode 
       style={{ '--brand-primary': config.brand.colors?.primary || '#004d3d', '--brand-secondary': config.brand.colors?.secondary || '#fff2db' }}
       aria-label={`${product.name} product page demo`}>
       <section className="marketplace-product marketplace-product--2p5d" aria-label="Product information" tabIndex={0}>
-        <header className="marketplace-header marketplace-header--with-account">
+        <header className="marketplace-header">
           <span className="marketplace-brand" aria-label={config.brand.name}><BrandWordmark brand={config.brand} /></span>
-          <button
-            className="marketplace-account-button"
-            type="button"
-            aria-label={demoAddressSelected ? 'Delivery address' : 'Link Amazon'}
-            title={demoAddressSelected ? 'Delivery address' : 'Link Amazon'}
-            aria-haspopup="dialog"
-            aria-controls="marketplace-address-dialog"
-            onClick={() => addressDialogRef.current?.showModal()}
-          >
-            <MarketplaceIcon name="bag" size={22} />
-          </button>
         </header>
         <MarketplaceProductHero product={product} brand={config.brand} />
         <div className="marketplace-product-copy marketplace-product-copy--2p5d">
@@ -511,20 +464,6 @@ function AmazonProductScreen({ config, coupons, modules, navigate, discountMode 
           </footer>
         </div>
       </section>
-      <dialog
-        className="marketplace-address-dialog"
-        id="marketplace-address-dialog"
-        ref={addressDialogRef}
-        aria-labelledby="marketplace-address-dialog-title"
-      >
-        <h2 id="marketplace-address-dialog-title">Delivery address</h2>
-        <p>Choose an address for this order.</p>
-        <DemoShippingAddress />
-        <form className="marketplace-address-dialog__actions" method="dialog">
-          <button className="marketplace-address-dialog__secondary" type="submit">{demoAddressSelected ? 'Close' : 'Cancel'}</button>
-          <button className="marketplace-address-dialog__primary" type="button" onClick={() => updateDemoAddress(!demoAddressSelected)}>{demoAddressSelected ? 'Remove address' : 'Use this address'}</button>
-        </form>
-      </dialog>
     </main>
   );
 }
