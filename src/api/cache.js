@@ -1,4 +1,4 @@
-import { dedupeWalletCoupons } from './walletCoupons.js';
+import { dedupeWalletCoupons, walletIdentityKey } from './walletCoupons.js';
 
 const REWARD_PLAN_CACHE_PREFIX = 'fc.rewardPlan.';
 const TOUCH_ID_COOKIE = 'fc_touch_id';
@@ -122,13 +122,7 @@ function normalizeWalletCoupon(raw) {
   };
 }
 
-/** One wallet row per issuance: unique code wins; pre-issue rows scoped by cycle + campaign. */
-export function walletCouponKey(coupon) {
-  if (coupon?.code) return `code:${coupon.code}`;
-  if (coupon?.cycleId && coupon?.couponId) return `cycle:${coupon.cycleId}:id:${coupon.couponId}`;
-  if (coupon?.couponId) return `id:${coupon.couponId}`;
-  return null;
-}
+export { walletIdentityKey as walletCouponKey };
 
 function mergeWalletCoupon(prev, incoming) {
   if (!incoming) return prev ?? null;
@@ -191,18 +185,18 @@ export function syncWalletForCycle(
   const prevForCycle = existing.filter((c) => c.cycleId === cycleId);
   const byKey = new Map();
   for (const coupon of prevForCycle) {
-    const key = walletCouponKey(coupon);
+    const key = walletIdentityKey(coupon);
     if (key) byKey.set(key, coupon);
   }
   for (const coupon of incoming) {
-    const key = walletCouponKey(coupon);
+    const key = walletIdentityKey(coupon);
     if (!key) continue;
     byKey.set(key, mergeWalletCoupon(byKey.get(key), coupon));
   }
   const current = dedupeWalletCoupons(Array.from(byKey.values()));
   const otherCycles = pruneOtherCycles
     ? []
-    : existing.filter((c) => c.cycleId && c.cycleId !== cycleId);
+    : existing.filter((c) => c.cycleId !== cycleId && !byKey.has(walletIdentityKey(c)));
   const wallet = [...otherCycles, ...current];
   writeCouponWallet(touchId, wallet);
   return wallet;

@@ -129,7 +129,7 @@ function getPlanDeduped(touchId, { timeoutMs = ENGINE_REWARD_PLAN_TIMEOUT_MS, sk
   const promise = callEngine('/reward-plan/generate', body, timeoutMs)
     .then((data) => normalizePlanForPackFlow(data))
     .finally(() => {
-      planInflight.delete(inflightKey);
+      if (planInflight.get(inflightKey) === promise) planInflight.delete(inflightKey);
     });
   planInflight.set(inflightKey, promise);
   return promise;
@@ -1001,9 +1001,11 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       try {
-        const data = await callEngine('/cycle/sample-reset', { touchId });
+        const data = await callEngine('/cycle/sample-reset', { touchId }, ENGINE_REWARD_PLAN_TIMEOUT_MS);
+        planInflight.delete(`${touchId}:tap`);
+        planInflight.delete(`${touchId}:skipTap`);
         emitActionEvent('succeeded', 'cycle_sample_reset', { touchId }, { requestId });
-        sendJson(res, 200, data);
+        sendJson(res, 200, normalizePlanForPackFlow(data));
       } catch (err) {
         const message = err instanceof Error ? err.message : 'sample reset failed';
         emitActionFailed('cycle_sample_reset', { touchId }, {

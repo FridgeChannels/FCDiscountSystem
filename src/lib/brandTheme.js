@@ -139,6 +139,40 @@ function darken(hex, ratio = 0.12) {
   return `#${hh(rgb.r)}${hh(rgb.g)}${hh(rgb.b)}`;
 }
 
+function mixRgb(a, b, amount) {
+  const mix = (x, y) => Math.round(x * (1 - amount) + y * amount);
+  return { r: mix(a.r, b.r), g: mix(a.g, b.g), b: mix(a.b, b.b) };
+}
+
+function rgbToHex({ r, g, b }) {
+  return `#${[r, g, b].map(value => value.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function contrastRatio(a, b) {
+  const [lighter, darker] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/** Create a locked coupon surface that stays visibly distinct from its page. */
+function lockedCouponSurface(background, accent) {
+  const page = background || { r: 246, g: 241, b: 223 };
+  const tint = accent || { r: 49, g: 93, b: 76 };
+  let surface = mixRgb(page, tint, 0.28);
+
+  if (contrastRatio(page, surface) < 1.22) {
+    const neutral = relativeLuminance(page) > 0.42
+      ? { r: 0, g: 0, b: 0 }
+      : { r: 255, g: 255, b: 255 };
+    for (let amount = 0.12; amount <= 0.6; amount += 0.04) {
+      const candidate = mixRgb(surface, neutral, amount);
+      surface = candidate;
+      if (contrastRatio(page, surface) >= 1.22) break;
+    }
+  }
+
+  return rgbToHex(surface);
+}
+
 /** The coupon face needs dark ink and pale paper even when a brand supplies two light colors. */
 export function offerPaletteStyle(primary, secondary) {
   const colors = [primary, secondary].filter(color => hexToRgb(color));
@@ -147,6 +181,8 @@ export function offerPaletteStyle(primary, secondary) {
   const paper = colors[1] || '#f6f1df';
   const primaryRgb = hexToRgb(primary);
   const background = hexToRgb(secondary);
+  const pageSurface = background || hexToRgb(paper);
+  const lockedBackground = lockedCouponSurface(pageSurface, primaryRgb || hexToRgb(ink));
   const luminance = background ? relativeLuminance(background) : 1;
   return {
     ...(primaryRgb && {
@@ -154,6 +190,8 @@ export function offerPaletteStyle(primary, secondary) {
       '--offer-on-primary': relativeLuminance(primaryRgb) > 0.179 ? '#0d0911' : '#fff',
     }),
     ...(background && { '--offer-background': '#' + secondary.trim().replace(/^#/, '') }),
+    '--offer-locked-background': lockedBackground,
+    '--offer-on-locked-background': readableTextOn(lockedBackground),
     ...(luminance < 0.5 && { '--offer-on-background': luminance <= 0.18 ? '#fff' : '#101010' }),
     '--offer-ink': relativeLuminance(hexToRgb(ink)) > 0.17 ? darken(ink, 0.48) : ink,
     '--offer-paper': relativeLuminance(hexToRgb(paper)) > 0.77 ? paper : `color-mix(in srgb, ${paper} 15%, white)`,

@@ -72,6 +72,8 @@ export function sortWalletCouponsByAcquiredAt(coupons = []) {
     const ta = new Date(a?.addedAt ?? 0).getTime();
     const tb = new Date(b?.addedAt ?? 0).getTime();
     if (tb !== ta) return tb - ta;
+    // Plan snapshots may timestamp the welcome and subsequently earned reward together.
+    if (a.source !== b.source) return Number(b.source === 'target') - Number(a.source === 'target');
     return String(b?.code ?? '').localeCompare(String(a?.code ?? ''));
   });
 }
@@ -110,14 +112,25 @@ export function findIssuedPackCoupon(wallet, pack, coupon, cycleId) {
     if (!entry.code) return false;
     if (entry.cycleId && cycleId && entry.cycleId !== cycleId) return false;
     if (!entry.cycleId && entry.packId && entry.packId !== pack.id) return false;
-    if (coupon.code && entry.code === coupon.code) return true;
-    return id != null && entry.couponId != null && String(entry.couponId) === String(id);
+    if (id != null && entry.couponId != null) return String(entry.couponId) === String(id);
+    return Boolean(coupon.code && entry.code === coupon.code);
   });
 }
 
 /** One shelf entry per offer. A used or expired issuance also consumes its plan slot. */
-export function buildCouponOffers(wallet, { startPack, targetPack, cycleId, targetReached, ended }) {
-  const ready = selectCompletedAvailableCoupons(wallet).map(coupon => ({
+export function buildCouponOffers(wallet, { startPack, targetPack, cycleId, targetReached, ended, recentCoupons = [] }) {
+  const unlockOrder = new Map(recentCoupons.filter(coupon => !coupon.cycleId || coupon.cycleId === cycleId)
+    .map((coupon, index) => [walletIdentityKey(coupon), index]));
+  const available = selectCompletedAvailableCoupons(wallet);
+  function shelfOrder(coupon) {
+    const recent = unlockOrder.get(walletIdentityKey(coupon));
+    if (recent !== undefined) return recent;
+    // The current round's earned pack follows its welcome gift even when sync times are missing.
+    const currentTarget = cycleId && coupon.cycleId === cycleId && coupon.source === 'target';
+    return currentTarget ? unlockOrder.size : unlockOrder.size + 1;
+  }
+  available.sort((a, b) => shelfOrder(a) - shelfOrder(b));
+  const ready = available.map(coupon => ({
     key: walletIdentityKey(coupon), coupon, state: 'ready',
   }));
   const remaining = [];

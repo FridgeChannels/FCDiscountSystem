@@ -577,7 +577,8 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
   const zoomAfterCloseRef = useRef(null);
   const settlementCouponRef = useRef(null);
   const autoIssuedPackRef = useRef(null);
-  const pendingPackUnlockAfterSettlementRef = useRef(false);
+  const walletRequestRef = useRef(0);
+  const restartedCycleRef = useRef(null);
   const inlineErrorTimerRef = useRef(null);
   const unlockedPreviewShownRef = useRef(false);
   const shopifyPendingRef = useRef(null);
@@ -600,6 +601,13 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
   const rewardPlanIdRef = useRef(rewardPlanId);
   const [brand, setBrand] = useState({ name: null, logoUrl: null, primaryColor: null, shopUrl: '#' });
   const [isSampleMagnet, setIsSampleMagnet] = useState(false);
+  const [demoRestartStatus, setDemoRestartStatus] = useState('idle');
+  const replayingDemo = demoRestartStatus === 'opening';
+  useEffect(() => {
+    if (demoRestartStatus !== 'started') return;
+    const timer = window.setTimeout(() => setDemoRestartStatus('idle'), 3600);
+    return () => window.clearTimeout(timer);
+  }, [demoRestartStatus]);
   const [challenges, setChallenges] = useState(FALLBACK_CHALLENGES);
   const [gameStart, setGameStart] = useState(null);
   const [gameModalTitle, setGameModalTitle] = useState('Play & Earn');
@@ -610,7 +618,9 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
   const [testSurveyChallenge, setTestSurveyChallenge] = useState(null);
   const [surveyLoading, setSurveyLoading] = useState(false);
   const [surveySubmitting, setSurveySubmitting] = useState(false);
-  const [surveyRewardEarned, setSurveyRewardEarned] = useState(0);
+  const [surveyError, setSurveyError] = useState('');
+  const surveyRequestRef = useRef(0);
+  const surveyBusyRef = useRef(false);
   const [welcomeStep, setWelcomeStep] = useState(3);
   const welcomeStepRef = useRef(welcomeStep);
   const [welcomeCoupon, setWelcomeCoupon] = useState(null);
@@ -661,11 +671,11 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
   const [walletNavDirection, setWalletNavDirection] = useState('forward');
   const [couponWallet, setCouponWallet] = useState([]);
   const [walletCopiedCode, setWalletCopiedCode] = useState(null);
-  // 礼包领取结果:null | { pack, coupons }
   const [giftReveal, setGiftReveal] = useState(null);
-  // target 礼包解锁弹窗已确认(Continue / View my coupons)的 cycleId；仅对当前周期生效。
+  const chosenGoalIdRef = useRef(null);
+  // Acknowledgement applies only to the round that issued these coupons.
   const [targetUnlockAckCycleId, setTargetUnlockAckCycleId] = useState(null);
-  // 从解锁弹窗进券包时暂存已签发券,避免 wallet state 尚未刷新导致空列表。
+  // Keep the confirmed unlock visible and first while the wallet catches up.
   const [walletRevealCoupons, setWalletRevealCoupons] = useState([]);
   const [coinGainSignal, setCoinGainSignal] = useState(0);
   const [lastGainAmount, setLastGainAmount] = useState(0);
@@ -693,8 +703,10 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
 
   const refreshCouponWallet = useCallback(async () => {
     if (!touchId || devScene) return;
+    const request = ++walletRequestRef.current;
     try {
-      const payload = await fetchCouponWallet(touchId);
+      const payload = await fetchCouponWallet(touchId, { cycleScope: restartedCycleRef.current });
+      if (request !== walletRequestRef.current) return;
       const rows = Array.isArray(payload) ? payload : (payload?.coupons ?? []);
       const entries = dedupeWalletCoupons(mapApiWalletToLocal(rows));
       writeCouponWallet(touchId, entries);
@@ -706,6 +718,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
 
   useEffect(() => {
     void refreshCouponWallet();
+    return () => { walletRequestRef.current += 1; };
   }, [refreshCouponWallet]);
 
   const displayProfile = useMemo(() => {
@@ -961,7 +974,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
 
   // 同步礼盒视频状态:首登和回访礼盒都直接播放同一段开场动画。
   useEffect(() => {
-    if (skipEntryGiftIntro) {
+    if (skipEntryGiftIntro && !replayingDemo) {
       setIsWelcomeVideoActive(false);
       return;
     }
@@ -974,7 +987,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
       // 如果是非渐淡退出的切换，立即关闭视频
       setIsWelcomeVideoActive((prev) => (welcomeVideoFading ? prev : false));
     }
-  }, [welcomeStep, introActive, welcomeVideoFading, giftWaitingPlan, skipEntryGiftIntro]);
+  }, [welcomeStep, introActive, welcomeVideoFading, giftWaitingPlan, skipEntryGiftIntro, replayingDemo]);
 
   // Freeze gift-video layer height while playing to avoid Android dvh-driven stretching.
   useEffect(() => {
@@ -1186,7 +1199,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [couponWallet, touchId, tick]);
 
-  const upsertIssuedPackCoupons = useCallback((pack, coupons, { reveal = false } = {}) => {
+  const upsertIssuedPackCoupons = useCallback((pack, coupons) => {
     if (!pack?.id || !Array.isArray(coupons) || !coupons.length) return [];
     const fallbackExpiresAt = countdownSeconds > 0
       ? new Date(Date.now() + countdownSeconds * 1000).toISOString()
@@ -1214,10 +1227,6 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
       }));
     if (!entries.length) return [];
     setCouponWallet(upsertCouponsToWallet(touchId, entries));
-    if (reveal) {
-      const revealCoupons = selectPackRevealCoupons(pack, entries, { requireCode: true });
-      if (revealCoupons.length) setGiftReveal({ pack, coupons: revealCoupons });
-    }
     void refreshCouponWallet();
     return entries;
   }, [activePlan?.cycleId, countdownSeconds, refreshCouponWallet, rewardPlanId, touchId]);
@@ -1720,8 +1729,10 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     }
 
     if (!background) setPlanLoading(true);
+    const cycleScope = restartedCycleRef.current;
     try {
-      const plan = await fetchRewardPlan(touchId, { refresh, skipTapReward });
+      const plan = await fetchRewardPlan(touchId, { refresh, skipTapReward, cycleScope });
+      if (cycleScope !== restartedCycleRef.current) return;
       clearGameSessionCache();
       writeCachedRewardPlan(touchId, plan);
       if (newChallengeRenewRef.current || renewFlowActiveRef.current) {
@@ -2040,6 +2051,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     clearCachedMagnetBrandParam(touchId);
 
     const cached = readCachedRewardPlan(touchId);
+    const cycleScope = restartedCycleRef.current;
 
     (async () => {
       try {
@@ -2047,7 +2059,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
         const shopifyStatusPromise = syncShopifyBindingStatus(true);
         // Plan generation does not read the Shopify binding cache; only the OAuth-return path
         // must wait for the refreshed status before deciding how to load the plan.
-        const earlyPlanPromise = shopifyOAuthReturn ? null : fetchRewardPlan(touchId, { refresh: false });
+        const earlyPlanPromise = shopifyOAuthReturn ? null : fetchRewardPlan(touchId, { cycleScope });
         earlyPlanPromise?.catch(() => {});
         void syncPlayerProfile();
         void syncLeaderboard();
@@ -2069,8 +2081,8 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
           clearCachedRewardPlan(touchId);
           setPlanLoading(true);
           setPlanError(null);
-          const plan = await fetchRewardPlan(touchId, { refresh: true });
-          if (cancelled) return;
+          const plan = await fetchRewardPlan(touchId, { refresh: true, cycleScope });
+          if (cancelled || cycleScope !== restartedCycleRef.current) return;
           clearGameSessionCache();
           writeCachedRewardPlan(touchId, plan);
           syncFromPlan(plan);
@@ -2079,8 +2091,8 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
 
         if (!cached || shopifyOAuthReturn) setPlanLoading(true);
         setPlanError(null);
-        const plan = await (earlyPlanPromise ?? fetchRewardPlan(touchId, { refresh: shopifyOAuthReturn }));
-        if (!cancelled) {
+        const plan = await (earlyPlanPromise ?? fetchRewardPlan(touchId, { refresh: shopifyOAuthReturn, cycleScope }));
+        if (!cancelled && cycleScope === restartedCycleRef.current) {
           clearGameSessionCache();
           const previousCycleId = cached?.cycleId ?? cached?.rewardPlanId ?? null;
           writeCachedRewardPlan(touchId, plan);
@@ -2229,6 +2241,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     [currentPack, targetPack],
   );
 
+  const latestUnlock = giftReveal?.coupons ?? walletRevealCoupons;
   const enrichedCouponWallet = useMemo(() => {
     const completedPreviewWallet = devScene === 'completed'
       ? [
@@ -2243,17 +2256,15 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
           ...MOCK_EXPIRED_COUPONS,
         ]
       : [];
-    const revealBoost = walletRevealCoupons.filter((coupon) => coupon?.code);
-    const walletByKey = new Map(
-      dedupeWalletCoupons([...couponWallet, ...completedPreviewWallet, ...devMockCoupons, ...revealBoost])
-        .filter((coupon) => coupon?.code)
-        .map((coupon) => {
-          const key = walletCouponKey(coupon) ?? coupon.code;
-          return [key, coupon];
-        }),
-    );
-    return enrichWalletCoupons([...walletByKey.values()], packCouponsForDisplay);
-  }, [couponWallet, currentPack, targetPack, devScene, packCouponsForDisplay, walletRevealCoupons]);
+    const recent = latestUnlock.filter(coupon => coupon.code && (!coupon.cycleId || coupon.cycleId === cycleId));
+    const wallet = dedupeWalletCoupons([...recent, ...couponWallet, ...completedPreviewWallet, ...devMockCoupons]);
+    // The plan can confirm issuance before the wallet endpoint includes the row.
+    const confirmed = devScene ? [] : buildWalletEntriesFromPacks({
+      rewardPlanId, cycleId, startPack: currentPack, targetPack,
+      expiresAt: activePlan?.cycleExpiresAt,
+    }).filter(coupon => !findIssuedPackCoupon(wallet, coupon.source === 'target' ? targetPack : currentPack, coupon, cycleId));
+    return enrichWalletCoupons([...wallet, ...confirmed], packCouponsForDisplay);
+  }, [couponWallet, currentPack, targetPack, devScene, packCouponsForDisplay, latestUnlock, cycleId, rewardPlanId, activePlan?.cycleExpiresAt]);
 
   const walletArchiveCoupons = useMemo(
     () => selectWalletArchiveCoupons(enrichedCouponWallet),
@@ -2263,7 +2274,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
   const targetProgressPct = targetThreshold ? Math.min((points / targetThreshold) * 100, 100) : 100;
   const targetDelta = targetThreshold ? Math.max(targetThreshold - points, 0) : 0;
   const singleCouponOnlyMode = useMemo(
-    () => !devScene && isSingleCouponReward(derivedPacks.startPack, derivedPacks.targetPack),
+    () => !devScene && !(derivedPacks.targetPack?.threshold > 0) && isSingleCouponReward(derivedPacks.startPack, derivedPacks.targetPack),
     [derivedPacks.startPack, derivedPacks.targetPack, devScene],
   );
   const packTargetMode = Boolean(
@@ -2311,12 +2322,11 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
   // Keep the welcome ritual only until welcome is completed — do not keep it open
   // solely because wallet packId sync lagged (that made Get More OFF look dead).
   const initialPackPending = welcomePackPending;
-  const showWelcomeRitual = !skipEntryGiftIntro
+  const showWelcomeRitual = (replayingDemo ? welcomeStep === 1 : !skipEntryGiftIntro && initialPackPending)
     && !introActive
     && !returnIntroGate
     && !renewGiftIntro
-    && !planBlocksHome
-    && initialPackPending;
+    && !planBlocksHome;
   const targetUnlockAcknowledged = Boolean(rewardPlanId) && targetUnlockAckCycleId === rewardPlanId;
   const allRewardsClaimed = singleCouponOnlyMode
     ? solePackClaimed
@@ -2333,7 +2343,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
   const isExpired = countdownSeconds <= 0;
   const offers = buildCouponOffers(enrichedCouponWallet, {
     startPack: currentPack, targetPack, cycleId, targetReached: targetUnlocked || targetUnlockAcknowledged,
-    ended: isExpired,
+    ended: isExpired, recentCoupons: latestUnlock,
   });
   const showRenewWelcomeLoading = renewFlowActive && !introActive && welcomeStep < 1;
 
@@ -2371,13 +2381,6 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     setCouponWallet(upsertCouponsToWallet(touchId, entries));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allRewardsClaimed, renewFlowActive, devScene, activePlan?.cycleId, rewardPlanId, derivedPacks.startPack, derivedPacks.targetPack, initialPackIssued, targetPackIssued]);
-
-  useEffect(() => {
-    if (!targetPack?.id || !walletRevealCoupons.length) return;
-    if (walletHasPack(couponWallet, targetPack.id)) {
-      setWalletRevealCoupons([]);
-    }
-  }, [couponWallet, targetPack?.id, walletRevealCoupons.length]);
 
   useEffect(() => {
     if (devScene !== 'unlocked') {
@@ -2589,52 +2592,68 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     setIntroActive(true);               // 重新播放开场礼盒
   }
 
-  // 「新挑战开启页」CTA 或演示隐藏开关：先播礼盒,并行 renew → 欢迎流(如需) → 首页 → +5
-  function beginGiftIntroChallengeFlow({
-    promise,
-    reason,
-    onFailTitle,
-    onFailRestoreChallenge = true,
-  }) {
+  function beginGiftIntroChallengeFlow(reason) {
     if (renewFlowActiveRef.current || newChallengeRenewRef.current) return;
 
-    const tracked = promise
+    const isDemoRestart = reason === 'sample-reset';
+    const request = isDemoRestart ? sampleResetCycle(touchId) : renewCycle(touchId, reason);
+    if (isDemoRestart) setDemoRestartStatus('starting');
+    else enterNewRound();
+
+    const tracked = request
       .then((plan) => {
+        if (isDemoRestart) {
+          const newCycle = plan?.cycleId ?? plan?.rewardPlanId;
+          if (!newCycle) throw new Error('Missing demo cycle in reset response');
+          if (newCycle === (activePlan?.cycleId ?? rewardPlanId)) throw new Error('Reset returned the previous demo cycle');
+          restartedCycleRef.current = newCycle;
+          walletRequestRef.current += 1;
+          setDemoRestartStatus('opening');
+          enterNewRound({ replayGift: true });
+        }
         clearCachedRewardPlan(touchId);
         writeCachedRewardPlan(touchId, plan);
         renewPlanRef.current = plan;
         setRenewPlanReady(true);
-        if (giftEndedPendingRenewRef.current || skipEntryGiftIntroRef.current) {
+        if (giftEndedPendingRenewRef.current || (skipEntryGiftIntroRef.current && !isDemoRestart)) {
           void applyRenewPlanAfterGiftRef.current?.();
         }
         return plan;
       })
       .catch((err) => {
         dbgError('[FCDBG][App] challenge intro flow failed', { reason, err });
-        giftEndedPendingRenewRef.current = false;
         newChallengeRenewRef.current = null;
+        if (isDemoRestart) {
+          setDemoRestartStatus('error');
+          if (!isSampleMagnet || (!completedMode && !newChallenge)) {
+            showInlineError('Couldn’t start a new demo.', 'Try again.');
+          }
+          return null;
+        }
+        giftEndedPendingRenewRef.current = false;
         renewPlanRef.current = null;
         renewFlowActiveRef.current = false;
         setRenewFlowActive(false);
         setRenewPlanReady(false);
         setRenewIssueAutoAdvance(false);
         setRenewGiftIntro(false);
-        if (onFailRestoreChallenge) {
-          setNewChallenge({ reason: 'expired', coupon: newChallenge?.coupon ?? null });
-        }
+        setNewChallenge({ reason: 'expired', coupon: newChallenge?.coupon ?? null });
         setIntroActive(false);
         setReturnIntroGate(false);
         // Recover plan after wiping local state for the intro shell.
         void reloadPlan({ refresh: true, background: false }).catch(() => {});
         showNotification(
-          onFailTitle,
+          'Could not start new challenge',
           formatFcError(err, 'Please check your connection and try again.'),
           '⚠️',
         );
-        throw err;
+        return null;
       });
 
     newChallengeRenewRef.current = { promise: tracked, reason };
+  }
+
+  function enterNewRound({ replayGift = false } = {}) {
     renewPlanRef.current = null;
     renewFlowActiveRef.current = true;
     setRenewFlowActive(true);
@@ -2642,6 +2661,9 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     setRenewIssueAutoAdvance(false);
     autoIssuedPackRef.current = null;
     autoClaimInitialRef.current = null;
+    chosenGoalIdRef.current = null;
+    lastSettlementBalanceRef.current = null;
+    clearGameSessionCache();
     renewPlanAppliedRef.current = false;
     giftEndedPendingRenewRef.current = false;
 
@@ -2675,7 +2697,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     setGiftWaitingPlan(false);
 
     // Gift-drop intro cancelled globally: apply renew plan as soon as it returns.
-    if (skipEntryGiftIntroRef.current) {
+    if (skipEntryGiftIntroRef.current && !replayGift) {
       setPoints(0);
       setWelcomeStep(3);
       setRenewGiftIntro(false);
@@ -2687,18 +2709,14 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
 
     setWelcomeStep(0);
     setPoints(0);
+    if (replayGift) setIsWelcomeVideoActive(true);
     setRenewGiftIntro(true);
     setReturnIntroGate(true);
     setIntroActive(true);
   }
 
   function startRenewFlow(reason = 'expired') {
-    beginGiftIntroChallengeFlow({
-      promise: renewCycle(touchId, reason),
-      reason,
-      onFailTitle: 'Could not start new challenge',
-      onFailRestoreChallenge: true,
-    });
+    beginGiftIntroChallengeFlow(reason);
   }
 
   startRenewFlowRef.current = startRenewFlow;
@@ -2707,22 +2725,11 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     startRenewFlow('expired');
   }
 
-  /** Sample magnet: clear wallet + first-round plan (same gift/welcome shell as renew). */
-  function startSampleResetFlow() {
-    beginGiftIntroChallengeFlow({
-      promise: sampleResetCycle(touchId),
-      reason: 'sample-reset',
-      onFailTitle: 'Could not reset magnet',
-      // Stay on completed/home if reset fails — do not force settlement overlay.
-      onFailRestoreChallenge: false,
-    });
-  }
-
   function handleSampleReset() {
-    startSampleResetFlow();
+    beginGiftIntroChallengeFlow('sample-reset');
   }
 
-  startSampleResetFlowRef.current = startSampleResetFlow;
+  startSampleResetFlowRef.current = handleSampleReset;
 
   const logoSecretEnabled = isDemoForceRenewEnabled() || isSampleMagnet;
 
@@ -2871,10 +2878,12 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     if (!renewFlowActiveRef.current) return;
 
     const pending = newChallengeRenewRef.current;
+    const replayGift = pending?.reason === 'sample-reset';
     let plan = renewPlanRef.current;
     if (!plan && pending) {
       try {
         plan = await pending.promise;
+        if (!plan) return;
         renewPlanRef.current = plan;
         setRenewPlanReady(true);
       } catch {
@@ -2934,7 +2943,8 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
       setIntroActive(false);
       setRenewGiftIntro(false);
       // Gift-drop / welcome ritual cancelled: go straight home after renew.
-      if (skipEntryGiftIntroRef.current) {
+      if (skipEntryGiftIntroRef.current && (!replayGift || !vm.startPack?.coupons?.length)) {
+        if (replayGift) setDemoRestartStatus('started');
         writeWelcomeCompleted(touchId);
         setWelcomeStep(3);
         finishRenewFlowToHome(vm);
@@ -2944,6 +2954,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
       return;
     }
 
+    if (replayGift) setDemoRestartStatus('started');
     writeWelcomeCompleted(touchId);
     setRenewIssueAutoAdvance(false);
     setWelcomeStep(3);
@@ -3884,9 +3895,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     }
   }
 
-  // 领取 target 礼包:签发券码 → 把礼包内的券写进券包 → 弹"获得 N 张券"小结算。
-  // 注:当前后端为单券签发,整包发码需后端支持;此处已按"整包写入"组织,后端就绪后自动生效。
-  async function issueTargetPack({ optimisticReveal = true } = {}) {
+  async function issueTargetPack() {
     if (redeemingCoupon) return false;
     if (devScene && targetPack) {
       claimMockPack(targetPack);
@@ -3894,30 +3903,13 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     }
     if (!targetPack?.coupons?.length) return false;
     if (targetClaimed) return true;
-    const alreadyIssued = targetPack.coupons.filter((coupon) => coupon?.code);
-    if (alreadyIssued.length === targetPack.coupons.length) {
-      const entries = upsertIssuedPackCoupons(targetPack, alreadyIssued, { reveal: false });
-      const revealCoupons = selectPackRevealCoupons(targetPack, entries, { requireCode: true });
-      if (optimisticReveal && revealCoupons.length) {
-        setGiftReveal({ pack: targetPack, coupons: revealCoupons });
-      }
-      return true;
-    }
-    if (!rewardPlanId) {
-      if (!optimisticReveal) {
-        showNotification('Rewards not ready', 'Please wait a moment and try again.', '⚠️');
-      }
-      return false;
-    }
+    if (!rewardPlanId) return false;
 
-    if (optimisticReveal) {
-      // 仅展示礼包内已出码券，避免无 code 占位券与后续回填重复出现。
-      const codedPreview = selectPackRevealCoupons(targetPack, targetPack.coupons, { requireCode: true });
-      if (codedPreview.length) {
-        setGiftReveal({ pack: targetPack, coupons: codedPreview });
-      }
-    }
-
+    const unissued = targetPack.coupons.filter(coupon => !findIssuedPackCoupon(couponWallet, targetPack, coupon, cycleId));
+    const pendingCoupon = unissued.find(coupon => (coupon.couponId ?? coupon.campaignId) === chosenGoalIdRef.current) ?? unissued[0];
+    if (!pendingCoupon) return true;
+    const reveal = { pack: targetPack, pendingCoupon, coupons: [] };
+    setGiftReveal(reveal);
     setRedeemingCoupon(true);
     try {
       const issued = await claimTargetRewardPack(touchId, rewardPlanId);
@@ -3926,21 +3918,19 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
           .filter((coupon) => coupon?.couponId)
           .map((coupon) => [String(coupon.couponId), coupon]),
       );
-      const mergedCoupons = targetPack.coupons.map((coupon) =>
-        mergeIssuedCoupon(
-          coupon,
-          issuedById.get(String(coupon.couponId ?? coupon.campaignId)),
-          targetPack?.expiresAt,
-        ))
-        .filter(Boolean);
-      if (!mergedCoupons.length || !mergedCoupons.every((coupon) => coupon?.code)) {
-        throw new Error('Target reward pack response was incomplete');
-      }
-      const entries = upsertIssuedPackCoupons(targetPack, mergedCoupons, { reveal: false });
-      const revealCoupons = selectPackRevealCoupons(targetPack, entries, { requireCode: true });
-      if (revealCoupons.length) {
-        setGiftReveal({ pack: targetPack, coupons: revealCoupons });
-      }
+      const mergedCoupons = targetPack.coupons.map(coupon => {
+        const confirmation = issuedById.get(String(coupon.couponId ?? coupon.campaignId));
+        if (!confirmation?.couponCode && !confirmation?.code) {
+          throw new Error('Target reward pack response was incomplete');
+        }
+        return mergeIssuedCoupon(coupon, confirmation, targetPack.expiresAt);
+      });
+      const entries = upsertIssuedPackCoupons(targetPack, mergedCoupons);
+      const coupons = [pendingCoupon, ...unissued.filter(coupon => coupon !== pendingCoupon)]
+        .map(coupon => findIssuedPackCoupon(entries, targetPack, coupon, cycleId));
+      setWalletRevealCoupons(coupons);
+      // The user can already be back on the shelf when the codes arrive.
+      setGiftReveal(active => active === reveal ? { pack: targetPack, coupons } : active);
       clearCachedRewardPlan(touchId);
       void reloadPlan({ background: true, refresh: true }).catch((err) => {
         dbgError('[FCDBG][App] reload after target reward claim failed', err);
@@ -3951,7 +3941,6 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
       return false;
     } finally {
       setRedeemingCoupon(false);
-      pendingPackUnlockAfterSettlementRef.current = false;
     }
   }
 
@@ -3963,7 +3952,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
         showInlineError('Could not refresh coupons', 'Please try again.');
       });
     } else if (packType === 'target' && !singleCouponOnlyMode) {
-      void issueTargetPack();
+      beginTargetPackUnlock();
     } else {
       void autoClaimInitialPack();
     }
@@ -4013,26 +4002,54 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
   useEffect(() => {
     if (devScene === 'completed' || devScene === 'home' || singleCouponOnlyMode) return;
     if (renewFlowActive || renewGiftIntro) return;
-    if (pendingPackUnlockAfterSettlementRef.current) return;
-    if (!currentPackClaimed || !targetUnlocked || targetClaimed || !targetPack?.id) return;
-    if (!devScene && isTargetPackIssued(activePlan, derivedPacks.targetPack)) return;
-    if (autoIssuedPackRef.current === targetPack.id) return;
-    autoIssuedPackRef.current = targetPack.id;
-    void issueTargetPack().then((issued) => {
-      if (!issued) autoIssuedPackRef.current = null;
-    });
+    if ((currentPack && !currentPackClaimed) || !targetUnlocked || targetClaimed || !targetPack?.id) return;
+    beginTargetPackUnlock();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPackClaimed, targetUnlocked, targetClaimed, targetPack?.id, devScene, singleCouponOnlyMode, renewFlowActive, renewGiftIntro]);
 
-  function dismissTargetGiftReveal({ openWallet = false } = {}) {
-    const coded = (giftReveal?.coupons ?? []).filter((coupon) => coupon?.code);
-    if (rewardPlanId) setTargetUnlockAckCycleId(rewardPlanId);
-    setGiftReveal(null);
-    if (coded.length) setWalletRevealCoupons(coded);
-    if (openWallet) {
-      setWalletNavDirection('forward');
-      setWalletOpen(true);
+  const returnToOffers = useCallback(() => {
+    if (!giftReveal) return;
+    chosenGoalIdRef.current = null;
+    if (giftReveal.coupons.length) {
+      if (rewardPlanId) setTargetUnlockAckCycleId(rewardPlanId);
+      setWalletRevealCoupons(giftReveal.coupons);
     }
+    setGiftReveal(null);
+    setWalletOpen(false);
+  }, [giftReveal, rewardPlanId]);
+
+  // The unlock page belongs to this issuance. A fresh visit opens the offers list.
+  useEffect(() => {
+    const unlockHash = '#coupon-unlocked';
+    function syncNavigation() {
+      const url = new URL(window.location.href);
+      if (giftReveal && url.hash !== unlockHash) {
+        returnToOffers();
+      } else if (!giftReveal && url.hash === unlockHash) {
+        url.hash = '';
+        window.history.replaceState(window.history.state, '', url);
+      }
+    }
+    if (giftReveal && window.location.hash !== unlockHash) {
+      window.history.pushState(window.history.state, '', unlockHash);
+    } else {
+      syncNavigation();
+    }
+    window.addEventListener('popstate', syncNavigation);
+    return () => window.removeEventListener('popstate', syncNavigation);
+  }, [giftReveal, returnToOffers]);
+
+  function leaveUnlockPage() {
+    if (window.location.hash === '#coupon-unlocked') window.history.back();
+    else returnToOffers();
+  }
+
+  function openUnlockAfterSettlement(balance, tier) {
+    if (!packTargetMode || targetClaimed || (currentPack && !currentPackClaimed)) return false;
+    if (balance < targetThreshold && !(Number(tier) >= 1)) return false;
+    setPoints(balance);
+    beginTargetPackUnlock();
+    return true;
   }
 
   async function handleSettlementComplete(settlement) {
@@ -4043,8 +4060,8 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     if (Number.isFinite(Number(settlement?.currentTier))) {
       setPlanCurrentTier(Math.max(0, Number(settlement.currentTier)));
     }
-    const pts = settlement.pointsAwarded ?? 0;
-    const balanceAfter = Number.isFinite(Number(settlement?.pointsBalance))
+    const pts = Number(settlement.pointsAwarded ?? settlement.coinsAwarded) || 0;
+    const balanceAfter = settlement.pointsBalance != null && Number.isFinite(Number(settlement.pointsBalance))
       ? Math.max(0, Math.round(Number(settlement.pointsBalance)))
       : points + pts;
 
@@ -4064,17 +4081,10 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
       });
     };
 
-    const willUnlockTarget = packTargetMode
-      && targetThreshold > 0
-      && balanceAfter >= targetThreshold
-      && !targetClaimed
-      && currentPackClaimed;
-    if (willUnlockTarget) {
-      pendingPackUnlockAfterSettlementRef.current = true;
+    if (openUnlockAfterSettlement(balanceAfter, settlement.currentTier)) {
+      void syncLeaderboard(true);
+      return;
     }
-    const openTargetUnlockAfterProgress = willUnlockTarget
-      ? () => beginTargetPackUnlock()
-      : undefined;
 
     if (settlement.couponWon && !targetPack) {
       const unlocked = resolveUnlockedCoupon(discounts, currentStepIndex);
@@ -4100,16 +4110,12 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     }
 
     if (pts > 0) {
-      triggerLoginBonusAnimation(pts, balanceAfter, openTargetUnlockAfterProgress);
+      triggerLoginBonusAnimation(pts, balanceAfter);
       window.setTimeout(() => {
         refreshPlan();
         void syncLeaderboard(true);
       }, 1900);
       return;
-    }
-
-    if (willUnlockTarget) {
-      beginTargetPackUnlock();
     }
 
     refreshPlan();
@@ -4210,11 +4216,17 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
       allowSkip: true,
     };
 
-    setActiveSurveyTask(fallbackTask);
+    if (activeSurveyTask?.campaignId === fallbackTask.campaignId
+      && activeSurveyTask.planId === rewardPlanId && surveyQuestions.length && surveyAnswers.length) {
+      setActiveModal('survey');
+      return Promise.resolve();
+    }
+    const requestId = ++surveyRequestRef.current;
+    setActiveSurveyTask({ ...fallbackTask, planId: rewardPlanId });
     setSurveyStep(0);
     setSurveyAnswers([]);
     setSurveyQuestions([]);
-    setSurveyRewardEarned(0);
+    setSurveyError('');
     setSurveySubmitting(false);
     setSurveyLoading(true);
     setActiveModal('survey');
@@ -4223,6 +4235,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     const loadQuestions = () => fetchSurveyQuestions(touchId, { testMode });
     return (prefetched ? prefetched.catch(loadQuestions) : loadQuestions())
       .then((payload) => {
+        if (requestId !== surveyRequestRef.current) return;
         const questions = payload?.questions ?? [];
         setSurveyQuestions(questions);
         if (questions.length) {
@@ -4232,6 +4245,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
         }
         setActiveSurveyTask({
           ...fallbackTask,
+          planId: rewardPlanId,
           campaignId: payload?.survey_campaign?.id ?? fallbackTask.campaignId,
           questionCount: questions.length || fallbackTask.questionCount,
           pointsOffered: fallbackTask.pointsOffered ?? (questions.length * 10),
@@ -4245,6 +4259,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
         return payload;
       })
       .catch((err) => {
+        if (requestId !== surveyRequestRef.current) return;
         if (closeOnEmpty) {
           setActiveModal(null);
           showNotification('Survey unavailable', err instanceof Error ? err.message : 'Could not load survey', '⚠️');
@@ -4254,7 +4269,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
           return null;
         }
       })
-      .finally(() => setSurveyLoading(false));
+      .finally(() => { if (requestId === surveyRequestRef.current) setSurveyLoading(false); });
   }
 
   async function openChallenge(challenge) {
@@ -4385,61 +4400,62 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
 
   async function handleSurveyOption(option, meta = {}) {
     const question = surveyQuestions[surveyStep];
-    if (!question || surveySubmitting) return;
-
-    const startedAt = meta.startedAt ?? Date.now();
-    const responseTimeMs = Math.max(0, Date.now() - startedAt);
-    const isSkip = meta.action === 'skipped';
-    const answerRecord = {
-      questionId: question.id,
-      value: isSkip ? '' : (option?.value ?? option?.label ?? String(option)),
-      action: isSkip ? 'skipped' : 'answered',
-      optionId: isSkip ? undefined : option?.id,
-      otherText: meta.otherText,
-    };
-    const nextAnswers = [...surveyAnswers, answerRecord];
-    setSurveyAnswers(nextAnswers);
-
-    const externalAnswer = {
-      survey_campaign_id: activeSurveyTask?.campaignId,
-      survey_question_id: question.id,
-      action: isSkip ? 'skipped' : 'answered',
-      ...(isSkip ? {} : { survey_option_id: option?.id }),
-      ...(meta.otherText ? { other_text: meta.otherText } : {}),
-      response_time_ms: responseTimeMs,
-    };
-
+    if (!question || surveyBusyRef.current) return;
+    surveyBusyRef.current = true;
     setSurveySubmitting(true);
+    setSurveyError('');
+    let answers = surveyAnswers;
+    let settlement;
     try {
-      await submitSurveyAnswers(touchId, { answer: externalAnswer });
-    } catch (err) {
-      dbgError('[FCDBG][App] survey answer submit failed', err);
-      showNotification('Could not save answer', err instanceof Error ? err.message : 'Please try again.', '⚠️');
-      setSurveySubmitting(false);
-      return;
-    }
-
-    let settlement = null;
-    if (!isSkip && rewardPlanId) {
-      try {
-        settlement = await completeSurvey(touchId, rewardPlanId, [answerRecord]);
-      } catch (err) {
-        dbgError('[FCDBG][App] survey reward settlement failed', err);
+      // A settlement retry must not send the final answer to the survey service again.
+      if (answers.length <= surveyStep) {
+        const answer = {
+          questionId: question.id,
+          action: 'answered',
+          value: option?.value ?? option?.label ?? meta.otherText,
+          optionId: option?.id,
+          otherText: meta.otherText,
+        };
+        await submitSurveyAnswers(touchId, { answer: {
+          survey_campaign_id: activeSurveyTask?.campaignId,
+          survey_question_id: question.id,
+          survey_option_id: answer.optionId,
+          action: answer.action,
+          other_text: answer.otherText,
+          response_time_ms: Math.max(0, Date.now() - (meta.startedAt ?? Date.now())),
+        } });
+        answers = [...answers, answer];
+        setSurveyAnswers(answers);
       }
+      if (surveyStep + 1 < surveyQuestions.length) {
+        setSurveyStep(surveyStep + 1);
+        return;
+      }
+      if (rewardPlanId) settlement = await completeSurvey(touchId, rewardPlanId, answers);
+    } catch (err) {
+      dbgError('[FCDBG][App] survey submission failed', err);
+      setSurveyError(answers.length > surveyStep
+        ? 'Your answers are saved. Try again to collect your points.'
+        : 'Your answer could not be saved. Please try again.');
+      return;
+    } finally {
+      surveyBusyRef.current = false;
+      setSurveySubmitting(false);
     }
 
-    const pointsAwarded = settlement?.pointsAwarded ?? 0;
-    const totalRewardEarned = surveyRewardEarned + pointsAwarded;
-    setSurveyRewardEarned(totalRewardEarned);
-
+    const totalRewardEarned = settlement?.pointsAwarded ?? 0;
     setActiveModal(null);
     setSurveyStep(0);
     setSurveyAnswers([]);
     setSurveyQuestions([]);
     setActiveSurveyTask(null);
-    setSurveyRewardEarned(0);
     if (isSurveySequenceTestMode()) setTestSurveyChallenge(null);
 
+    const balanceAfter = Number(settlement?.pointsBalance ?? (pointsRef.current + Number(totalRewardEarned)));
+    if (settlement && openUnlockAfterSettlement(balanceAfter, settlement.currentTier)) {
+      void refreshTestSurveyAvailability();
+      return;
+    }
     if (totalRewardEarned > 0) {
       window.setTimeout(() => {
         triggerLoginBonusAnimation(
@@ -4455,8 +4471,6 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
       await refreshTestSurveyAvailability();
     } catch (err) {
       dbgError('[FCDBG][App] survey post-answer plan reload failed', err);
-    } finally {
-      setSurveySubmitting(false);
     }
   }
 
@@ -4470,6 +4484,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
   }, []);
 
   const handleWelcomeRitualComplete = useCallback(() => {
+    setDemoRestartStatus(status => status === 'opening' ? 'started' : status);
     const cycleId = activePlan?.cycleId ?? rewardPlanId;
     setWelcomeStep(3);
     writeWelcomeCompleted(touchId, true, cycleId);
@@ -4512,7 +4527,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     && (introActive || renewGiftIntro)
     && (renewGiftIntro || (!renewFlowActive && hasInitialDiscount) || isReturnIntro);
   const brandIntroIsWelcome = renewGiftIntro || welcomeStep < 3;
-  const showHome = !devScene || devScene === 'home' || devScene === 'completed';
+  const showHome = !replayingDemo && (!devScene || ['home', 'completed', 'unlocked'].includes(devScene));
   const availableChallenges = shopifyAuthStatus === 'connected'
     ? challenges.filter((challenge) => challenge.type !== 'shopify_connect')
     : challenges;
@@ -4529,11 +4544,6 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     offerPalette?.primary ?? brand.backgroundColor ?? brand.primaryColor,
     offerPalette?.secondary ?? brand.buttonColor,
   ), [offerPalette, brand.backgroundColor, brand.primaryColor, brand.buttonColor]);
-  const showUnlockOnShelf = skipEntryGiftIntro && showHome && giftReveal?.pack?.type === 'target';
-  useEffect(() => {
-    if (showUnlockOnShelf) dismissTargetGiftReveal();
-  }, [showUnlockOnShelf, giftReveal]);
-
   if (!touchIdValid) {
     return (
       <div className="mobile-viewport" data-screen-label="Invalid magnet link">
@@ -4549,9 +4559,9 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     <>
     {showHome && <div className="offers-ambient" aria-hidden="true" style={offerColors} />}
     <div
-      className={`mobile-viewport${showHome && !walletOpen ? ' rewards-home' : ''}`}
+      className={`mobile-viewport${(giftReveal || (showHome && !walletOpen)) ? ' rewards-home' : ''}`}
       data-offers-wallet={showHome && walletOpen ? '' : undefined}
-      data-screen-label="优惠券首页"
+      data-screen-label={giftReveal ? 'Coupon unlocked' : '优惠券首页'}
       ref={viewportRef}
       style={{
         ...offerColors,
@@ -4586,7 +4596,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
           muted
           preload={skipEntryGiftIntro ? 'none' : 'auto'}
           onEnded={() => handleWelcomeVideoEnd(false)}
-          onError={() => handleWelcomeVideoEnd(false)}
+          onError={() => { if (isWelcomeVideoActive) handleWelcomeVideoEnd(false); }}
         />
       </div>
       {showBrandIntro && !isWelcomeVideoActive && (
@@ -4628,7 +4638,25 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
         </div>
       )}
 
-      {showHome && (
+      {giftReveal ? (
+        <CouponUnlockedPage
+          coupon={giftReveal.coupons[0] ?? giftReveal.pendingCoupon}
+          ready={giftReveal.coupons.length > 0}
+          issuing={redeemingCoupon}
+          onRetryIssue={retryOfferIssue}
+          points={points}
+          brandName={offerBrandPreview?.name || brand.name}
+          brandArtworkUrl={brandArtworkUrl}
+          copiedCode={walletCopiedCode}
+          onCopy={handleWalletCopy}
+          onShop={coupon => {
+            void handleWalletCopy(coupon.code);
+            handleShopNowDirect();
+            leaveUnlockPage();
+          }}
+          onBack={leaveUnlockPage}
+        />
+      ) : showHome && (
       <>
       <Header
         brand={brand}
@@ -4658,6 +4686,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
           <CouponOffers
             key={`${touchId}-${cycleId ?? 'loading'}`}
             offers={offers}
+            latestUnlock={walletRevealCoupons}
             archive={walletArchiveCoupons}
             showMoshWordmark={showMoshWordmark}
             brandArtworkUrl={brandArtworkUrl}
@@ -4673,11 +4702,15 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
             bundleCount={targetCouponCount}
             challenges={displayedChallenges}
             dailyCapReached={dailyCapReached}
-            onOpenChallenge={openChallenge}
-            suspendSheet={Boolean(activeModal || notification || giftReveal || newChallenge || shopifyAuthOverlay)}
+            onOpenChallenge={(challenge, coupon) => {
+              chosenGoalIdRef.current = coupon.couponId ?? coupon.campaignId;
+              openChallenge(challenge);
+            }}
+            suspendSheet={Boolean(activeModal || notification || newChallenge || shopifyAuthOverlay)}
             onOpenLeaderboard={() => { void syncLeaderboard(true); setLeaderboardOpen(true); }}
             loading={planLoading}
             onReset={completedMode && isSampleMagnet ? handleSampleReset : null}
+            demoRestartStatus={demoRestartStatus}
             issuing={redeemingCoupon}
             onRetryIssue={retryOfferIssue}
           />
@@ -4711,24 +4744,21 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
         onRuntimeEvent={handleGameRuntimeEvent}
       />
 
-      <SurveyModal
-        open={activeModal === 'survey'}
-        step={surveyStep}
-        questions={surveyQuestions}
-        loading={surveyLoading}
-        submitting={surveySubmitting}
-        reward={activeSurveyTask?.pointsOffered}
-        onClose={() => {
-          setActiveModal(null);
-          setSurveyQuestions([]);
-          setActiveSurveyTask(null);
-          setSurveyRewardEarned(0);
-          setSurveySubmitting(false);
-        }}
-        onOption={handleSurveyOption}
-      />
+      {activeModal === 'survey' && (
+        <SurveyModal step={surveyStep} questions={surveyQuestions} loading={surveyLoading}
+          submitting={surveySubmitting} error={surveyError}
+          lastAnswerSaved={surveyQuestions.length > 0 && surveyAnswers.length === surveyQuestions.length}
+          onClose={() => {
+            surveyRequestRef.current += 1;
+            setActiveModal(null);
+          }}
+          onOption={handleSurveyOption} />
+      )}
 
       <NotificationModal notification={notification} onConfirm={confirmNotification} />
+      {demoRestartStatus === 'started' && (
+        <div className="demo-started-notice" role="status">New demo started</div>
+      )}
 
       {newChallenge && (
         <NewChallengeUnlocked
@@ -4736,6 +4766,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
           coupon={settlementDisplayCoupon}
           coupons={settlementDisplayCoupons}
           isSample={isSampleMagnet}
+          demoRestartStatus={demoRestartStatus}
           onStart={handleStartNewChallenge}
           onReset={handleSampleReset}
           onDismiss={() => setNewChallenge(null)}
@@ -4817,19 +4848,6 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
         />
       )}
 
-      {giftReveal && !showUnlockOnShelf && (
-        <GiftRevealModal
-          pack={giftReveal.pack}
-          coupons={giftReveal.coupons}
-          brand={brand}
-          copiedCode={walletCopiedCode}
-          onCopy={handleWalletCopy}
-          onShop={handleShopNowDirect}
-          onOpenWallet={() => dismissTargetGiftReveal({ openWallet: true })}
-          onClose={() => dismissTargetGiftReveal()}
-        />
-      )}
-
       {showWelcomeRitual && (
         <WelcomeRitual
           pack={soleRewardPack ?? currentPack}
@@ -4839,7 +4857,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
           copiedCode={walletCopiedCode}
           onCopy={handleWalletCopy}
           onContinue={() => {
-            if (devScene) {
+            if (devScene || replayingDemo) {
               void handleContinueWelcomePack();
               return;
             }
@@ -4854,7 +4872,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
           onShop={handleShopNowDirect}
           singleCoupon={singleCouponOnlyMode}
           issuing={redeemingCoupon}
-          autoIssue={!devScene}
+          autoIssue={!devScene && !replayingDemo}
         />
       )}
     </div>
@@ -5004,7 +5022,7 @@ function WelcomeRitual({
 
         <div className="welcome-pack-actions">
           {!autoIssue && (
-            <button className="welcome-pack-claim" type="button" onClick={onContinue}>
+            <button className="welcome-pack-claim" type="button" disabled={issuing} onClick={onContinue}>
               {singleCoupon ? 'View my coupons' : 'Get More OFF'}
             </button>
           )}
@@ -5106,7 +5124,27 @@ function HeaderBase({
   );
 }
 
-function NewChallengeUnlocked({ reason, onStart, onReset, onDismiss, coupon, coupons, isSample = false }) {
+function DemoRestartPanel({ status, onRestart }) {
+  const headingId = useId();
+  const descriptionId = useId();
+  const busy = status === 'starting';
+  const failed = status === 'error';
+  return (
+    <section className="demo-restart" aria-labelledby={headingId}>
+      <h2 id={headingId}>Ready to start a new round now?</h2>
+      <p id={descriptionId}>Start from the beginning with fresh points and coupons. This clears the current demo’s progress and coupon list.</p>
+      {failed && <p className="demo-restart-error" role="alert">Couldn’t start a new demo. Try again.</p>}
+      <button type="button" className="demo-restart-button" disabled={busy} aria-describedby={descriptionId} onClick={onRestart}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3 10a9 9 0 1 1 1.8 8M3 4v6h6" />
+        </svg>
+        <span aria-live="polite">{busy ? 'Starting new demo…' : failed ? 'Try again' : 'Start a new demo'}</span>
+      </button>
+    </section>
+  );
+}
+
+function NewChallengeUnlocked({ reason, onStart, onReset, onDismiss, coupon, coupons, isSample = false, demoRestartStatus }) {
   const redeemed = reason === 'redeemed';
   const expired = reason === 'expired';
 
@@ -5132,7 +5170,7 @@ function NewChallengeUnlocked({ reason, onStart, onReset, onDismiss, coupon, cou
           <h1>Round Complete</h1>
           <p>
             {isSample
-              ? 'This sample round has ended. Reset to start again from the first visit.'
+              ? 'This demo round has ended.'
               : 'This reward period has ended. Start the next one to unlock fresh offers.'}
           </p>
         </section>
@@ -5151,13 +5189,7 @@ function NewChallengeUnlocked({ reason, onStart, onReset, onDismiss, coupon, cou
 
         <div className="nc-footer">
           {isSample ? (
-            <button className="nc-btn-start" type="button" onClick={onReset}>
-              <span>Reset</span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.7" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 12a9 9 0 1 0 9-9" />
-                <path d="M3 4v5h5" />
-              </svg>
-            </button>
+            <DemoRestartPanel onRestart={onReset} status={demoRestartStatus} />
           ) : (
             <button className="nc-btn-start" type="button" onClick={onStart}>
               <span>Start Next Challenge</span>
@@ -5174,10 +5206,10 @@ function NewChallengeUnlocked({ reason, onStart, onReset, onDismiss, coupon, cou
 }
 
 function CouponOffers({
-  archive, showMoshWordmark, brandArtworkUrl, onLogoSecretTap,
+  archive, latestUnlock, showMoshWordmark, brandArtworkUrl, onLogoSecretTap,
   offers, copiedCode, onCopy, onShop, points, threshold, delta, progressPct, time, bundleCount,
   challenges, dailyCapReached, onOpenChallenge, suspendSheet, onOpenLeaderboard, loading,
-  onReset, issuing, onRetryIssue,
+  onReset, demoRestartStatus, issuing, onRetryIssue,
 }) {
   const [selectedKey, setSelectedKey] = useState(null);
   const selected = offers.find(offer => offer.key === selectedKey);
@@ -5191,6 +5223,15 @@ function CouponOffers({
     setSelectedKey(null);
   }, [selectedKey, selected?.state, suspendSheet]);
 
+  const firstActionRef = useRef(null);
+  useLayoutEffect(() => {
+    if (!latestUnlock.length) return;
+    setSelectedKey(null);
+    const button = firstActionRef.current;
+    button?.focus({ preventScroll: true });
+    button?.closest('main')?.scrollTo({ top: 0 });
+  }, [latestUnlock]);
+
   return (
     <>
       <main className="content-area reward-home-content">
@@ -5200,9 +5241,9 @@ function CouponOffers({
           </div>
         ) : <h1 className="offers-heading">Your offers</h1>}
         <div className="offers-list">
-          {offers.map(offer => (
+          {offers.map((offer, index) => (
             <OfferTicket key={offer.key} offer={offer}
-              actionRef={offer.key === selectedKey ? selectedActionRef : undefined}
+              actionRef={index === 0 && latestUnlock.length ? firstActionRef : offer.key === selectedKey ? selectedActionRef : undefined}
               points={points} threshold={threshold} delta={delta} progressPct={progressPct}
               copied={copiedCode === offer.coupon.code} onCopy={onCopy} onShop={onShop}
               onViewTasks={() => setSelectedKey(offer.key)} issuing={issuing} onRetryIssue={onRetryIssue} />
@@ -5212,16 +5253,14 @@ function CouponOffers({
           </p>}
         </div>
         <PastCouponSections coupons={archive} />
+        {onReset && <DemoRestartPanel status={demoRestartStatus} onRestart={onReset} />}
         <RulesFooter />
-        {onReset && <div className="completed-rewards-reset">
-          <button className="completed-rewards-reset-btn" type="button" onClick={onReset}>Reset</button>
-        </div>}
       </main>
       {selected?.state === 'locked' && !suspendSheet && (
         <OfferTaskSheet coupon={selected.coupon} brandArtworkUrl={brandArtworkUrl} onClose={() => setSelectedKey(null)}
           points={points} threshold={threshold} delta={delta} progressPct={progressPct} time={time}
           bundleCount={bundleCount} challenges={challenges} dailyCapReached={dailyCapReached}
-          onOpenChallenge={onOpenChallenge} onOpenLeaderboard={onOpenLeaderboard} />
+          onOpenChallenge={challenge => onOpenChallenge(challenge, selected.coupon)} onOpenLeaderboard={onOpenLeaderboard} />
       )}
     </>
   );
@@ -5287,7 +5326,7 @@ function OfferTicket({ offer, actionRef, points, threshold, delta, progressPct, 
   );
 }
 
-function RewardsSheet({ className, labelledBy, onClose, children }) {
+function RewardsSheet({ id, className, labelledBy, fullPage = false, onClose, children }) {
   const dialogRef = useRef(null);
   useLayoutEffect(() => {
     const dialog = dialogRef.current;
@@ -5296,6 +5335,7 @@ function RewardsSheet({ className, labelledBy, onClose, children }) {
       const rect = host.getBoundingClientRect();
       dialog.style.left = `${rect.left + host.clientLeft}px`;
       dialog.style.width = `${host.clientWidth}px`;
+      if (fullPage) dialog.style.height = `${Math.min(host.clientHeight, window.innerHeight)}px`;
       dialog.style.bottom = `${Math.max(0, window.innerHeight - rect.bottom)}px`;
     };
     align();
@@ -5308,13 +5348,15 @@ function RewardsSheet({ className, labelledBy, onClose, children }) {
       window.removeEventListener('resize', align);
       dialog.close();
     };
-  }, []);
+  }, [fullPage]);
   return (
-    <dialog ref={dialogRef} className={`rewards-sheet ${className}`} aria-labelledby={labelledBy}
+    <dialog id={id} ref={dialogRef} className={`rewards-sheet ${className}`} aria-labelledby={labelledBy}
       onCancel={event => { event.preventDefault(); onClose(); }}
       onClick={event => { if (event.target === dialogRef.current) onClose(); }}>
       <div className="offer-sheet-body">
-        <button className="offer-sheet-close" type="button" autoFocus onClick={onClose}>Close <span aria-hidden="true">×</span></button>
+        <button className="offer-sheet-close" type="button" autoFocus onClick={onClose} aria-label="Close">
+          <span aria-hidden="true">×</span>
+        </button>
         {children}
       </div>
     </dialog>
@@ -5518,130 +5560,92 @@ function SpinModal({ open, active, rotation, onClose, onStart }) {
   );
 }
 
-function SurveyModal({ open, step, questions, loading, submitting, reward, onClose, onOption }) {
-  const currentQuestion = questions?.[step];
-  const startedAtRef = useRef(Date.now());
+function SurveyModal({ step, questions, loading, submitting, error, lastAnswerSaved, onClose, onOption }) {
+  const question = questions[step];
   const [confirmExit, setConfirmExit] = useState(false);
-  const [otherOption, setOtherOption] = useState(null);
-  const [otherText, setOtherText] = useState('');
-
-  useEffect(() => {
-    if (open) {
-      startedAtRef.current = Date.now();
-      setOtherOption(null);
-      setOtherText('');
-    }
-  }, [open, step]);
-
-  // 关闭弹窗时重置二次确认状态
-  useEffect(() => {
-    if (!open) setConfirmExit(false);
-  }, [open]);
-
-  // 点击右上角叉:进行中且未完成时先弹二次确认,否则直接关闭
-  const requestExit = () => {
+  const titleId = useId();
+  function requestExit() {
     if (submitting) return;
-    if (loading || !currentQuestion) {
-      onClose();
-    } else {
-      setConfirmExit(true);
-    }
-  };
-
-  const coinReward = reward ?? 30;
-
+    if (loading || !question) onClose();
+    else setConfirmExit(true);
+  }
   return (
-    <Modal id="survey-modal" open={open} title="Quick Preferences Survey" onClose={requestExit}>
-      {loading ? (
-        <p className="survey-loading">Loading questions…</p>
-      ) : currentQuestion ? (
-        <>
-          <div className="survey-progress-header">
-            <span className="survey-step-indicator">Question {step + 1}</span>
-            <div className="survey-progress-bar">
-              <div className="survey-progress-fill" style={{ width: '100%' }} />
-            </div>
-          </div>
-          <div className="survey-questions">
-            <div className="survey-question-step active">
-              <h4>{currentQuestion.text}</h4>
-              <div className="survey-options">
-                {currentQuestion.options?.map((option) => (
-                  <button
-                    className="survey-option-btn"
-                    key={option.id}
-                    disabled={submitting}
-                    onClick={() => {
-                      if (option.allow_text_input) {
-                        setOtherOption(option);
-                        return;
-                      }
-                      onOption(option, { startedAt: startedAtRef.current });
-                    }}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-              {otherOption && (
-                <div className="survey-other-response">
-                  <textarea
-                    autoFocus
-                    maxLength={otherOption.max_text_length ?? 500}
-                    placeholder={otherOption.text_input_placeholder ?? 'Tell us more'}
-                    value={otherText}
-                    disabled={submitting}
-                    onChange={(event) => setOtherText(event.target.value)}
-                  />
-                  <button
-                    className="btn btn-primary btn-block"
-                    disabled={submitting || (otherOption.other_text_required && !otherText.trim())}
-                    onClick={() => onOption(otherOption, {
-                      startedAt: startedAtRef.current,
-                      otherText: otherText.trim(),
-                    })}
-                  >
-                    {submitting ? 'Saving…' : 'Continue'}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {confirmExit && (
-            <div className="survey-exit-confirm">
-              <div className="survey-exit-confirm-card">
-                <h4 className="survey-exit-confirm-title">You're close to a bigger discount</h4>
-                <p className="survey-exit-confirm-desc">
-                  Complete this survey and earn <strong>+{coinReward} Coins</strong>.
-                  <br />
-                  Keep going to get closer to your next reward.
-                </p>
-                <div className="survey-exit-confirm-actions">
-                  <button
-                    className="survey-exit-confirm-keep"
-                    onClick={() => setConfirmExit(false)}
-                  >
-                    Keep Going
-                  </button>
-                  <button
-                    className="survey-exit-confirm-exit"
-                    onClick={() => {
-                      setConfirmExit(false);
-                      onClose();
-                    }}
-                  >
-                    Exit Anyway
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </>
-      ) : (
-        <p className="survey-loading">No questions available.</p>
+    <RewardsSheet id="survey-modal" className="survey-page" fullPage labelledBy={titleId} onClose={requestExit}>
+      <header className="survey-page-header">
+        <h2 id={titleId}>Quick Preferences Survey</h2>
+        {question && <div className="survey-page-progress">
+          <span>Question {step + 1} of {questions.length}</span>
+          <progress aria-label="Survey progress" value={step + 1} max={questions.length} />
+        </div>}
+      </header>
+      {confirmExit && (
+        <div className="survey-page-content">
+          <h3>Leave the survey?</h3>
+          <button autoFocus className="survey-primary-action" onClick={() => setConfirmExit(false)}>Keep going</button>
+          <button className="survey-answer" onClick={onClose}>Exit survey</button>
+        </div>
       )}
-    </Modal>
+      <div hidden={confirmExit}>
+        {loading || !question ? (
+          <p className="survey-page-content" role="status">{loading ? 'Loading questions…' : 'No questions available.'}</p>
+        ) : (
+          <SurveyQuestionPage key={question.id} question={question} last={step + 1 === questions.length}
+            submitting={submitting} error={error} lastAnswerSaved={lastAnswerSaved} onOption={onOption} />
+        )}
+      </div>
+    </RewardsSheet>
+  );
+}
+
+function SurveyQuestionPage({ question, last, submitting, error, lastAnswerSaved, onOption }) {
+  const startedAt = useRef(Date.now());
+  const heading = useRef(null);
+  const [otherOption, setOtherOption] = useState(null);
+  const [text, setText] = useState('');
+  useEffect(() => { heading.current?.focus(); }, []);
+  const freeText = question.type === 'text_input';
+  const rating = question.type === 'rating';
+  const options = question.options ?? [];
+  const title = question.text || question.title;
+  const submit = (option, otherText) => onOption(option, { startedAt: startedAt.current, otherText });
+  return (
+    <section className="survey-page-content" aria-busy={submitting}>
+      <h3 ref={heading} tabIndex={-1}>{title?.replace(/^Q\d+[.:]\s*/i, '')}</h3>
+      {error && <p role="alert">{error}</p>}
+      {lastAnswerSaved ? (
+        <button className="survey-primary-action" disabled={submitting} onClick={() => onOption()}>
+          {submitting ? 'Finishing…' : 'Finish survey'}
+        </button>
+      ) : <>
+        {options.map(option => (
+          <button key={option.id} type="button" className="survey-answer"
+            aria-pressed={option.allow_text_input ? otherOption?.id === option.id : undefined}
+            disabled={submitting} onClick={() => {
+              if (option.allow_text_input) {
+                setOtherOption(option);
+                if (otherOption?.id !== option.id) setText('');
+              } else submit(option);
+            }}>{option.label}</button>
+        ))}
+        {rating && !options.length && <div className="survey-ratings">
+          {Array.from({ length: question.rating_scale || 5 }, (_, i) => (
+            <button key={i} className="survey-answer" disabled={submitting}
+              onClick={() => submit(null, String(i + 1))}>{i + 1}</button>
+          ))}
+        </div>}
+        {(freeText || otherOption) && <>
+          <textarea autoFocus={!freeText} aria-label={otherOption?.text_input_placeholder || 'Your answer'}
+            placeholder={otherOption?.text_input_placeholder || 'Your answer'} value={text}
+            maxLength={otherOption?.max_text_length ?? 500} disabled={submitting}
+            onChange={event => setText(event.target.value)} />
+          <button className="survey-primary-action"
+            disabled={submitting || ((freeText || otherOption?.other_text_required) && !text.trim())}
+            onClick={() => submit(otherOption, text.trim())}>
+            {submitting ? 'Saving…' : last ? 'Finish survey' : 'Continue'}
+          </button>
+        </>}
+      </>}
+    </section>
   );
 }
 
@@ -6233,34 +6237,10 @@ function SettlementTicket({ coupon, status }) {
   );
 }
 
-function GiftOpeningHero({ brand }) {
-  const brandName = brand?.name || 'FridgeChannel';
-  return (
-    <div className="gift-opening-hero" aria-hidden="true">
-      <div className="gift-opening-brand">
-        {brand?.logoUrl ? <img src={brand.logoUrl} alt="" /> : <BrandMark className="gift-opening-logo" />}
-        <span>{brandName}</span>
-      </div>
-      <div className="gift-opening-stage">
-        <div className="gift-opening-glow" />
-        <img
-          className="gift-opening-box"
-          src="/rewards/welcome-rewards-hero-final-small.webp"
-          alt=""
-        />
-      </div>
-    </div>
-  );
-}
-
-function GiftRevealModal({ pack, coupons, brand, copiedCode, onCopy, onShop, onOpenWallet, onClose }) {
-  const list = useMemo(
-    () => selectPackRevealCoupons(pack, coupons, { requireCode: true }),
-    [pack, coupons],
-  );
-  if (!list.length) return null;
-  const count = list.length;
-  const label = `${count} coupon${count === 1 ? '' : 's'}`;
+function CouponUnlockedPage({ coupon, ready, issuing, onRetryIssue, points, brandName, brandArtworkUrl, copiedCode, onCopy, onShop, onBack }) {
+  const titleId = useId();
+  const headingRef = useRef(null);
+  useEffect(() => { headingRef.current?.focus({ preventScroll: true }); }, []);
   const confetti = Array.from({ length: 42 }, (_, index) => ({
     id: index,
     left: `${4 + ((index * 37) % 92)}%`,
@@ -6268,10 +6248,16 @@ function GiftRevealModal({ pack, coupons, brand, copiedCode, onCopy, onShop, onO
     duration: `${1.8 + (index % 7) * 0.12}s`,
     drift: `${-42 + ((index * 29) % 84)}px`,
     rotation: `${180 + ((index * 73) % 420)}deg`,
-    color: ['#7b3f4b', '#b9964d', '#ead9a0', '#9d3445', '#d4af62'][index % 5],
+    color: ['var(--offer-ink)', '#ffcc62', '#fff1ad', '#ff8599', '#e9c0ff'][index % 5],
   }));
   return (
-    <div className="gift-reveal-overlay">
+    <main className="unlock-page" aria-labelledby={titleId}>
+      <header className="unlock-nav">
+        <button type="button" className="unlock-home" onClick={onBack}>
+          <span aria-hidden="true">←</span> Back to offers
+        </button>
+        {brandArtworkUrl ? <img src={brandArtworkUrl} alt={brandName || ''} /> : <strong>{brandName}</strong>}
+      </header>
       <div className="gift-reveal-confetti" aria-hidden="true">
         {confetti.map((piece) => (
           <i
@@ -6287,34 +6273,16 @@ function GiftRevealModal({ pack, coupons, brand, copiedCode, onCopy, onShop, onO
           />
         ))}
       </div>
-      <main className="gift-reveal-card" role="dialog" aria-label="Gift unlocked">
-        <GiftOpeningHero brand={brand} />
-        <h2 className="gift-reveal-title">Gift unlocked!</h2>
-        <p className="gift-reveal-desc">
-          <b>{pack?.title || 'Your gift'}</b> added {label} to My coupons.
-        </p>
-        <div className="gift-reveal-coupons">
-          {list.map((coupon) => {
-            const copied = copiedCode === coupon.code;
-            return (
-              <CouponTicket
-                key={coupon.code ?? coupon.couponId ?? coupon.value}
-                coupon={coupon}
-                featured
-                brand={brand}
-                showDetails
-                showCode
-                copied={copied}
-                onCopy={onCopy}
-                onShop={onShop}
-              />
-            );
-          })}
+      <div className="unlock-feature">
+        <div className="unlock-heading">
+          <PointsLabel>{points} pts</PointsLabel>
+          <h1 id={titleId} ref={headingRef} tabIndex={-1}>Coupon unlocked!</h1>
         </div>
-        <button className="gift-reveal-btn" type="button" onClick={onOpenWallet}>View my coupons</button>
-        <button className="gift-reveal-close" type="button" onClick={onClose}>Continue</button>
-      </main>
-    </div>
+        <OfferTicket offer={{ coupon, state: ready ? 'ready' : 'pending', packType: 'target' }}
+          issuing={issuing} onRetryIssue={onRetryIssue} copied={copiedCode === coupon.code} onCopy={onCopy} onShop={onShop} />
+        <button type="button" className="unlock-home unlock-home-bottom" onClick={onBack}>Back to offers</button>
+      </div>
+    </main>
   );
 }
 

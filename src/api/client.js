@@ -62,7 +62,7 @@ export function prefetchDtcEntry(touchId, { includeRewardPlan = true } = {}) {
 /** touchId -> { document, etag } */
 const manifestCacheByTouch = new Map();
 
-async function request(path, options = {}) {
+async function request(path, options = {}, cycleScope = '') {
   const method = options.method ?? 'GET';
   let parsedBody;
   if (typeof options.body === 'string') {
@@ -97,7 +97,7 @@ async function request(path, options = {}) {
 
   // 只对 GET 去重:POST 是带副作用的变更,不合并。
   if (method === 'GET') {
-    const key = `GET ${buildApiUrl(path)}`;
+    const key = `GET ${buildApiUrl(path)}${cycleScope ? '#' + cycleScope : ''}`;
     const prefetched = takePrefetchedGet(key);
     if (prefetched) {
       dbg('[FCDBG][API] reuse prefetched GET', { path });
@@ -127,10 +127,10 @@ async function request(path, options = {}) {
   );
 }
 
-export function fetchRewardPlan(touchId, { refresh = false, skipTapReward = false } = {}) {
+export function fetchRewardPlan(touchId, { refresh = false, skipTapReward = false, cycleScope } = {}) {
   const refreshQs = refresh ? '&refresh=1' : '';
   const skipTapQs = skipTapReward ? '&skipTapReward=1' : '';
-  return request(`/api/fc/reward-plan?touchId=${encodeURIComponent(touchId)}${refreshQs}${skipTapQs}`);
+  return request(`/api/fc/reward-plan?touchId=${encodeURIComponent(touchId)}${refreshQs}${skipTapQs}`, {}, cycleScope);
 }
 
 export function fetchShopifyStatus(touchId, { refresh = false } = {}) {
@@ -245,9 +245,9 @@ export function observeCoupon(touchId) {
   });
 }
 
-export function fetchCouponWallet(touchId, { limit } = {}) {
+export function fetchCouponWallet(touchId, { limit, cycleScope } = {}) {
   const limitQs = limit ? `&limit=${encodeURIComponent(limit)}` : '';
-  return request(`/api/fc/coupons/wallet?touchId=${encodeURIComponent(touchId)}${limitQs}`);
+  return request(`/api/fc/coupons/wallet?touchId=${encodeURIComponent(touchId)}${limitQs}`, {}, cycleScope);
 }
 
 export function renewCycle(touchId, reason = 'expired') {
