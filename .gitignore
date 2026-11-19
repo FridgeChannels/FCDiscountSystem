@@ -9,3 +9,4 @@ scraps/
 ritual-intro-check.png
 *.log
 .env
+public/reorder/tmp/

@@ -4540,6 +4540,8 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
   const brandArtworkUrl = offerBrandPreview?.wordmarkUrl || brand.wordmarkUrl || null;
   const showWordmark = Boolean(brandArtworkUrl);
   const offerPalette = offerBrandPreview?.colors;
+  // DB/fixture convention matches offerPaletteStyle roles: primary=ink/brand, secondary=page paper.
+  // (mergeBrand still maps primary_color→backgroundColor, secondary_color→buttonColor.)
   const offerColors = useMemo(() => offerPaletteStyle(
     offerPalette?.primary ?? brand.backgroundColor ?? brand.primaryColor,
     offerPalette?.secondary ?? brand.buttonColor,

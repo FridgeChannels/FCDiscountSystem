@@ -87,6 +87,8 @@ export default defineConfig(({ mode }) => {
   server: {
     port: 5180,
     strictPort: true,
+    // ngrok / tunnel hosts (Host header checks in Vite 6+)
+    allowedHosts: ['.ngrok-free.dev', '.ngrok.app', '.ngrok.io'],
     fs: {
       allow: [root, fcRoot],
     },

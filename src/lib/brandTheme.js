@@ -73,6 +73,18 @@ export function mergeBrand(customerBrand, magnetBrandParam) {
   const baseUrl = assetBaseUrl();
 
   if (!param) {
+    // Engine CustomerBrand already uses primary=page / secondary=accent when both exist.
+    if (customer.secondaryColor) {
+      return {
+        name: customer.name || null,
+        logoUrl: normalizeLogoUrl(customer.logoUrl, baseUrl),
+        wordmarkUrl: normalizeLogoUrl(customer.wordmarkUrl, baseUrl),
+        primaryColor: null,
+        backgroundColor: customer.primaryColor || null,
+        buttonColor: customer.secondaryColor || null,
+        shopUrl: customer.shopUrl ?? '#',
+      };
+    }
     return {
       name: customer.name || null,
       logoUrl: normalizeLogoUrl(customer.logoUrl, baseUrl),
@@ -92,8 +104,9 @@ export function mergeBrand(customerBrand, magnetBrandParam) {
       baseUrl,
     ),
     primaryColor: null,
-    backgroundColor: param.primaryColor ?? null, // primary_color → page background
-    buttonColor: param.secondaryColor ?? null, // second_color → button background
+    // Prefer magnet fields; fall back to engine CustomerBrand page/accent when present.
+    backgroundColor: param.primaryColor ?? (customer.secondaryColor ? customer.primaryColor : null) ?? null,
+    buttonColor: param.secondaryColor ?? customer.secondaryColor ?? null,
     shopUrl: param.shopUrl ?? param.storeWebsite ?? customer.shopUrl ?? '#',
   };
 }
