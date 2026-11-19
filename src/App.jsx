@@ -4762,6 +4762,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
       {shopifyAccountOpen && (
         <ProfilePage
           brand={brand}
+          offerBrandPreview={offerBrandPreview}
           profile={displayProfile}
           binding={shopifyBinding}
           shopifyStatus={shopifyAuthStatus}
@@ -4782,7 +4783,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
           </div>
           <div className="shopify-auth-toast-text">
             <strong>Shopify connected</strong>
-            <span>+500 pts earned</span>
+            <span><PointsLabel>+500 pts</PointsLabel> earned</span>
           </div>
         </div>
       )}
@@ -5242,7 +5243,7 @@ function OfferTicket({ offer, actionRef, points, threshold, delta, progressPct, 
   const title = couponTicketHeadline(coupon);
   const expiry = formatWalletExpiry(coupon.expiresAt);
   const value = String(title).match(/^(.+?)\s+OFF$/i);
-  const action = ready ? 'Shop now' : locked ? 'View tasks' : issuing ? 'Preparing…' : 'Get coupon';
+  const action = ready ? 'Shop now' : issuing ? 'Preparing…' : 'Get coupon';
   function activate() {
     if (ready) onShop(coupon);
     else if (locked) onViewTasks();
@@ -5251,38 +5252,39 @@ function OfferTicket({ offer, actionRef, points, threshold, delta, progressPct, 
   return (
     <article className={`offer-ticket is-${state}`} aria-label={title}>
       <div className="offer-ticket-paper">
-        <div className="offer-ticket-status">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            {locked ? <><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></> :
-              <><circle cx="12" cy="12" r="9" /><path d="m7.5 12 3 3 6-6" /></>}
-          </svg>
-          {ready ? 'Ready to use' : locked ? 'Locked' : 'Unlocked'}
+        <div className="offer-ticket-top">
+          <div className="offer-ticket-status">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              {locked ? <><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></> :
+                <><circle cx="12" cy="12" r="9" /><path d="m7.5 12 3 3 6-6" /></>}
+            </svg>
+            {ready ? 'Ready to use' : locked ? 'Locked' : 'Unlocked'}
+          </div>
         </div>
         <h2 className={String(title).length > 13 ? 'long-offer' : undefined}>
           {value ? <>{value[1].replace(/(\d)\.00$/, '$1')} <em>off</em></> : title}
         </h2>
-        {!locked && <span className="offer-signature" aria-hidden="true">DISCOUNT</span>}
+        {ready && (
+          <div className="offer-code">
+            <b>{coupon.code}</b>
+            <button type="button" aria-label={`${copied ? 'Copied' : 'Copy'} ${coupon.code}`} onClick={() => onCopy(coupon.code)}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M6 16H4V4h12v2"/></svg>
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        )}
         {locked ? (
           <>
-            <p>{delta} pts to unlock</p>
+            <p><PointsLabel>{delta} pts to unlock</PointsLabel></p>
             <div className="offer-mini-progress">
               <span className="offer-track" aria-hidden="true"><i style={{ width: `${progressPct}%` }} /></span>
-              <span>{points} / {threshold} pts</span>
+              <PointsLabel>{points} / {threshold} pts</PointsLabel>
             </div>
           </>
         ) : (
           <p>{[coupon.conditions, expiry && `Expires ${expiry}`].filter(Boolean).join(' · ')}</p>
         )}
       </div>
-      {ready && (
-        <div className="offer-code">
-          <b>{coupon.code}</b>
-          <button type="button" aria-label={`Copy ${coupon.code}`} onClick={() => onCopy(coupon.code)}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M6 16H4V4h12v2"/></svg>
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-        </div>
-      )}
       <button ref={actionRef} type="button" className="offer-action" onClick={activate}
         disabled={state === 'pending' && issuing} aria-label={`${action} · ${title}`}
         aria-haspopup={locked ? 'dialog' : undefined}>
@@ -5348,10 +5350,14 @@ function OfferTaskSheet({ coupon, brandArtworkUrl, points, threshold, delta, pro
       <div className="offer-sheet-content">
         <div className="offer-sheet-meter">
           <div className="offer-sheet-progress">
-            <strong>{delta} pts to go</strong><span>{points} / {threshold} pts</span>
+            <strong><PointsLabel>{delta} pts to go</PointsLabel></strong>
+            <PointsLabel>{points} / {threshold} pts</PointsLabel>
           </div>
-          <div className="offer-track" role="progressbar" aria-label="Coupon progress" aria-valuenow={Math.min(points, threshold)} aria-valuemax={threshold}>
-            <i style={{ width: `${progressPct}%` }} />
+          <div className="offer-sheet-track-wrap" style={{ '--progress-position': `${progressPct}%` }}>
+            <div className="offer-track" role="progressbar" aria-label="Coupon progress" aria-valuenow={Math.min(points, threshold)} aria-valuemax={threshold}>
+              <i style={{ width: `${progressPct}%` }} />
+            </div>
+            {brandArtworkUrl && <img className="offer-progress-logo" src={brandArtworkUrl} alt="" />}
           </div>
           {bundleCount > 1 && <p className="offer-bundle-note">This goal unlocks all {bundleCount} coupons together.</p>}
         </div>
@@ -5422,7 +5428,7 @@ function ChallengesBase({ challenges, dailyCapReached, upgradeMaxPoints, onOpen 
               </span>
               <span className="home-game-copy">
                 <strong>{challenge.title}</strong>
-                <small>{rewardText && <><b>{rewardText}</b> · </>}{isGame ? difficulty : challenge.badge}</small>
+                <small>{rewardText && <><b><PointsLabel>{rewardText}</PointsLabel></b> · </>}{isGame ? difficulty : challenge.badge}</small>
               </span>
               <span className="home-game-action">{action}{!disabled && <span aria-hidden="true"> ›</span>}</span>
             </button>
@@ -5647,11 +5653,37 @@ function SurveyModal({ open, step, questions, loading, submitting, reward, onClo
   );
 }
 
+function CoinPointsIcon() {
+  return (
+    <svg className="points-coin-icon" viewBox="0 0 20 20" aria-hidden="true">
+      <circle cx="10" cy="10" r="8.5" fill="#f4c64e" stroke="#a86f12" strokeWidth="1.2" />
+      <circle cx="10" cy="10" r="6.4" fill="none" stroke="#ffe99c" strokeWidth=".8" />
+      <path d="M12.7 7.1c-.5-.6-1.3-.9-2.5-.9-1.4 0-2.3.6-2.3 1.6 0 2.5 4.6 1 4.6 3.6 0 1-.9 1.7-2.4 1.7-1.1 0-2.1-.4-2.8-1.2M10.1 5.2v9.6" fill="none" stroke="#76500e" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function PointsLabel({ children, className = '' }) {
+  return (
+    <span className={`points-label${className ? ` ${className}` : ''}`}>
+      <CoinPointsIcon />
+      <span>{children}</span>
+    </span>
+  );
+}
+
+function PointsMessage({ text }) {
+  const parts = String(text ?? '').split(/(\+?\d+(?:[,.]\d+)?(?:\s*[–−-]\s*\d+(?:[,.]\d+)?)?\s*pts?\b)/gi);
+  return parts.map((part, index) => (
+    /\bpts?\b/i.test(part) ? <PointsLabel key={index}>{part}</PointsLabel> : part
+  ));
+}
+
 function NotificationModal({ notification, onConfirm }) {
   return (
     <Modal id="notification-modal" open={!!notification} title={notification?.title ?? 'Success!'} onClose={onConfirm} textCenter>
       <div className="notification-icon">{notification?.icon ?? '✨'}</div>
-      <p className="notification-message">{notification?.message}</p>
+      <p className="notification-message"><PointsMessage text={notification?.message} /></p>
       <button className="btn btn-primary btn-block" id="notification-confirm-btn" onClick={onConfirm}>Understood</button>
     </Modal>
   );
@@ -5674,11 +5706,23 @@ function Modal({ id, open, title, onClose, textCenter = false, children }) {
 }
 
 
-function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onUploadAvatar, onClose, onConnect, onDisconnect }) {
+function ProfilePage({ brand, offerBrandPreview, profile, binding, shopifyStatus, onSave, onUploadAvatar, onClose, onConnect, onDisconnect }) {
   const [draft, setDraft] = useState(() => normalizeProfile({ ...profile, brandName: brand?.name }));
   const [clearAvatarImage, setClearAvatarImage] = useState(false);
   const avatarInputRef = useRef(null);
   const brandName = brand?.name || 'Your brand';
+  const previewBrandName = offerBrandPreview?.name || brandName;
+  const isMoshPreview = previewBrandName.trim().toLowerCase() === 'mosh' && Boolean(offerBrandPreview);
+  const previewBrandLogo = isMoshPreview
+    ? '/rewards/mosh-wordmark.webp'
+    : offerBrandPreview?.logoImage || brand?.logoUrl;
+  const profileThemeStyle = {
+    '--profile-primary': offerBrandPreview?.colors?.primary || brand?.buttonColor || brand?.primaryColor || '#681cab',
+    '--profile-secondary': offerBrandPreview?.colors?.secondary || brand?.backgroundColor || '#f3eddf',
+    '--profile-on-primary': offerBrandPreview?.colors?.primary
+      ? 'var(--offer-on-primary, #fff)'
+      : 'var(--brand-on-primary, #fff)',
+  };
   const connected = binding?.connected || shopifyStatus === 'connected';
   const accountLabel = connected ? shopifyAccountLabel(binding?.connected ? binding : { connected: true }) : 'Not connected';
   const draftInitial = profileInitial(draft);
@@ -5695,15 +5739,15 @@ function ProfilePage({ brand, profile, binding, shopifyStatus, onSave, onUploadA
   }
 
   return (
-    <section className="shopify-account-page profile-page" aria-label="Profile settings">
+    <section className="shopify-account-page profile-page" aria-label="Profile settings" style={profileThemeStyle}>
       <header className="shopify-account-header">
-        <div className="shopify-account-brand">
-          {brand?.logoUrl ? (
-            <img className="shopify-account-brand-logo" src={brand.logoUrl} alt={`${brandName} logo`} />
+        <div className={`shopify-account-brand${isMoshPreview ? ' is-wordmark' : ''}`}>
+          {previewBrandLogo ? (
+            <img className="shopify-account-brand-logo" src={previewBrandLogo} alt={`${previewBrandName} logo`} />
           ) : (
-            <span className="shopify-account-brand-initial" aria-hidden="true">{brandName.trim().charAt(0).toUpperCase() || 'Y'}</span>
+            <span className="shopify-account-brand-initial" aria-hidden="true">{previewBrandName.trim().charAt(0).toUpperCase() || 'Y'}</span>
           )}
-          <span className="shopify-account-brand-name">{brandName}</span>
+          {!isMoshPreview && <span className="shopify-account-brand-name">{previewBrandName}</span>}
         </div>
         <button className="shopify-account-close" type="button" onClick={onClose} aria-label="Close Shopify account">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

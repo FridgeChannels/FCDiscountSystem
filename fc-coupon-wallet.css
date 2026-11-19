@@ -2792,6 +2792,12 @@
   color: #373b3b;
   box-shadow: 0 2px 3px #1e172309, inset 0 0 0 1px #33383b17;
 }
+.offer-ticket.is-locked {
+  color: color-mix(in srgb, var(--offer-primary) 22%, #373b3b);
+  background: color-mix(in srgb, var(--offer-background) 84%, var(--offer-primary));
+  box-shadow: 0 3px 7px color-mix(in srgb, var(--offer-primary) 10%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--offer-primary) 15%, transparent);
+}
 .offer-ticket-paper {
   min-width: 0;
   position: relative;
@@ -2829,6 +2835,11 @@
   box-shadow: 0 13px 22px -13px color-mix(in srgb, var(--offer-ink) 54%, transparent),
     0 3px 6px #1c13241a, inset 0 -2px 0 #0c07162b;
 }
+.offer-ticket.is-ready {
+  grid-template-columns: minmax(0, 1fr);
+  box-shadow: 0 15px 26px -16px color-mix(in srgb, var(--offer-ink) 72%, transparent),
+    0 4px 9px #1c13241c, inset 0 0 0 1px #ffffff30;
+}
 :is(.is-ready, .is-pending) .offer-ticket-paper {
   grid-column: 1 / -1;
   display: grid;
@@ -2840,6 +2851,12 @@
     radial-gradient(ellipse at 93% 28%, color-mix(in srgb, var(--offer-paper) 14%, transparent), transparent 61%),
     linear-gradient(115deg, color-mix(in srgb, var(--offer-ink) 79%, #21122c), var(--offer-ink) 73%);
   box-shadow: inset 0 1px 0 #ffffff30;
+}
+.offer-ticket.is-ready .offer-ticket-paper {
+  grid-column: 1;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .82fr);
+  column-gap: 8px;
+  padding: 16px 17px 13px;
 }
 :is(.is-ready, .is-pending) .offer-ticket-paper::before, :is(.is-ready, .is-pending) .offer-ticket-paper::after {
   content: '';
@@ -2861,6 +2878,32 @@
   padding: 4px 9px 4px 7px;
   box-shadow: inset 0 0 0 1px #ffffff28;
 }
+.offer-ticket.is-ready .offer-ticket-top {
+  grid-column: 1 / -1;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.offer-ticket.is-ready .offer-ticket-status { flex-shrink: 0; }
+.offer-ticket.is-ready .offer-code {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: center;
+  justify-self: end;
+  flex-wrap: nowrap;
+  gap: 0 5px;
+  width: max-content;
+  max-width: 100%;
+  padding: 2px 5px 2px 7px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--offer-paper) 13%, transparent);
+  box-shadow: inset 0 0 0 1px #ffffff26;
+}
+.offer-ticket.is-ready .offer-code b { font-size: .68rem; letter-spacing: .025em; }
+.offer-ticket.is-ready .offer-code button { min-height: 40px; gap: 3px; padding-inline: 3px; font-size: .66rem; }
+.offer-ticket.is-ready .offer-code svg { width: 12px; height: 12px; }
 :is(.is-ready, .is-pending) .offer-ticket-paper h2 {
   position: relative;
   grid-column: 1;
@@ -2870,7 +2913,7 @@
   font-weight: 550;
 }
 :is(.is-ready, .is-pending) .offer-ticket-paper h2.long-offer { font-size: 1.8rem; line-height: 1.14; }
-.offer-ticket.is-ready .offer-ticket-paper h2 {
+:is(.is-ready, .is-pending) .offer-ticket-paper h2 {
   --value-rim: color-mix(in srgb, var(--offer-paper) 76%, var(--offer-ink));
   --value-edge: color-mix(in srgb, var(--offer-paper) 47%, var(--offer-ink));
   --value-base: color-mix(in srgb, var(--offer-ink) 68%, #19101f);
@@ -2884,11 +2927,33 @@
           drop-shadow(.016em .024em 0 var(--value-edge))
           drop-shadow(.023em .033em 0 var(--value-base))
           drop-shadow(.025em .065em .035em rgb(22 8 30 / .56));
+  margin: 8px 0 5px;
 }
-.offer-ticket.is-ready .offer-ticket-paper h2 em { font-weight: 525; }
+:is(.is-ready, .is-pending) .offer-ticket-paper h2 em { font-weight: 525; }
+.offer-ticket.is-locked .offer-ticket-paper h2 {
+  --value-rim: color-mix(in srgb, var(--offer-background) 80%, white);
+  --value-edge: color-mix(in srgb, var(--offer-primary) 42%, var(--offer-background));
+  --value-base: color-mix(in srgb, var(--offer-primary) 72%, #21122c);
+  color: var(--offer-primary);
+  transform: translateY(-.025em) rotate(-1deg);
+  filter: drop-shadow(.008em .012em 0 var(--value-rim))
+          drop-shadow(.016em .024em 0 var(--value-edge))
+          drop-shadow(.023em .033em 0 var(--value-base))
+          drop-shadow(.025em .06em .028em color-mix(in srgb, var(--offer-primary) 30%, transparent));
+}
 @supports ((background-clip: text) or (-webkit-background-clip: text)) {
-  .offer-ticket.is-ready .offer-ticket-paper h2 {
+  :is(.is-ready, .is-pending) .offer-ticket-paper h2 {
     background: linear-gradient(155deg, white 12%, var(--offer-paper) 42%, var(--value-rim) 76%, var(--offer-paper));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .offer-ticket.is-locked .offer-ticket-paper h2 {
+    background: linear-gradient(155deg,
+      color-mix(in srgb, var(--offer-primary) 48%, white) 5%,
+      color-mix(in srgb, var(--offer-primary) 72%, var(--offer-background)) 38%,
+      color-mix(in srgb, var(--offer-primary) 82%, #21122c) 74%,
+      color-mix(in srgb, var(--offer-primary) 58%, white));
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
@@ -2904,28 +2969,9 @@
   }
 }
 @media (forced-colors: active) {
-  .offer-ticket.is-ready .offer-ticket-paper h2 { background: none; color: CanvasText; filter: none; }
+  :is(.is-ready, .is-pending, .is-locked) .offer-ticket-paper h2 { background: none; color: CanvasText; filter: none; }
 }
 :is(.is-ready, .is-pending) .offer-ticket-paper p { position: relative; grid-column: 1 / -1; font-size: .78rem; }
-.offer-signature {
-  grid-column: 2;
-  place-self: center;
-  position: relative;
-  pointer-events: none;
-  user-select: none;
-  color: color-mix(in srgb, var(--offer-paper) 75%, transparent);
-  font: 600 clamp(1rem, 6.2cqi, 1.6rem)/1.1 'Dancing Script', 'Brush Script MT', 'Snell Roundhand', cursive;
-  transform: rotate(-12deg);
-}
-.offer-signature::after {
-  content: '';
-  position: absolute;
-  inset: calc(100% + 2px) 1% auto 24%;
-  height: 4px;
-  border-top: 1.5px solid currentColor;
-  border-radius: 50%;
-  transform: rotate(-3deg);
-}
 .offer-code {
   min-width: 0;
   display: flex;
@@ -2946,6 +2992,7 @@
   pointer-events: none;
   background: repeating-linear-gradient(90deg, #ffffff55 0 4px, transparent 4px 8px);
 }
+.offer-ticket.is-ready::after { grid-row: 2; inset-inline: 12px; }
 .offer-code b { position: relative; z-index: 2; max-width: 100%; user-select: all; overflow-wrap: anywhere; font: 650 .83rem/1.4 ui-monospace, monospace; letter-spacing: .045em; }
 .offer-code button { position: relative; z-index: 2; display: inline-flex; gap: 4px; align-items: center; min-height: 44px; padding: 2px; font: 600 .74rem var(--font-sans); color: var(--offer-paper); background: none; border: 0; cursor: pointer; }
 .offer-code svg { width: 13px; height: 13px; }
@@ -2960,6 +3007,38 @@
   background: var(--offer-paper);
   box-shadow: 0 2px 4px #15091e25;
 }
+.offer-ticket.is-ready .offer-action {
+  grid-column: 1;
+  justify-self: stretch;
+  width: auto;
+  min-height: 58px;
+  margin: 9px 10px 10px;
+  padding: 4px 9px 4px 18px;
+  border: 1px solid #ffffffc7;
+  border-radius: 13px;
+  color: var(--offer-ink);
+  background: linear-gradient(180deg, #fff 0%, var(--offer-paper) 100%);
+  box-shadow: 0 3px 0 color-mix(in srgb, var(--offer-ink) 46%, #210d30),
+    0 7px 12px #170b1c28, inset 0 1px 0 #ffffff;
+  font-size: 1.1rem;
+  font-weight: 800;
+  transition: transform .14s ease, box-shadow .14s ease, filter .14s ease;
+}
+.offer-ticket.is-ready .offer-action span { flex: 1; text-align: center; }
+.offer-ticket.is-ready .offer-action svg {
+  box-sizing: border-box;
+  width: 36px;
+  height: 36px;
+  padding: 9px;
+  border-radius: 50%;
+  color: var(--offer-paper);
+  background: var(--offer-ink);
+}
+.offer-ticket.is-ready .offer-action:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--offer-ink) 46%, #210d30),
+    0 3px 6px #170b1c20, inset 0 1px 0 #ffffff;
+}
 /* An unlocked offer may briefly await its code. Keep its action in the same place. */
 .offer-ticket.is-pending .offer-action { grid-column: 2; }
 .offer-ticket.is-locked .offer-action {
@@ -2967,8 +3046,8 @@
   flex-direction: column-reverse;
   gap: 7px;
   border-radius: 0 var(--ticket-radius) var(--ticket-radius) 0;
-  color: #3d4440;
-  background: #33383d07;
+  color: color-mix(in srgb, var(--offer-primary) 48%, #3d4440);
+  background: color-mix(in srgb, var(--offer-primary) 5%, transparent);
 }
 .offer-ticket.is-locked .offer-action::before {
   content: '';
@@ -2976,7 +3055,9 @@
   right: var(--stub-width);
   width: 1px;
   inset-block: 8px;
-  background: repeating-linear-gradient(to bottom, #61656658 0 3px, transparent 3px 7px);
+  background: repeating-linear-gradient(to bottom,
+    color-mix(in srgb, var(--offer-primary) 24%, transparent) 0 3px,
+    transparent 3px 7px);
 }
 .offer-ticket.is-locked::before, .offer-ticket.is-locked::after {
   content: '';
@@ -2990,12 +3071,30 @@
 }
 .offer-ticket.is-locked::before { top: 0; border-radius: 0 0 8px 8px; }
 .offer-ticket.is-locked::after { bottom: 0; border-radius: 8px 8px 0 0; }
+.points-label {
+  display: inline-flex;
+  align-items: center;
+  gap: .28em;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.points-coin-icon {
+  display: block;
+  flex: 0 0 auto;
+  width: 1em;
+  height: 1em;
+  filter: drop-shadow(0 1px 1px #704b102e);
+}
 .offer-mini-progress, .offer-sheet-progress { display: flex; align-items: center; gap: 8px; }
 .offer-mini-progress { margin-top: 8px; font-size: .71rem; font-variant-numeric: tabular-nums; }
 .offer-track { display: block; overflow: hidden; height: 5px; border-radius: 4px; background: color-mix(in srgb, var(--offer-ink) 12%, white); }
 .offer-track i { display: block; height: 100%; border-radius: inherit; background: var(--offer-ink); transition: width .25s ease-out; }
-.offer-mini-progress .offer-track { width: 59px; height: 4px; background: #cdd1ce; }
-.offer-mini-progress .offer-track i { background: #6b736e; }
+.offer-mini-progress .offer-track {
+  width: 59px;
+  height: 4px;
+  background: color-mix(in srgb, var(--offer-primary) 15%, var(--offer-background));
+}
+.offer-mini-progress .offer-track i { background: color-mix(in srgb, var(--offer-primary) 64%, #8d5cba); }
 .offers-empty { font-size: .82rem; line-height: 1.45; color: var(--home-muted); }
 .rewards-sheet {
   --sheet-primary: var(--offer-primary, var(--offer-ink));
@@ -3023,8 +3122,8 @@
 }
 .rewards-sheet::backdrop {
   background: linear-gradient(to bottom,
-    color-mix(in srgb, var(--home-ink, #281f30) 54%, transparent),
-    color-mix(in srgb, var(--home-ink, #281f30) 68%, transparent));
+    color-mix(in srgb, var(--home-ink, #281f30) 72%, transparent),
+    color-mix(in srgb, var(--home-ink, #281f30) 82%, transparent));
 }
 .rewards-home:has(.leaderboard-sheet[open]) .offer-task-sheet::backdrop { background: transparent; }
 .offer-sheet-body { display: flow-root; }
@@ -3096,7 +3195,24 @@
 .offer-sheet-progress { justify-content: space-between; flex-wrap: wrap; margin-bottom: 9px; font-variant-numeric: tabular-nums; }
 .offer-sheet-progress strong { font: 750 .98rem/1.2 var(--font-sans); }
 .offer-sheet-progress span { color: var(--home-muted); font-size: .76rem; }
-.offer-sheet-meter .offer-track { height: 6px; }
+.offer-sheet-track-wrap { position: relative; padding: 11px 0; }
+.offer-sheet-track-wrap .offer-track { height: 6px; }
+.offer-progress-logo {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: clamp(22px, var(--progress-position), calc(100% - 22px));
+  width: 48px;
+  height: 26px;
+  object-fit: contain;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  filter: drop-shadow(0 2px 2px #28113d40);
+  transition: left .32s cubic-bezier(.2,.75,.25,1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .offer-progress-logo { transition: none; }
+}
 .offer-bundle-note { margin: 8px 0 0; font-size: .78rem; line-height: 1.4; color: var(--home-muted); }
 .offer-tasks-heading { margin: 18px 0 8px; font: 700 1.25rem/1.2 var(--font-serif); letter-spacing: -.025em; }
 .home-challenge-list {
