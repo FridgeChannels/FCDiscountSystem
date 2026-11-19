@@ -34,6 +34,39 @@ test('T5 maps single saving to one coupon and product CTA', () => {
   assert.equal(config.coupons.length, 1);
   assert.equal(config.coupons[0].claimCode, 'PURA10');
   assert.equal(config.products[0].amazonUrl, 'https://www.amazon.com/dp/B0FCSEA001?tag=fc');
+  assert.equal(config.brand.colors.primary, '#004d3d');
+  assert.equal(config.brand.colors.secondary, '#fff2db');
+  assert.equal(config.brand.colors.accent, '#fff2db');
+});
+
+test('maps brand primary/secondary colors and storeUrl when API provides them', () => {
+  const config = mapConsumerExperienceToConfig({
+    state: 'ready',
+    brand: {
+      name: 'mosh',
+      logoUrl: null,
+      primaryColor: '#681cab',
+      secondaryColor: '#fbeaff',
+      storeUrl: 'https://moshlife.com/',
+    },
+    product: {
+      id: 'p1',
+      name: 'Bars',
+      imageUrl: 'https://cdn.example.com/a.png',
+      asin: 'B0MOSH001',
+      attributionUrl: 'https://www.amazon.com/dp/B0MOSH001?tag=fc',
+    },
+    amazon: { sellerId: 'M1', sellerLabel: 'mosh', storefrontUrl: 'https://www.amazon.com/s?k=mosh' },
+    primaryCta: 'https://www.amazon.com/dp/B0MOSH001?tag=fc',
+    availableSavings: [],
+    survey: null,
+    fallback: { url: 'https://www.amazon.com/s?k=mosh' },
+  }, 'FC-MOSH');
+
+  assert.equal(config.brand.colors.primary, '#681cab');
+  assert.equal(config.brand.colors.secondary, '#fbeaff');
+  assert.equal(config.brand.storeUrl, 'https://moshlife.com/');
+  assert.equal(config.brand.amazonStoreUrl, 'https://www.amazon.com/s?k=mosh');
 });
 
 test('maps magnet_brand_param payload without asin to product CTA', () => {

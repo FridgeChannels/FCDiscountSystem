@@ -76,6 +76,7 @@ export function mergeBrand(customerBrand, magnetBrandParam) {
     return {
       name: customer.name || null,
       logoUrl: normalizeLogoUrl(customer.logoUrl, baseUrl),
+      wordmarkUrl: normalizeLogoUrl(customer.wordmarkUrl, baseUrl),
       primaryColor: customer.primaryColor || null, // legacy: → button color
       backgroundColor: null,
       buttonColor: null,
@@ -86,6 +87,10 @@ export function mergeBrand(customerBrand, magnetBrandParam) {
   return {
     name: param.brandName ?? customer.name ?? null,
     logoUrl: normalizeLogoUrl(param.logoUrl ?? param.brandLogo ?? customer.logoUrl, baseUrl),
+    wordmarkUrl: normalizeLogoUrl(
+      param.wordmarkUrl ?? param.brandWordmarkUrl ?? customer.wordmarkUrl,
+      baseUrl,
+    ),
     primaryColor: null,
     backgroundColor: param.primaryColor ?? null, // primary_color → page background
     buttonColor: param.secondaryColor ?? null, // second_color → button background

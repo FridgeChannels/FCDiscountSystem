@@ -98,7 +98,7 @@ export default function ExperienceLoading({
   return (
     <div ref={overlayRef} className="world-entry" role="status" aria-label={brandName ? `Opening ${brandName}` : 'Opening page'}
       style={{ '--entry-primary': primary, '--entry-secondary': secondary }}>
-      <div ref={markRef} className="world-entry__mark" style={{ mixBlendMode: logoBlendMode }}>
+      <div ref={markRef} className="world-entry__mark" style={logoBlendMode ? { mixBlendMode: logoBlendMode } : undefined}>
         {logoUrl && imageStatus !== 'failed' && <img ref={imageRef} className="world-entry__logo" src={logoUrl} alt=""
           data-loaded={imageStatus === 'ready'} onLoad={() => setImageStatus('ready')} onError={() => setImageStatus('failed')} />}
         {(!logoUrl || imageStatus === 'failed') && brandName && <span className="world-entry__name">{brandName}</span>}

@@ -4537,8 +4537,8 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
         ...availableChallenges.filter((challenge) => challenge.type !== 'survey'),
       ]
     : availableChallenges;
-  const showMoshWordmark = (offerBrandPreview?.name ?? brand.name)?.trim().toLowerCase() === 'mosh';
-  const brandArtworkUrl = showMoshWordmark ? '/rewards/mosh-wordmark.webp' : brand.logoUrl;
+  const brandArtworkUrl = offerBrandPreview?.wordmarkUrl || brand.wordmarkUrl || null;
+  const showWordmark = Boolean(brandArtworkUrl);
   const offerPalette = offerBrandPreview?.colors;
   const offerColors = useMemo(() => offerPaletteStyle(
     offerPalette?.primary ?? brand.backgroundColor ?? brand.primaryColor,
@@ -4668,7 +4668,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
           setWalletOpen(false);
         }}
         walletOpen={walletOpen}
-        offerLogo={showMoshWordmark ? (offerBrandPreview?.logoImage || brand.logoUrl || '/reorder/mosh/logo.png') : null}
+        offerLogo={showWordmark ? (offerBrandPreview?.logoImage || brand.logoUrl || null) : null}
         rewardsCompleted={completedMode}
         onLogoSecretTap={logoSecretEnabled ? handleLogoSecretTap : undefined}
       />
@@ -4688,7 +4688,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
             offers={offers}
             latestUnlock={walletRevealCoupons}
             archive={walletArchiveCoupons}
-            showMoshWordmark={showMoshWordmark}
+            showWordmark={showWordmark}
             brandArtworkUrl={brandArtworkUrl}
             onLogoSecretTap={logoSecretEnabled ? handleLogoSecretTap : undefined}
             copiedCode={walletCopiedCode}
@@ -5087,8 +5087,8 @@ function HeaderBase({
   return (
     <header className="brand-header">
       {offerLogo ? (
-        <h1 className="offers-brand-logo" aria-label="MOSH offers">
-          <img data-entry-logo="" src={offerLogo} alt="MOSH logo" />
+        <h1 className="offers-brand-logo" aria-label={`${brandName} offers`}>
+          <img data-entry-logo="" src={offerLogo} alt={`${brandName} logo`} />
         </h1>
       ) : <div
         className={`brand-info${onLogoSecretTap ? ' brand-info--secret-tap' : ''}`}
@@ -5206,7 +5206,7 @@ function NewChallengeUnlocked({ reason, onStart, onReset, onDismiss, coupon, cou
 }
 
 function CouponOffers({
-  archive, latestUnlock, showMoshWordmark, brandArtworkUrl, onLogoSecretTap,
+  archive, latestUnlock, showWordmark, brandArtworkUrl, onLogoSecretTap,
   offers, copiedCode, onCopy, onShop, points, threshold, delta, progressPct, time, bundleCount,
   challenges, dailyCapReached, onOpenChallenge, suspendSheet, onOpenLeaderboard, loading,
   onReset, demoRestartStatus, issuing, onRetryIssue,
@@ -5235,9 +5235,9 @@ function CouponOffers({
   return (
     <>
       <main className="content-area reward-home-content">
-        {showMoshWordmark ? (
+        {showWordmark ? (
           <div className={`offers-wordmark${offers.length ? ' over-ticket' : ''}`} onClick={onLogoSecretTap}>
-            <img src={brandArtworkUrl} alt="mosh" width="900" height="335" />
+            <img src={brandArtworkUrl} alt="" width="900" height="335" />
           </div>
         ) : <h1 className="offers-heading">Your offers</h1>}
         <div className="offers-list">
@@ -5708,10 +5708,9 @@ function ProfilePage({ brand, offerBrandPreview, profile, binding, shopifyStatus
   const avatarInputRef = useRef(null);
   const brandName = brand?.name || 'Your brand';
   const previewBrandName = offerBrandPreview?.name || brandName;
-  const isMoshPreview = previewBrandName.trim().toLowerCase() === 'mosh' && Boolean(offerBrandPreview);
-  const previewBrandLogo = isMoshPreview
-    ? '/rewards/mosh-wordmark.webp'
-    : offerBrandPreview?.logoImage || brand?.logoUrl;
+  const profileWordmarkUrl = offerBrandPreview?.wordmarkUrl || brand?.wordmarkUrl || null;
+  const previewBrandLogo = profileWordmarkUrl || offerBrandPreview?.logoImage || brand?.logoUrl;
+  const showProfileWordmark = Boolean(profileWordmarkUrl);
   const profileThemeStyle = {
     '--profile-primary': offerBrandPreview?.colors?.primary || brand?.buttonColor || brand?.primaryColor || '#681cab',
     '--profile-secondary': offerBrandPreview?.colors?.secondary || brand?.backgroundColor || '#f3eddf',
@@ -5737,13 +5736,13 @@ function ProfilePage({ brand, offerBrandPreview, profile, binding, shopifyStatus
   return (
     <section className="shopify-account-page profile-page" aria-label="Profile settings" style={profileThemeStyle}>
       <header className="shopify-account-header">
-        <div className={`shopify-account-brand${isMoshPreview ? ' is-wordmark' : ''}`}>
+        <div className={`shopify-account-brand${showProfileWordmark ? ' is-wordmark' : ''}`}>
           {previewBrandLogo ? (
             <img className="shopify-account-brand-logo" src={previewBrandLogo} alt={`${previewBrandName} logo`} />
           ) : (
             <span className="shopify-account-brand-initial" aria-hidden="true">{previewBrandName.trim().charAt(0).toUpperCase() || 'Y'}</span>
           )}
-          {!isMoshPreview && <span className="shopify-account-brand-name">{previewBrandName}</span>}
+          {!showProfileWordmark && <span className="shopify-account-brand-name">{previewBrandName}</span>}
         </div>
         <button className="shopify-account-close" type="button" onClick={onClose} aria-label="Close Shopify account">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

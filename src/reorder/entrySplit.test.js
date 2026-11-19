@@ -31,9 +31,16 @@ test('T4/T5 live entry uses ExperienceRoot and dedicated experience API', () => 
   assert.match(bff, /proxyDashboard/);
   assert.match(bff, /experienceMatch/);
   assert.match(app, /LIVE_VIEWS/);
+  assert.match(app, /asin-product/);
+  assert.match(app, /AsinMarketplaceProductScreen/);
   assert.match(app, /initialResolved/);
   assert.match(dtcApp, /skipEntryGiftIntro/);
   assert.match(dtcApp, /skipEntryGiftIntroRef/);
   assert.match(dtcApp, /Gift-drop intro is globally cancelled|Gift-drop intro cancelled globally|never reopen intro from plan sync/);
   assert.doesNotMatch(app, /onOpenDemo=\{\(\) => navigate\('amazon-product'\)\}/);
+  assert.match(app, /!live && view\.name === 'amazon-product'/);
+  const liveScreen = readFileSync(resolve('src/reorder/AsinMarketplaceProductScreen.jsx'), 'utf8');
+  assert.match(liveScreen, /Place order/);
+  assert.match(liveScreen, /AmazonCta/);
+  assert.doesNotMatch(liveScreen, /placeDemoOrder|amazon-success/);
 });

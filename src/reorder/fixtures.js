@@ -86,6 +86,7 @@ export function buildScenario(name = 'landing') {
       batchId: 'mosh-product-preview',
       brand: {
         id: 'mosh', name: 'mosh', logoText: 'mosh', logoImage: '/reorder/mosh/logo.png', logoBlendMode: 'multiply',
+        wordmarkUrl: '/rewards/mosh-wordmark.webp',
         storeUrl: 'https://moshlife.com/', amazonStoreUrl: `${AMAZON_BASE}/s?k=MOSH+protein+bars`,
         colors: { primary: '#681cab', secondary: '#fbeaff' },
       },

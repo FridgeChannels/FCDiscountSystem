@@ -52,34 +52,45 @@ export function mapConsumerExperienceToConfig(experience, fcId) {
     name: product.name || 'Product',
     variant: product.variant || '',
     image: product.imageUrl || '',
+    // Live PDP images are already prepared cutouts (same as mosh preview).
+    // Feed them as visualAssets.cutout so the hero skips re-cutout / re-crop.
+    visualAssets: product.imageUrl ? { cutout: product.imageUrl } : undefined,
     amazonUrl: experience.primaryCta || product.attributionUrl || '',
   };
 
-  const coupons = savings.map((discount, index) => ({
-    id: discount.id,
-    sellerId: mappedProduct.sellerId,
-    title: discount.title || discount.benefitSummary,
-    benefit: discount.benefitSummary || discount.title || 'Saving',
-    status: 'active',
-    startsAt: discount.startAt,
-    endsAt: discount.endAt,
-    eligibleProductIds: [mappedProduct.id],
-    eligibleAsins: discount.eligibleAsins || [mappedProduct.asin].filter(Boolean),
-    amazonUrl: mappedProduct.amazonUrl,
-    requiresCode: Boolean(discount.claimCode) || discount.claimCodeMode === 'group' || discount.claimCodeMode === 'single_use',
-    codePoolAvailable: true,
-    codes: discount.claimCode ? [discount.claimCode] : [],
-    claimCode: discount.claimCode || null,
-    requiresSurvey: false,
-    priority: discount.isFeatured ? 0 : index + 1,
-    isFeatured: Boolean(discount.isFeatured),
-    terms: {
-      validThrough: discount.endAt ? new Date(discount.endAt).toLocaleDateString() : '',
-      usageLimit: '',
-      stackingRule: '',
-      sellerName: amazon.sellerLabel || brand.name || '',
-    },
-  }));
+  const coupons = savings.map((discount, index) => {
+    const eligibleAsins = discount.eligibleAsins || [mappedProduct.asin].filter(Boolean);
+    const discountAsin = String(eligibleAsins[0] || mappedProduct.asin || '').toUpperCase();
+    // Keep coupon destination aligned with the offer ASIN when primary CTA points elsewhere.
+    const couponAmazonUrl = discountAsin && mappedProduct.asin && discountAsin === mappedProduct.asin
+      ? `https://www.amazon.com/dp/${discountAsin}`
+      : mappedProduct.amazonUrl;
+    return {
+      id: discount.id,
+      sellerId: mappedProduct.sellerId,
+      title: discount.title || discount.benefitSummary,
+      benefit: discount.benefitSummary || discount.title || 'Saving',
+      status: 'active',
+      startsAt: discount.startAt,
+      endsAt: discount.endAt,
+      eligibleProductIds: [mappedProduct.id],
+      eligibleAsins,
+      amazonUrl: couponAmazonUrl,
+      requiresCode: Boolean(discount.claimCode) || discount.claimCodeMode === 'group' || discount.claimCodeMode === 'single_use',
+      codePoolAvailable: true,
+      codes: discount.claimCode ? [discount.claimCode] : [],
+      claimCode: discount.claimCode || null,
+      requiresSurvey: false,
+      priority: discount.isFeatured ? 0 : index + 1,
+      isFeatured: Boolean(discount.isFeatured),
+      terms: {
+        validThrough: discount.endAt ? new Date(discount.endAt).toLocaleDateString() : '',
+        usageLimit: '',
+        stackingRule: '',
+        sellerName: amazon.sellerLabel || brand.name || '',
+      },
+    };
+  });
 
   const mappedSurvey = survey
     ? {
@@ -101,6 +112,10 @@ export function mapConsumerExperienceToConfig(experience, fcId) {
       }
     : null;
 
+  const primaryColor = brand.primaryColor || brand.primary_color || brand.colors?.primary || '#004d3d';
+  const secondaryColor = brand.secondaryColor || brand.secondary_color || brand.colors?.secondary || brand.colors?.accent || '#fff2db';
+  const storeUrl = brand.storeUrl || brand.websiteUrl || brand.website || '';
+
   return {
     status: experience.state === 'product_unavailable' ? 'ready' : (experience.state || 'ready'),
     productUnavailable: experience.state === 'product_unavailable',
@@ -110,13 +125,10 @@ export function mapConsumerExperienceToConfig(experience, fcId) {
       name: brand.name || 'Brand',
       logoText: brand.name || 'Brand',
       logoImage: brand.logoUrl || '',
+      storeUrl: storeUrl || undefined,
       amazonStoreUrl: experience.fallback?.url || amazon.storefrontUrl || '',
       contactUrl: '',
-      colors: {
-        primary: brand.colors?.primary || brand.primaryColor || '#004d3d',
-        secondary: brand.colors?.secondary || brand.secondaryColor,
-        accent: '#ff8a00',
-      },
+      colors: { primary: primaryColor, secondary: secondaryColor, accent: brand.colors?.accent || secondaryColor },
     },
     currentProductId: mappedProduct.id,
     products: [mappedProduct],

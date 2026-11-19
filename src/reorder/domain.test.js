@@ -23,6 +23,27 @@ test('Coupon binding requires the same seller, ASIN and Amazon destination', () 
   assert.equal(isCouponBoundToProduct(coupon({ amazonUrl: 'http://www.amazon.com/dp/B0FCSEA001' }), product), false);
 });
 
+test('Brand-param allows primary CTA ASIN to differ when eligible ASINs match product.asin', () => {
+  const brandParamProduct = {
+    ...product,
+    amazonUrl: 'https://www.amazon.com/dp/B0H5M5MXKK',
+  };
+  assert.equal(
+    isCouponBoundToProduct(
+      coupon({ amazonUrl: 'https://www.amazon.com/dp/B0FCSEA001' }),
+      brandParamProduct,
+    ),
+    true,
+  );
+  assert.equal(
+    isCouponBoundToProduct(
+      coupon({ eligibleAsins: ['B0FCCHI002'], amazonUrl: 'https://www.amazon.com/dp/B0FCCHI002' }),
+      brandParamProduct,
+    ),
+    false,
+  );
+});
+
 test('Survey is a standalone module with one to three questions', () => {
   assert.equal(isSurveyConfigured(survey), true);
   assert.equal(isSurveyConfigured({ ...survey, questions: [] }), false);

@@ -33,7 +33,12 @@ export function isCouponBoundToProduct(coupon, product) {
   const couponAsin = amazonAsin(coupon.amazonUrl);
   const productUrlAsin = amazonAsin(product.amazonUrl);
   if (couponAsin && couponAsin !== productAsin) return false;
-  if (productUrlAsin && productUrlAsin !== productAsin) return false;
+  // Brand-param rows may set amazon_asin_url (primary CTA) to a related PDP while
+  // discount_asin / product.asin stay on the offer ASIN. If eligible ASINs already
+  // match product.asin, do not hide the coupon for that CTA mismatch.
+  if (productUrlAsin && productUrlAsin !== productAsin) {
+    if (!eligibleAsins.length || !eligibleAsins.includes(productAsin)) return false;
+  }
   return true;
 }
 

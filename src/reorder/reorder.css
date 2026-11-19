@@ -894,6 +894,30 @@ button:focus-visible, a:focus-visible { outline: 3px solid #006b57; outline-offs
   min-height: calc(152px + env(safe-area-inset-top));
   pointer-events: none;
 }
+/* Live only: mirror mosh-product preview hero sizing (flex stage + 84% bottle).
+   Do not pin a fixed stage height — that oversizes the product on short phones. */
+.marketplace-screen--product[data-branded="true"] .marketplace-header {
+  padding: max(17px, env(safe-area-inset-top)) 5.4% 0;
+}
+.marketplace-screen--product[data-branded="true"] .marketplace-hero__bottle,
+.marketplace-screen--product[data-branded="true"] .marketplace-hero__source-image {
+  left: 4%;
+  width: 92%;
+  max-width: none;
+  height: 84%;
+  max-height: none;
+  object-fit: contain;
+  object-position: center bottom;
+  bottom: calc(-1 * var(--subject-overlap) - 16px);
+  transform: none;
+  rotate: -8deg;
+}
+.marketplace-screen--product[data-branded="true"] .marketplace-hero__source-image {
+  rotate: 0deg;
+}
+.marketplace-screen--product[data-branded="true"] .marketplace-hero__contact {
+  bottom: calc(-1 * var(--subject-overlap) - 16px);
+}
 .marketplace-hero__stage::before {
   content: '';
   position: absolute;
@@ -988,15 +1012,19 @@ button:focus-visible, a:focus-visible { outline: 3px solid #006b57; outline-offs
   font-weight: 600;
 }
 .marketplace-product-copy--2p5d h1 {
-  display: block;
+  display: -webkit-box;
   margin: 0 auto;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   color: #fff;
   font-size: clamp(25px, 7.6cqw, 37px);
   font-weight: 800;
   letter-spacing: -.047em;
   line-height: 1.04;
   text-align: center;
-  text-wrap: balance;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
 }
 @media (min-width: 640px) {
   body:has(.marketplace-screen--product) { display: flow-root; background: #d0cfce; }
@@ -1044,20 +1072,127 @@ button:focus-visible, a:focus-visible { outline: 3px solid #006b57; outline-offs
 .marketplace-action {
   padding: clamp(8px, 1.5dvh, 14px) var(--product-inset) max(.5rem, env(safe-area-inset-bottom));
 }
-.marketplace-action > button {
+.marketplace-action > button,
+.marketplace-action > .amazon-button {
+  width: 100%;
   min-height: clamp(44px, 6.5dvh, 56px);
+  border: 0;
+  border-radius: 999px;
   background: #df2b26;
   color: #fff;
   font-size: 1.0625rem;
   font-weight: 750;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 5px 14px rgba(138,22,18,.2);
 }
-.marketplace-action > button:active { background: #c9231f; }
+.marketplace-action > button:active,
+.marketplace-action > .amazon-button:active { background: #c9231f; }
+.marketplace-action > .amazon-button:disabled,
+.marketplace-action > .amazon-button.amazon-button--disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
 .marketplace-action .voluntary-survey-card,
 .marketplace-action .voluntary-survey-card--marketplace strong { color: #bebebe; }
 .marketplace-action button:focus-visible,
 .marketplace-action a:focus-visible { outline-color: #ff5149; }
 
+/* Generic branded marketplace theme (live only via data-branded).
+   Mirror mosh preview: solid secondary shell + hero poster gradient.
+   Mid/end mixes approximate preview stops #eacbf9 / #ac72ce for mosh colors. */
+.marketplace-screen--product[data-branded="true"] {
+  --brand-ink: color-mix(in srgb, var(--brand-primary) 24%, #09060a);
+  --brand-poster-mid: color-mix(in srgb, var(--brand-secondary) 85%, var(--brand-primary));
+  --brand-poster-end: color-mix(in srgb, var(--brand-secondary) 46%, var(--brand-primary));
+}
+[data-branded="true"] .marketplace-product--2p5d,
+[data-branded="true"] .marketplace-product-copy--2p5d {
+  background: var(--brand-secondary);
+}
+[data-branded="true"] .marketplace-hero__stage::before {
+  background:
+    radial-gradient(ellipse at 50% 72%, #fff8, transparent 62%),
+    linear-gradient(
+      175deg,
+      var(--brand-secondary) 8%,
+      var(--brand-poster-mid) 56%,
+      var(--brand-poster-end) 100%
+    );
+}
+[data-branded="true"] .marketplace-brand .brand-logo {
+  width: 108px;
+  height: 56px;
+  max-height: 56px;
+  object-fit: contain;
+  filter: none;
+  mix-blend-mode: multiply;
+}
+[data-branded="true"] .marketplace-header { mix-blend-mode: multiply; }
+[data-branded="true"] .marketplace-product-copy--2p5d h1,
+[data-branded="true"] .marketplace-coupon-clip,
+[data-branded="true"] .marketplace-coupon-clip small { color: var(--brand-ink); }
+[data-branded="true"] .marketplace-action > button:first-child,
+[data-branded="true"] .marketplace-action > .amazon-button,
+[data-branded="true"] .marketplace-coupon__benefit,
+[data-branded="true"] .marketplace-coupon-clip--applied .marketplace-coupon-clip__check {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+}
+[data-branded="true"] .marketplace-action > .amazon-button:active { background: color-mix(in srgb, var(--brand-primary) 86%, #000); }
+[data-branded="true"] .marketplace-store,
+[data-branded="true"] .marketplace-action .voluntary-survey-card,
+[data-branded="true"] .marketplace-action .voluntary-survey-card strong { color: var(--brand-primary); }
+[data-branded="true"] .marketplace-action button:focus-visible,
+[data-branded="true"] .marketplace-action a:focus-visible { outline-color: var(--brand-primary); }
+
+[data-branded="true"] .marketplace-product-copy--2p5d .marketplace-coupon,
+[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon {
+  overflow: hidden;
+  border: 2px solid var(--brand-primary);
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--brand-secondary), color-mix(in srgb, var(--brand-secondary) 86%, var(--brand-primary)));
+  color: color-mix(in srgb, var(--brand-primary) 24%, #09060a);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--brand-primary) 22%, transparent), inset 0 1px 0 #fff;
+}
+[data-branded="true"] .marketplace-product-copy--2p5d .marketplace-coupon__benefit,
+[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon__benefit {
+  background: var(--brand-primary);
+  color: #fff;
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--brand-primary) 25%, transparent);
+}
+[data-branded="true"] .marketplace-product-copy--2p5d .marketplace-coupon__code,
+[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon__code { color: color-mix(in srgb, var(--brand-primary) 72%, #242424); }
+[data-branded="true"] .marketplace-product-copy--2p5d .marketplace-coupon__code code,
+[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon__code code { color: color-mix(in srgb, var(--brand-primary) 24%, #09060a); }
+[data-branded="true"] .marketplace-product-copy--2p5d .marketplace-coupon--compact .marketplace-coupon__code-row,
+[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon--compact .marketplace-coupon__code-row {
+  padding: .25rem .375rem .25rem .625rem;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 24%, var(--brand-secondary));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand-secondary) 76%, white);
+}
+[data-branded="true"] .marketplace-product-copy--2p5d .marketplace-coupon--compact .copy-icon-button,
+[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon--compact .copy-icon-button {
+  border: 0;
+  border-radius: 50%;
+  background: var(--brand-primary);
+  color: #fff;
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--brand-primary) 25%, transparent);
+}
+[data-branded="true"] .marketplace-product-copy--2p5d .marketplace-coupon__details-toggle,
+[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon__details-toggle {
+  border-color: color-mix(in srgb, var(--brand-primary) 22%, var(--brand-secondary));
+  color: color-mix(in srgb, var(--brand-primary) 24%, #09060a);
+  font-weight: 750;
+}
+[data-branded="true"] .marketplace-product-copy--2p5d .marketplace-coupon__details-toggle svg,
+[data-branded="true"] .marketplace-product-copy--2p5d .marketplace-coupon__details .coupon-detail-list svg,
+[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon__details-toggle svg,
+[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon__details .coupon-detail-list svg { color: var(--brand-primary); }
+[data-branded="true"] .marketplace-product-copy--2p5d .marketplace-coupon__details .coupon-detail-list li,
+[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon__details .coupon-detail-list li { color: color-mix(in srgb, var(--brand-primary) 24%, #09060a); }
+
+/* mosh preview: keep the original reference look untouched. */
 .marketplace-screen--product[data-brand="mosh"] {
   --mosh-ink: color-mix(in srgb, var(--brand-primary) 24%, #09060a);
 }
@@ -1087,42 +1222,6 @@ button:focus-visible, a:focus-visible { outline: 3px solid #006b57; outline-offs
   background: var(--brand-primary);
   border-color: var(--brand-primary);
 }
-[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon {
-  overflow: hidden;
-  border: 2px solid var(--brand-primary);
-  border-radius: 18px;
-  background: linear-gradient(135deg, var(--brand-secondary), color-mix(in srgb, var(--brand-secondary) 86%, var(--brand-primary)));
-  color: color-mix(in srgb, var(--brand-primary) 24%, #09060a);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--brand-primary) 22%, transparent), inset 0 1px 0 #fff;
-}
-[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon__benefit {
-  background: var(--brand-primary);
-  color: #fff;
-  box-shadow: 0 3px 8px color-mix(in srgb, var(--brand-primary) 25%, transparent);
-}
-[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon__code { color: color-mix(in srgb, var(--brand-primary) 72%, #242424); }
-[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon__code code { color: color-mix(in srgb, var(--brand-primary) 24%, #09060a); }
-[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon--compact .marketplace-coupon__code-row {
-  padding: .25rem .375rem .25rem .625rem;
-  border: 1px solid color-mix(in srgb, var(--brand-primary) 24%, var(--brand-secondary));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--brand-secondary) 76%, white);
-}
-[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon--compact .copy-icon-button {
-  border: 0;
-  border-radius: 50%;
-  background: var(--brand-primary);
-  color: #fff;
-  box-shadow: 0 3px 8px color-mix(in srgb, var(--brand-primary) 25%, transparent);
-}
-[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon__details-toggle {
-  border-color: color-mix(in srgb, var(--brand-primary) 22%, var(--brand-secondary));
-  color: color-mix(in srgb, var(--brand-primary) 24%, #09060a);
-  font-weight: 750;
-}
-[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon__details-toggle svg,
-[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon__details .coupon-detail-list svg { color: var(--brand-primary); }
-[data-brand] .marketplace-product-copy--2p5d .marketplace-coupon__details .coupon-detail-list li { color: color-mix(in srgb, var(--brand-primary) 24%, #09060a); }
 [data-brand="mosh"] .marketplace-store,
 [data-brand="mosh"] .marketplace-action .voluntary-survey-card,
 [data-brand="mosh"] .marketplace-action .voluntary-survey-card strong { color: var(--brand-primary); }
