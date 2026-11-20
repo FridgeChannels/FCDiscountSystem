@@ -136,7 +136,7 @@ function hexToRgb(hex) {
 function relativeLuminance({ r, g, b }) {
   const f = (c) => {
     const x = c / 255;
-    return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+    return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
   };
   return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
 }
@@ -145,7 +145,9 @@ function relativeLuminance({ r, g, b }) {
 function readableTextOn(hex) {
   const rgb = hexToRgb(hex);
   if (!rgb) return null;
-  return relativeLuminance(rgb) > 0.5 ? '#1d211b' : '#ffffff';
+  const white = { r: 255, g: 255, b: 255 };
+  const dark = { r: 22, g: 18, b: 26 };
+  return contrastRatio(rgb, white) >= contrastRatio(rgb, dark) ? '#ffffff' : '#16121a';
 }
 
 /** Darken a hex color by a ratio (0–1) for hover/active states. */
@@ -201,16 +203,15 @@ export function offerPaletteStyle(primary, secondary) {
   const background = hexToRgb(secondary);
   const pageSurface = background || hexToRgb(paper);
   const lockedBackground = lockedCouponSurface(pageSurface, primaryRgb || hexToRgb(ink));
-  const luminance = background ? relativeLuminance(background) : 1;
   return {
     ...(primaryRgb && {
       '--offer-primary': '#' + primary.trim().replace(/^#/, ''),
-      '--offer-on-primary': relativeLuminance(primaryRgb) > 0.179 ? '#0d0911' : '#fff',
+      '--offer-on-primary': readableTextOn(primary),
     }),
     ...(background && { '--offer-background': '#' + secondary.trim().replace(/^#/, '') }),
+    ...(background && { '--offer-on-background': readableTextOn(secondary) }),
     '--offer-locked-background': lockedBackground,
     '--offer-on-locked-background': readableTextOn(lockedBackground),
-    ...(luminance < 0.5 && { '--offer-on-background': luminance <= 0.18 ? '#fff' : '#101010' }),
     '--offer-ink': relativeLuminance(hexToRgb(ink)) > 0.17 ? darken(ink, 0.48) : ink,
     '--offer-paper': relativeLuminance(hexToRgb(paper)) > 0.77 ? paper : `color-mix(in srgb, ${paper} 15%, white)`,
   };
