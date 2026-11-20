@@ -32,9 +32,8 @@ export default function ProgressRail({
 
     return (
       <div className="progress-rail progress-rail--gift-pack" aria-label="Gift pack progress">
-        <div className="progress-rail-coins" aria-label={`${displayCoins} coins`}>
-          <i className="coin-ic progress-rail-coin-icon" aria-hidden="true" />
-          <span className="progress-rail-coin-value">{displayCoins}</span>
+        <div className="progress-rail-coins" aria-label={`${displayCoins} points`}>
+          <span className="progress-rail-coin-value">{displayCoins} pts</span>
           {lastGain ? (
             <span className="progress-rail-coin-gain" key={lastGain.id} aria-live="polite">
               +{lastGain.amount}
@@ -81,9 +80,8 @@ export default function ProgressRail({
 
   return (
     <div className="progress-rail" aria-label="Game progress">
-      <div className="progress-rail-coins" aria-label={`${displayCoins} coins`}>
-        <i className="coin-ic progress-rail-coin-icon" aria-hidden="true" />
-        <span className="progress-rail-coin-value">{displayCoins}</span>
+      <div className="progress-rail-coins" aria-label={`${displayCoins} points`}>
+        <span className="progress-rail-coin-value">{displayCoins} pts</span>
         {lastGain ? (
           <span className="progress-rail-coin-gain" key={lastGain.id} aria-live="polite">
             +{lastGain.amount}

@@ -61,6 +61,7 @@ import {
   selectPackRevealCoupons,
 } from './api/walletCoupons.js';
 import PlatformGameModal from './components/PlatformGameModal.jsx';
+import { RewardBrandContext, RewardBrandMark } from './components/RewardBrand.jsx';
 import DevToolbar from './components/DevToolbar.jsx';
 import {
   applyDevSceneUi,
@@ -168,16 +169,15 @@ function resolveTouchIdState(allowDevFallback = false) {
 
 const SHOPIFY_TAP_AUTH_BASE = 'https://dtc-dashboard.fridgechannels.com/tap';
 
-function buildShopifyAuthUrl(touchId) {
-  if (!touchId) return SHOPIFY_TAP_AUTH_BASE;
-  const redirectedFrom = encodeURIComponent(window.location.href);
-  return `${SHOPIFY_TAP_AUTH_BASE}/${encodeURIComponent(touchId)}?redirectedFrom=${redirectedFrom}`;
-}
-
-function buildShopifyUnlinkUrl(touchId) {
-  if (!touchId) return SHOPIFY_TAP_AUTH_BASE;
-  const redirectedFrom = encodeURIComponent(window.location.href);
-  return `${SHOPIFY_TAP_AUTH_BASE}/${encodeURIComponent(touchId)}?action=unlink&redirectedFrom=${redirectedFrom}`;
+function shopifyTapUrl(touchId, colors, unlink = false) {
+  const url = new URL(touchId ? `${SHOPIFY_TAP_AUTH_BASE}/${encodeURIComponent(touchId)}` : SHOPIFY_TAP_AUTH_BASE);
+  url.searchParams.set('redirectedFrom', window.location.href);
+  if (unlink) url.searchParams.set('action', 'unlink');
+  const palette = new URLSearchParams({ rewards: 'dtc' });
+  if (colors['--offer-primary']) palette.set('primary', colors['--offer-primary']);
+  if (colors['--offer-background']) palette.set('secondary', colors['--offer-background']);
+  url.hash = palette.toString();
+  return url.href;
 }
 
 function shopifyAuthStatusFromBinding(status) {
@@ -1032,6 +1032,11 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
   useEffect(() => {
     if (!isWelcomeVideoActive || welcomeVideoFadingRef.current) return undefined;
 
+    if (replayingDemo) {
+      const timer = window.setTimeout(() => handleWelcomeVideoEndRef.current(false), 1500);
+      return () => window.clearTimeout(timer);
+    }
+
     const video = welcomeVideoRef.current;
     if (!video) return undefined;
 
@@ -1122,7 +1127,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
       if (playRetryTimer) window.clearTimeout(playRetryTimer);
       clearWelcomeVideoTimers();
     };
-  }, [clearWelcomeVideoTimers, isWelcomeVideoActive]);
+  }, [clearWelcomeVideoTimers, isWelcomeVideoActive, replayingDemo]);
 
   useEffect(() => {
     pointsRef.current = points;
@@ -1688,6 +1693,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
         setZoomCopyState,
         setGameStart,
         setGameModalTitle,
+        setShopifyAuthOverlay,
         setShopifyBinding,
         setShopifyAuthStatus,
         writeCachedShopifyStatus,
@@ -3078,13 +3084,13 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
 
     const card = document.createElement('div');
     card.className = 'login-bonus-card';
-    card.innerHTML = `
-      <div class="login-bonus-glow"></div>
-      <div class="login-bonus-coin">¢</div>
-      <div class="login-bonus-value">+${pts}</div>
-      <div class="login-bonus-label">Coins</div>
-    `;
+    card.setAttribute('role', 'status');
+    card.textContent = `+${pts} pts`;
     viewport.appendChild(card);
+    if (typeof card.showPopover === 'function') {
+      card.popover = 'manual';
+      window.requestAnimationFrame(() => { if (card.isConnected) card.showPopover(); });
+    }
 
     const flyTimer = setTimeout(() => {
       card.classList.add('exiting');
@@ -3347,7 +3353,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     clearCachedShopifyStatus(touchId);
     clearCachedRewardPlan(touchId);
     setShopifyAccountOpen(false);
-    window.location.href = buildShopifyUnlinkUrl(touchId);
+    window.location.href = shopifyTapUrl(touchId, offerColors, true);
   }
 
   function handleShopifyContinue() {
@@ -3358,7 +3364,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     clearCachedShopifyStatus(touchId);
     clearCachedRewardPlan(touchId);
     setShopifyAuthOverlay(null);
-    window.location.href = buildShopifyAuthUrl(touchId);
+    window.location.href = shopifyTapUrl(touchId, offerColors);
   }
 
   function handleShopifySkip() {
@@ -4555,6 +4561,11 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
       ]
     : availableChallenges;
   const brandArtworkUrl = offerBrandPreview?.wordmarkUrl || brand.wordmarkUrl || null;
+  const rewardIdentity = useMemo(() => ({
+    name: offerBrandPreview?.name || brand.name,
+    logo: offerBrandPreview?.logoImage || brand.logoUrl,
+    wordmark: brandArtworkUrl,
+  }), [offerBrandPreview, brand.name, brand.logoUrl, brandArtworkUrl]);
   const showWordmark = Boolean(brandArtworkUrl);
   const offerPalette = offerBrandPreview?.colors;
   // DB/fixture convention matches offerPaletteStyle roles: primary=ink/brand, secondary=page paper.
@@ -4575,8 +4586,8 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
   }
 
   return (
-    <>
-    {showHome && <div className="offers-ambient" aria-hidden="true" style={offerColors} />}
+    <RewardBrandContext.Provider value={rewardIdentity}>
+    <div className="offers-ambient" aria-hidden="true" style={offerColors} />
     <div
       className={`mobile-viewport${(giftReveal || (showHome && !walletOpen)) ? ' rewards-home' : ''}`}
       data-offers-brand={offerBrandPreview?.name || brand.name || undefined}
@@ -4607,7 +4618,13 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
         aria-hidden={!isWelcomeVideoActive}
         onClick={isWelcomeVideoActive ? handleGiftVideoClick : undefined}
       >
-        <video
+        {replayingDemo ? (
+          <div className="dtc-demo-opening" role="status">
+            <RewardBrandMark />
+            <p>Opening your rewards…</p>
+            {canSkipGiftVideo && <button className="dtc-action" type="button" onClick={event => { event.stopPropagation(); handleGiftVideoClick(); }}>Continue</button>}
+          </div>
+        ) : <video
           ref={welcomeVideoRef}
           src={GIFT_OPENING_VIDEO_SRC}
           poster={GIFT_OPENING_VIDEO_POSTER}
@@ -4617,7 +4634,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
           preload={skipEntryGiftIntro ? 'none' : 'auto'}
           onEnded={() => handleWelcomeVideoEnd(false)}
           onError={() => { if (isWelcomeVideoActive) handleWelcomeVideoEnd(false); }}
-        />
+        />}
       </div>
       {showBrandIntro && !isWelcomeVideoActive && (
         <BrandIntro 
@@ -4646,7 +4663,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
           Refreshing rewards…
         </div>
       )}
-      {inlineError && (
+      {inlineError && !newChallenge && !showWelcomeRitual && (
         <div className="inline-error-notice" role="status" aria-live="polite">
           <div className="inline-error-notice__text">
             <strong>{inlineError.title}</strong>
@@ -4694,9 +4711,10 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
       />
 
       {skipEntryGiftIntro && !devScene && (entryWalletStatus === 'error' || (planError && !activePlan)) ? (
-        <main className="content-area reward-home-content" aria-label="Your offers">
-          <p role="status">Your offers couldn’t be loaded.</p>
-          <button type="button" onClick={() => entryWalletStatus === 'error' && activePlan
+        <main className="dtc-surface dtc-load-error" aria-label="Your offers">
+          <RewardBrandMark />
+          <h1 role="status">Your offers couldn’t be loaded.</h1>
+          <button className="dtc-action" type="button" onClick={() => entryWalletStatus === 'error' && activePlan
             ? refreshCouponWallet() : window.location.reload()}>Try again</button>
         </main>
       ) : walletOpen ? (
@@ -4795,13 +4813,12 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
           demoRestartStatus={demoRestartStatus}
           onStart={handleStartNewChallenge}
           onReset={handleSampleReset}
-          onDismiss={() => setNewChallenge(null)}
+          error={inlineError}
         />
       )}
 
       {shopifyAuthOverlay && (
         <ShopifyAuthorizationPage
-          brand={brand}
           source={shopifyAuthOverlay.source}
           onContinue={handleShopifyContinue}
           onSkip={handleShopifySkip}
@@ -4878,7 +4895,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
         <WelcomeRitual
           pack={soleRewardPack ?? currentPack}
           coupons={welcomeCoupons}
-          brand={brand}
+          error={inlineError}
           claimed={singleCouponOnlyMode ? solePackClaimed : currentPackClaimed}
           copiedCode={walletCopiedCode}
           onCopy={handleWalletCopy}
@@ -4902,7 +4919,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
         />
       )}
     </div>
-    </>
+    </RewardBrandContext.Provider>
   );
 }
 
@@ -4980,87 +4997,34 @@ function PackCouponSummary({ coupon, compact = false, showCondition = true, show
   );
 }
 
-function WelcomeRitual({
-  pack,
-  coupons,
-  brand,
-  claimed,
-  copiedCode,
-  onCopy,
-  onContinue,
-  onShop,
-  singleCoupon = false,
-  issuing = false,
-  autoIssue = true,
-}) {
+function WelcomeRitual({ pack, coupons, claimed, copiedCode, onCopy, onContinue, onShop, singleCoupon, issuing, autoIssue, error }) {
   const list = coupons?.length ? coupons : (pack?.coupons ?? []);
-  const brandName = brand?.name || 'FridgeChannel';
-  const hasCodes = list.some((coupon) => coupon?.code || coupon?.mockCode);
+  const hasCodes = list.some(coupon => coupon.code || coupon.mockCode);
   return (
-    <div className="welcome-pack-overlay" role="dialog" aria-label="Welcome gift">
-      <section className="welcome-pack-card">
-        <div className="welcome-rewards-hero-shell">
-          <div className="welcome-rewards-hero">
-            <div className="welcome-pack-brand">
-              {brand?.logoUrl ? <img src={brand.logoUrl} alt={`${brandName} logo`} /> : <BrandMark className="welcome-pack-logo" />}
-              <span>{brandName}</span>
-            </div>
-            <img
-              className="welcome-rewards-gift"
-              src="/rewards/welcome-rewards-hero-final-small.webp"
-              alt=""
-              aria-hidden="true"
-            />
-            <p className="welcome-pack-eyebrow">Rewards unlocked</p>
-            <h1>{singleCoupon ? 'Your reward is ready!' : 'Your first reward is ready!'}</h1>
-            <p className="welcome-pack-subtitle">
-              {issuing && !hasCodes ? (
-                <>Preparing your coupon code…</>
-              ) : singleCoupon ? (
-                <>Your exclusive offer is ready.<br />Copy the code below and start shopping.</>
-              ) : (
-                <>
-                  Here’s your starter coupon.<br />
-                  More coupons are on the way.
-                </>
-              )}
-            </p>
-          </div>
+    <section className="dtc-screen" role="dialog" aria-label="Welcome gift">
+      <div className="dtc-surface">
+        <RewardBrandMark />
+        <header className="dtc-heading">
+          <span className="dtc-kicker">Rewards unlocked</span>
+          <h1>{singleCoupon ? 'Your reward is ready!' : 'Your first reward is ready!'}</h1>
+          <p>{issuing && !hasCodes ? 'Preparing your coupon code…' : 'Your exclusive offer is waiting below.'}</p>
+        </header>
+        <div className="dtc-ticket-list">
+          {list.map(coupon => {
+            const code = coupon.code || coupon.mockCode;
+            return code
+              ? <OfferTicket key={coupon.couponId || code} offer={{ coupon: { ...coupon, code }, state: 'ready' }}
+                  copied={copiedCode === code} onCopy={onCopy} onShop={onShop} />
+              : <InactiveTicket key={coupon.couponId || coupon.value} coupon={coupon} label="Unlocked" />;
+          })}
         </div>
-
-        <div className="welcome-pack-list">
-          {list.map((coupon) => (
-            <CouponTicket
-              key={coupon.couponId ?? coupon.value}
-              coupon={coupon}
-              className="is-welcome-ticket"
-              featured
-              brand={brand}
-              showDetails
-              showCode={hasCodes || Boolean(coupon?.mockCode)}
-              copied={copiedCode === coupon.code}
-              onCopy={onCopy}
-              showShop={hasCodes || Boolean(coupon?.mockCode)}
-              onShop={onShop}
-            />
-          ))}
-        </div>
-
-        <div className="welcome-pack-actions">
-          {!autoIssue && (
-            <button className="welcome-pack-claim" type="button" disabled={issuing} onClick={onContinue}>
-              {singleCoupon ? 'View my coupons' : 'Get More OFF'}
-            </button>
-          )}
-          {autoIssue && (claimed || hasCodes) && (
-            <button className="welcome-pack-claim" type="button" onClick={onContinue}>
-              {singleCoupon ? 'View my coupons' : 'Get More OFF'}
-            </button>
-          )}
-        </div>
-        {(claimed || hasCodes) && <p className="welcome-pack-saved">Already saved in My coupons</p>}
-      </section>
-    </div>
+        {error && <p role="alert">{error.message}</p>}
+        {(!autoIssue || claimed || hasCodes) && <button className="dtc-action" type="button" disabled={issuing} onClick={onContinue}>
+          {singleCoupon ? 'View my coupons' : 'Explore more offers'}
+        </button>}
+        {(claimed || hasCodes) && <p>Saved to your coupons</p>}
+      </div>
+    </section>
   );
 }
 
@@ -5170,9 +5134,8 @@ function DemoRestartPanel({ status, onRestart }) {
   );
 }
 
-function NewChallengeUnlocked({ reason, onStart, onReset, onDismiss, coupon, coupons, isSample = false, demoRestartStatus }) {
+function NewChallengeUnlocked({ reason, onStart, onReset, error, coupon, coupons, isSample = false, demoRestartStatus }) {
   const redeemed = reason === 'redeemed';
-  const expired = reason === 'expired';
 
   const settlementCoupons = Array.isArray(coupons)
     ? coupons.filter(Boolean)
@@ -5181,18 +5144,12 @@ function NewChallengeUnlocked({ reason, onStart, onReset, onDismiss, coupon, cou
     : [];
 
   return (
-    <div className="new-challenge-overlay nc-settlement is-expired" role="dialog" aria-label="Round complete" data-screen-label="回合已结束">
-      <div className="nc-settlement-scroll">
-        <div className="nc-settlement-hero">
-          <div className="nc-hero-flag-small" aria-hidden="true">
-            <div className="nc-flag-pole" />
-            <div className="nc-flag-banner">
-              <span>★</span>
-            </div>
-          </div>
-        </div>
+    <div className="dtc-screen" role="dialog" aria-label="Round complete" data-screen-label="回合已结束">
+      <div className="dtc-surface">
+        <RewardBrandMark />
 
-        <section className="nc-copy-block">
+        <section className="dtc-heading">
+          <span className="dtc-kicker">Challenge recap</span>
           <h1>Round Complete</h1>
           <p>
             {isSample
@@ -5202,22 +5159,23 @@ function NewChallengeUnlocked({ reason, onStart, onReset, onDismiss, coupon, cou
         </section>
 
         {settlementCoupons.length > 0 && (
-          <div className="nc-settlement-coupons-list">
-            {settlementCoupons.map((c) => (
-              <SettlementTicket
-                key={c.code || c.mockCode || c.couponId || c.value}
-                coupon={c}
-                status={redeemed ? 'used' : 'earned'}
+          <div className="dtc-ticket-list">
+            {settlementCoupons.map((item) => (
+              <InactiveTicket
+                key={item.code || item.mockCode || item.couponId || item.value}
+                coupon={item}
+                label={redeemed ? 'Used' : 'Earned'}
               />
             ))}
           </div>
         )}
 
-        <div className="nc-footer">
+        <div className="dtc-footer">
+          {error && <p role="alert">{error.message}</p>}
           {isSample ? (
             <DemoRestartPanel onRestart={onReset} status={demoRestartStatus} />
           ) : (
-            <button className="nc-btn-start" type="button" onClick={onStart}>
+            <button className="dtc-action" type="button" onClick={onStart}>
               <span>Start Next Challenge</span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.7" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M5 12h14" />
@@ -5900,34 +5858,20 @@ function ProfilePage({ brand, offerBrandPreview, profile, binding, shopifyStatus
   );
 }
 
-function ShopifyAuthorizationPage({ brand, source, onContinue, onSkip }) {
-  const brandName = brand?.name || 'Your brand';
-  const brandInitial = brandName.trim().charAt(0).toUpperCase() || 'Y';
-
+function ShopifyAuthorizationPage({ source, onContinue, onSkip }) {
   return (
-    <section className="shopify-auth-overlay" aria-label="Shopify authorization" data-auth-source={source}>
-      <div className="shopify-auth-card">
-        <div className="shopify-auth-brand-lockup" aria-label={brandName}>
-          {brand?.logoUrl ? (
-            <img className="shopify-auth-brand-logo" src={brand.logoUrl} alt={`${brandName} logo`} />
-          ) : (
-            <span className="shopify-auth-brand-icon" aria-hidden="true">{brandInitial}</span>
-          )}
-          <span className="shopify-auth-brand-name">{brandName}</span>
+    <section className="dtc-screen dtc-auth" aria-label="Shopify authorization" data-auth-source={source}>
+      <div className="dtc-surface">
+        <RewardBrandMark />
+        <header className="dtc-heading">
+          <span className="dtc-kicker">Your rewards account</span>
+          <h1>Connect with Shopify</h1>
+          <p>Log in to sync your rewards and earn more points.</p>
+        </header>
+        <div className="dtc-footer">
+          <button className="dtc-action" type="button" onClick={onContinue}>Connect your Shopify</button>
+          <button className="dtc-secondary-action" type="button" onClick={onSkip}>Skip for now</button>
         </div>
-
-        <p className="shopify-auth-desc">
-          Log in with Shopify to sync rewards and earn more points.
-        </p>
-
-        <button className="shopify-auth-cta" type="button" onClick={onContinue}>
-          <img className="shopify-auth-cta-icon" src="/gift-opening/shopify-icon.webp" alt="" aria-hidden="true" />
-          Connect your Shopify
-        </button>
-
-        <button className="shopify-auth-skip" type="button" onClick={onSkip}>
-          Skip
-        </button>
       </div>
     </section>
   );
@@ -6204,54 +6148,16 @@ function WalletTicket({ coupon, copiedCode, onCopy, onClaim }) {
 }
 
 function InactiveTicket({ coupon, label }) {
-  const conditions = coupon.conditions || 'No minimum';
-  const labelLower = (label || '').toLowerCase();
-  const displayCode = coupon.code || coupon.mockCode || 'DEVCODE';
-
+  const code = coupon.code || coupon.mockCode;
   return (
-    <div className={`cwticket is-inactive is-${labelLower}`} {...couponPaletteProps(coupon)}>
-      <div className="cwticket-main">
-        <div className="cwticket-value">
-          <CouponValueFace coupon={coupon} />
-        </div>
-        <div className="cwticket-details">
-          <div className="cwticket-code-lbl">CODE: {displayCode}</div>
-          <div className="cwticket-cond-lbl">{conditions}</div>
-        </div>
-        <div className="cwticket-stamp-wrapper">
-          <div className={`cwticket-stamp is-${labelLower}`}>{label}</div>
-        </div>
+    <article className="offer-ticket dtc-record" aria-label={`${label}: ${couponTicketHeadline(coupon)}`}>
+      <div className="offer-ticket-paper">
+        <h2>{couponTicketHeadline(coupon)}</h2>
+        <p>{coupon.conditions || 'No minimum'}</p>
+        {code && <p className="dtc-record-code">{code}</p>}
       </div>
-      <div className="cwticket-stub is-inactive">
-        <span className="cwticket-stub-text">{label}</span>
-      </div>
-    </div>
-  );
-}
-
-function SettlementTicket({ coupon, status }) {
-  const conditions = coupon.conditions || 'No minimum';
-  const displayCode = coupon.code || coupon.mockCode || 'DEVCODE';
-  const isUsed = status === 'used';
-
-  return (
-    <div className={`cwticket ${isUsed ? 'is-settlement-used' : 'is-settlement-earned is-colored'}`} {...couponPaletteProps(coupon)}>
-      <div className="cwticket-main">
-        <div className="cwticket-value">
-          <CouponValueFace coupon={coupon} />
-        </div>
-        <div className="cwticket-details">
-          <div className="cwticket-code-lbl">CODE: {displayCode}</div>
-          <div className="cwticket-cond-lbl">{conditions}</div>
-        </div>
-        <div className="cwticket-stamp-wrapper">
-          <div className={`cwticket-stamp is-${status}`}>{isUsed ? 'Used' : 'Earned'}</div>
-        </div>
-      </div>
-      <div className="cwticket-stub">
-        <span className="cwticket-stub-text">{isUsed ? 'Used' : 'Earned'}</span>
-      </div>
-    </div>
+      <strong className="dtc-record-status">{label}</strong>
+    </article>
   );
 }
 

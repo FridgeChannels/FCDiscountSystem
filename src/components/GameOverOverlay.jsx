@@ -1,10 +1,15 @@
-/** Host shell overlay shown when a game session ends, before complete API returns. */
-export default function GameOverOverlay({ visible, title = 'Reward Incoming...' }) {
+import { RewardBrandMark } from './RewardBrand.jsx';
+
+export default function GameOverOverlay({ visible }) {
   if (!visible) return null;
 
   return (
-    <div className="platform-game-over-overlay" role="status" aria-live="polite" aria-label={title}>
-      <p className="platform-game-over-title">{title}</p>
+    <div className="platform-game-over-overlay" role="status" aria-live="polite">
+      <div className="dtc-game-result">
+        <RewardBrandMark />
+        <span className="dtc-kicker">Game complete</span>
+        <h2>Counting your points…</h2>
+      </div>
     </div>
   );
 }

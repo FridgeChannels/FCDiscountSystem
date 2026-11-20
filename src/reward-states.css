@@ -1,0 +1,169 @@
+.mobile-viewport {
+  --reward-accent: var(--offer-primary, var(--offer-ink, #315d4c));
+  --reward-on-accent: var(--offer-on-primary, white);
+  --reward-page: var(--offer-background, var(--offer-paper, #f6f1df));
+  --reward-text: var(--offer-on-background, #16121a);
+  --reward-tint: var(--offer-locked-background, #e1e6db);
+  --reward-on-tint: var(--offer-on-locked-background, #16121a);
+}
+
+.dtc-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 200;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--reward-page);
+  color: var(--reward-text);
+}
+.dtc-auth { z-index: 250; }
+.dtc-surface {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+  min-height: 100%;
+  padding: max(40px, env(safe-area-inset-top)) clamp(16px, 5vw, 28px) max(28px, env(safe-area-inset-bottom));
+  text-align: center;
+  font: 500 .94rem/1.5 var(--font-sans);
+}
+.dtc-surface > :first-child { margin-top: auto; }
+.dtc-surface > :last-child { margin-bottom: auto; }
+.reward-brand-mark {
+  display: block;
+  width: min(76%, 240px);
+  height: clamp(74px, 14vh, 132px);
+  object-fit: contain;
+  margin-inline: auto;
+}
+.reward-brand-name {
+  font: 700 clamp(1.5rem, 7vw, 2.3rem)/1.15 var(--font-serif);
+  overflow-wrap: anywhere;
+}
+.dtc-heading { display: grid; gap: 10px; width: 100%; }
+.dtc-kicker { font: 750 .71rem/1.4 var(--font-sans); letter-spacing: .13em; text-transform: uppercase; }
+.dtc-heading h1, .dtc-load-error h1, .dtc-game-result h2 {
+  margin: 0;
+  font: 650 clamp(1.9rem, 9vw, 2.8rem)/1.06 var(--font-serif);
+  letter-spacing: -.045em;
+  overflow-wrap: anywhere;
+}
+.dtc-heading p, .dtc-footer p, .dtc-surface > p { margin: 0; }
+.dtc-heading p { max-width: 31ch; margin-inline: auto; }
+.dtc-ticket-list, .dtc-footer { display: grid; gap: 12px; width: 100%; }
+.dtc-ticket-list { text-align: start; }
+.dtc-action, .dtc-secondary-action, .dtc-footer .demo-restart-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  width: 100%;
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--reward-accent);
+  color: var(--reward-on-accent);
+  font: 700 .94rem/1.25 var(--font-sans);
+  cursor: pointer;
+}
+.dtc-action svg { width: 20px; height: 20px; }
+.dtc-action:disabled { opacity: .7; cursor: progress; }
+.dtc-secondary-action { background: none; color: var(--reward-text); }
+.dtc-footer .demo-restart { margin: 0; color: var(--reward-on-tint); background: var(--reward-tint); }
+.dtc-footer .demo-restart-button:enabled:hover { background: var(--reward-accent); filter: brightness(.95); }
+.dtc-surface button:focus-visible { outline: 2px solid currentColor; outline-offset: -4px; }
+.dtc-load-error { min-height: 0; flex: 1; overflow: auto; color: var(--reward-text); }
+
+.offer-ticket.dtc-record {
+  background: var(--reward-tint);
+  color: var(--reward-on-tint);
+  grid-template-columns: minmax(0, 1fr) auto;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 15%, transparent);
+}
+.dtc-record h2 { font-size: 1.32rem; }
+.dtc-record p { margin: 2px 0; overflow-wrap: anywhere; }
+.dtc-record-code { font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+.dtc-record-status {
+  border-inline-start: 1px dashed color-mix(in srgb, currentColor 40%, transparent);
+  display: grid;
+  place-items: center;
+  padding: 0 12px;
+  font: 700 .76rem/1.3 var(--font-sans);
+}
+.gift-video-container:has(.dtc-demo-opening), .dtc-game-result, .platform-game-loading--overlay {
+  background: var(--reward-page);
+  color: var(--reward-text);
+}
+.dtc-demo-opening, .dtc-game-result {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 16px;
+  padding: 24px;
+  text-align: center;
+}
+.dtc-demo-opening { height: 100%; }
+.dtc-demo-opening .dtc-action { width: min(100%, 230px); }
+@media (prefers-reduced-motion: no-preference) {
+  .dtc-demo-opening > :first-child { animation: reward-mark-arrive .6s ease-out both; }
+  @keyframes reward-mark-arrive {
+    from { opacity: 0; transform: translateY(8px) scale(.96); }
+    to { opacity: 1; transform: none; }
+  }
+}
+.platform-game-over-overlay { background: color-mix(in srgb, var(--reward-page) 84%, transparent); }
+.dtc-game-result {
+  width: min(90%, 340px);
+  border-radius: 20px;
+  box-shadow: 0 8px 30px color-mix(in srgb, var(--reward-accent) 18%, transparent);
+}
+.dtc-game-result .reward-brand-mark { width: min(70%, 176px); height: 68px; }
+.dtc-game-result h2 { font-size: 1.75rem; }
+.platform-game-overlay, .platform-game-loading { background: var(--reward-page); color: var(--reward-text); }
+.platform-game-error { color: var(--reward-text); }
+.platform-game-spinner { border-color: color-mix(in srgb, currentColor 16%, transparent); border-top-color: currentColor; }
+.platform-game-topbar { background: var(--reward-accent); color: var(--reward-on-accent); }
+.platform-game-topbar :is(.progress-rail-coin-value, .progress-rail-coin-gain, .progress-rail-rank-value, .progress-rail-rank-up,
+  .progress-rail-node-wrap .progress-rail-node-copy strong, .progress-rail-node-wrap .progress-rail-node-status, .progress-rail-pack-status) {
+  color: inherit;
+  text-shadow: none;
+}
+.platform-game-topbar :is(.progress-rail-line, .progress-rail-pack-line, .progress-rail-node) {
+  background: color-mix(in srgb, currentColor 30%, transparent);
+  box-shadow: none;
+}
+.platform-game-topbar :is(.progress-rail-line-fill, .progress-rail-pack-fill, .is-current .progress-rail-node, .is-past .progress-rail-node) { background: currentColor; }
+.platform-game-topbar :is(.progress-rail-max, .progress-rail-gift-badge, .platform-game-close) {
+  background: var(--reward-on-accent);
+  color: var(--reward-accent);
+  text-shadow: none;
+}
+.platform-game-topbar .is-unlock-pulse :is(.progress-rail-node, strong) { animation: none; }
+.mobile-viewport .login-bonus-card {
+  margin: 0;
+  right: auto;
+  bottom: auto;
+  min-width: 0;
+  padding: 14px 24px;
+  border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+  border-radius: 999px;
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--reward-accent) 22%, transparent);
+  background: var(--reward-accent);
+  color: var(--reward-on-accent);
+  font: 700 1.5rem/1.2 var(--font-sans);
+}
+.mobile-viewport .login-bonus-card[popover]:not(:popover-open) { display: none; }
+.mobile-viewport .login-bonus-card:popover-open { position: fixed; }
+.inline-error-notice, .shopify-auth-toast, .demo-started-notice {
+  color: var(--reward-on-tint);
+  background: var(--reward-tint);
+  border-color: color-mix(in srgb, currentColor 20%, transparent);
+}
+.inline-error-notice__dismiss, .inline-error-notice__text :is(strong, span), .shopify-auth-toast-text :is(strong, span) { color: inherit; }
+.inline-error-notice__dismiss { background: none; border-color: currentColor; }
+.shopify-auth-toast-icon { color: var(--reward-on-accent); background: var(--reward-accent); }
+@media (prefers-reduced-motion: reduce) {
+  .mobile-viewport .login-bonus-card, .mobile-viewport .platform-game-over-overlay { animation: none; }
+}
