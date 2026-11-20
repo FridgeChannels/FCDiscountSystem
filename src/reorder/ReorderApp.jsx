@@ -32,6 +32,13 @@ function BrandHeader({ brand, onBack }) {
   return <header className="brand-header">{onBack ? <button className="back-button" type="button" onClick={onBack} aria-label="Back"><Icon name="back" size={30} /></button> : <span className="brand-header__spacer" />}<BrandWordmark brand={brand} /><span className="brand-header__spacer" /></header>;
 }
 
+function surveyThemeStyle(brand) {
+  return {
+    '--survey-primary': brand.colors?.primary || '#004d3d',
+    '--survey-secondary': brand.colors?.secondary || brand.colors?.accent || '#fff2db',
+  };
+}
+
 function ProductArt({ product, size = 'hero' }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [product?.image]);
@@ -171,7 +178,7 @@ function SurveyScreen({ config, coupon, step, navigate, onComplete, homeView = '
     onComplete(answers);
   };
   const back = () => safeStep === 0 ? navigate(homeView) : navigate(routeName, { coupon: coupon?.id, step: safeStep - 1 });
-  return <main className="screen survey-screen"><header className="survey-header"><button className="icon-back" type="button" onClick={back} aria-label="Back"><Icon name="back" size={34} /></button><BrandWordmark brand={config.brand} /><span className="survey-count">{safeStep + 1} of {survey.questions.length}</span></header><div className="progress-track"><span style={{ width: `${((safeStep + 1) / survey.questions.length) * 100}%` }} /></div><section className="question-copy"><h1>{question.title}</h1></section><fieldset className="answer-list"><legend className="visually-hidden">Choose one answer</legend>{question.options.map((option) => <label className={selectedAnswer === option.id ? 'answer-option answer-option--selected' : 'answer-option'} key={option.id}><input className="answer-option__input" type="radio" name={question.id} value={option.id} checked={selectedAnswer === option.id} onChange={() => choose(option)} /><span className="answer-option__label">{option.label}</span><span className="answer-option__selection" aria-hidden="true">{selectedAnswer === option.id && <span className="answer-option__dot" />}</span></label>)}</fieldset><button className="coupon-primary-button survey-continue" type="button" onClick={continueSurvey} disabled={!selectedAnswer}>{safeStep === survey.questions.length - 1 ? 'Submit response' : 'Continue'}</button></main>;
+  return <main className="screen survey-screen" style={surveyThemeStyle(config.brand)}><header className="survey-header"><button className="icon-back" type="button" onClick={back} aria-label="Back"><Icon name="back" size={34} /></button><BrandWordmark brand={config.brand} /><span className="survey-count">{safeStep + 1} of {survey.questions.length}</span></header><div className="progress-track"><span style={{ width: `${((safeStep + 1) / survey.questions.length) * 100}%` }} /></div><section className="question-copy"><h1>{question.title}</h1></section><fieldset className="answer-list"><legend className="visually-hidden">Choose one answer</legend>{question.options.map((option) => <label className={selectedAnswer === option.id ? 'answer-option answer-option--selected' : 'answer-option'} key={option.id}><input className="answer-option__input" type="radio" name={question.id} value={option.id} checked={selectedAnswer === option.id} onChange={() => choose(option)} /><span className="answer-option__label">{option.label}</span><span className="answer-option__selection" aria-hidden="true">{selectedAnswer === option.id && <span className="answer-option__dot" />}</span></label>)}</fieldset><button className="coupon-primary-button survey-continue" type="button" onClick={continueSurvey} disabled={!selectedAnswer}>{safeStep === survey.questions.length - 1 ? 'Submit response' : 'Continue'}</button></main>;
 }
 
 /* Disabled: Survey-gated Coupon reveal and one-step copy-and-shop flow.
@@ -184,7 +191,7 @@ function CouponRevealScreen({ config, coupon, navigate }) {
 */
 
 function SurveyThankYouScreen({ config, navigate, homeView = 'landing' }) {
-  return <main className="screen survey-thanks-screen"><BrandHeader brand={config.brand} /><Icon name="check" size={64} /><h1>Thanks for sharing</h1><p>{config.survey.completionMessage}</p><button className="coupon-primary-button" type="button" onClick={() => navigate(homeView)}>Back to FC Reorder</button></main>;
+  return <main className="screen survey-thanks-screen" style={surveyThemeStyle(config.brand)}><BrandHeader brand={config.brand} /><Icon name="check" size={64} /><h1>Thanks for sharing</h1><p>{config.survey.completionMessage}</p><button className="coupon-primary-button" type="button" onClick={() => navigate(homeView)}>Back to FC Reorder</button></main>;
 }
 
 function LoadingScreen() { return <main className="screen state-screen loading-screen" aria-busy="true"><BrandHeader brand={{ name: 'PURA JUICE', logoText: 'PURA JUICE', logoImage: '/reorder/pura-juice-logo.svg' }} /><div className="skeleton skeleton-product" /><div className="skeleton skeleton-name" /><div className="skeleton skeleton-button" /><p>Loading product…</p></main>; }

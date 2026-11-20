@@ -31,8 +31,7 @@
   height: 100%;
   object-fit: contain;
   opacity: 0;
-  /* White-box uploads blend into --entry-secondary (same as .offers-brand-logo). */
-  mix-blend-mode: multiply;
+  mix-blend-mode: var(--entry-logo-blend, multiply);
 }
 .world-entry__logo[data-loaded="true"] { opacity: 1; }
 .world-entry__name {

@@ -670,6 +670,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletNavDirection, setWalletNavDirection] = useState('forward');
   const [couponWallet, setCouponWallet] = useState([]);
+  const [entryWalletStatus, setEntryWalletStatus] = useState('loading');
   const [walletCopiedCode, setWalletCopiedCode] = useState(null);
   const [giftReveal, setGiftReveal] = useState(null);
   const chosenGoalIdRef = useRef(null);
@@ -688,11 +689,11 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     setUserProfile(normalizeProfile(readCachedProfile(touchId)));
     setPlayerProfile(null);
     setLeaderboardData(null);
-    setCouponWallet(readCouponWallet(touchId));
+    if (!skipEntryGiftIntro || devScene) setCouponWallet(readCouponWallet(touchId));
     const cachedShopify = readCachedShopifyStatus(touchId);
     setShopifyBinding(cachedShopify);
     setShopifyAuthStatus(shopifyAuthStatusFromBinding(cachedShopify));
-  }, [touchId]);
+  }, [touchId, skipEntryGiftIntro, devScene]);
 
   useEffect(() => () => {
     if (inlineErrorTimerRef.current) {
@@ -707,16 +708,21 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     try {
       const payload = await fetchCouponWallet(touchId, { cycleScope: restartedCycleRef.current });
       if (request !== walletRequestRef.current) return;
-      const rows = Array.isArray(payload) ? payload : (payload?.coupons ?? []);
+      const rows = Array.isArray(payload) ? payload : payload?.coupons;
+      if (!Array.isArray(rows)) throw new Error('Invalid coupon wallet response');
       const entries = dedupeWalletCoupons(mapApiWalletToLocal(rows));
       writeCouponWallet(touchId, entries);
       setCouponWallet(entries);
+      setEntryWalletStatus('ready');
     } catch (err) {
+      if (request !== walletRequestRef.current) return;
+      setEntryWalletStatus(status => status === 'ready' ? status : 'error');
       dbgError('[FCDBG][App] wallet sync failed', err);
     }
   }, [touchId, devScene]);
 
   useEffect(() => {
+    setEntryWalletStatus('loading');
     void refreshCouponWallet();
     return () => { walletRequestRef.current += 1; };
   }, [refreshCouponWallet]);
@@ -1151,7 +1157,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
   const [spinRotation, setSpinRotation] = useState(0);
   const [surveyStep, setSurveyStep] = useState(0);
 
-  const [discounts, setDiscounts] = useState(INITIAL_DISCOUNTS);
+  const [discounts, setDiscounts] = useState([]);
   const [planCurrentTier, setPlanCurrentTier] = useState(0);
   const [rewardPacks, setRewardPacks] = useState({ startPack: null, targetPack: null });
   const [activePlan, setActivePlan] = useState(null);
@@ -1163,7 +1169,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
 
   // 礼包模型下券码由 plan / claim API 写入；勿再把 ladder discounts 灌进券包。
   useEffect(() => {
-    if (rewardPacks.startPack || activePlan?.initialReward) return;
+    if (!activePlan || devScene || rewardPacks.startPack || activePlan.initialReward) return;
     const coded = (discounts ?? []).filter((d) => d.code);
     if (!coded.length) return;
     const expiresAt = countdownSeconds > 0
@@ -1183,7 +1189,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     setCouponWallet(upsertCouponsToWallet(touchId, entries));
     // countdownSeconds 仅用于推导过期时间,不入依赖以免每秒重跑。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePlan?.initialReward, discounts, rewardPacks.startPack, touchId]);
+  }, [activePlan, discounts, rewardPacks.startPack, touchId, devScene]);
 
   // 过期标记:expiresAt 已过的活跃券标记为 'expired'(随 tick 每秒复查)。
   useEffect(() => {
@@ -1297,7 +1303,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
       const vm = mapPlanToViewModel(plan, null, magnetBrandParamRef.current);
       setActivePlan(plan);
       setRewardPlanId(vm.rewardPlanId);
-      setDiscounts(vm.discounts.length ? vm.discounts : (import.meta.env.DEV ? INITIAL_DISCOUNTS : []));
+      setDiscounts(vm.discounts);
       setPlanCurrentTier(plan.currentTier ?? 0);
       setRewardPacks(resolveRewardPacks(plan, vm.discounts, vm.rewardPlanId ?? touchId));
       setCurrentStepIndex(vm.currentStepIndex);
@@ -1358,7 +1364,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     const vm = mapPlanToViewModel(plan, claimRecord, magnetBrandParamRef.current);
     setActivePlan(plan);
     setRewardPlanId(vm.rewardPlanId);
-    setDiscounts(vm.discounts.length ? vm.discounts : (import.meta.env.DEV ? INITIAL_DISCOUNTS : []));
+    setDiscounts(devPreview && !vm.discounts.length ? INITIAL_DISCOUNTS : vm.discounts);
     setPlanCurrentTier(plan.currentTier ?? 0);
     setRewardPacks(resolveRewardPacks(plan, vm.discounts, vm.rewardPlanId ?? touchId));
     setCurrentStepIndex(vm.currentStepIndex);
@@ -2067,7 +2073,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
         await brandParamPromise;
         if (cancelled) return;
 
-        if (cached && !shopifyOAuthReturn) {
+        if (cached && !shopifyOAuthReturn && !skipEntryGiftIntro) {
           syncFromPlan(cached, { fromCache: true });
           setPlanLoading(false);
         }
@@ -2124,16 +2130,27 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
       onEntryReady();
       return;
     }
-    if (planLoading || !rewardPlanFetched) return;
+    if (planLoading || !rewardPlanFetched || (!devScene && entryWalletStatus === 'loading')) return;
+    let nextFrame;
     const frame = window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
+      nextFrame = window.requestAnimationFrame(() => {
         if (entryReadyNotifiedRef.current) return;
         entryReadyNotifiedRef.current = true;
-        onEntryReady({ name: brand.name, logoUrl: brand.logoUrl, primaryColor: brand.backgroundColor || brand.primaryColor, secondaryColor: brand.buttonColor });
+        const primary = offerBrandPreview?.colors?.primary ?? brand.backgroundColor ?? brand.primaryColor;
+        const secondary = offerBrandPreview?.colors?.secondary ?? brand.buttonColor;
+        const palette = offerPaletteStyle(primary, secondary);
+        onEntryReady({
+          name: offerBrandPreview?.name || brand.name,
+          logoUrl: offerBrandPreview?.logoImage || brand.logoUrl,
+          primaryColor: primary, secondaryColor: palette['--offer-background'] || palette['--offer-paper'],
+        });
       });
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, [onEntryReady, planLoading, rewardPlanFetched, skipEntryGiftIntro, touchIdValid, brand]);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.cancelAnimationFrame(nextFrame);
+    };
+  }, [onEntryReady, planLoading, rewardPlanFetched, skipEntryGiftIntro, touchIdValid, brand, offerBrandPreview, devScene, entryWalletStatus]);
 
   useEffect(() => {
     const onPageShow = async () => {
@@ -4562,6 +4579,7 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     {showHome && <div className="offers-ambient" aria-hidden="true" style={offerColors} />}
     <div
       className={`mobile-viewport${(giftReveal || (showHome && !walletOpen)) ? ' rewards-home' : ''}`}
+      data-offers-brand={offerBrandPreview?.name || brand.name || undefined}
       data-offers-wallet={showHome && walletOpen ? '' : undefined}
       data-screen-label={giftReveal ? 'Coupon unlocked' : '优惠券首页'}
       ref={viewportRef}
@@ -4675,7 +4693,13 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
         onLogoSecretTap={logoSecretEnabled ? handleLogoSecretTap : undefined}
       />
 
-      {walletOpen ? (
+      {skipEntryGiftIntro && !devScene && (entryWalletStatus === 'error' || (planError && !activePlan)) ? (
+        <main className="content-area reward-home-content" aria-label="Your offers">
+          <p role="status">Your offers couldn’t be loaded.</p>
+          <button type="button" onClick={() => entryWalletStatus === 'error' && activePlan
+            ? refreshCouponWallet() : window.location.reload()}>Try again</button>
+        </main>
+      ) : walletOpen ? (
         <CouponWalletPage
           coupons={walletArchiveCoupons}
           copiedCode={walletCopiedCode}
@@ -5090,7 +5114,7 @@ function HeaderBase({
     <header className="brand-header">
       {offerLogo ? (
         <h1 className="offers-brand-logo" aria-label={`${brandName} offers`}>
-          <img data-entry-logo="" src={offerLogo} alt={`${brandName} logo`} />
+          <img data-entry-logo="" className="brand-logo-img" src={offerLogo} alt={`${brandName} logo`} />
         </h1>
       ) : <div
         className={`brand-info${onLogoSecretTap ? ' brand-info--secret-tap' : ''}`}
@@ -5238,7 +5262,7 @@ function CouponOffers({
     <>
       <main className="content-area reward-home-content">
         {showWordmark ? (
-          <div className={`offers-wordmark${offers.length ? ' over-ticket' : ''}`} onClick={onLogoSecretTap}>
+          <div className="offers-wordmark" onClick={onLogoSecretTap}>
             <img src={brandArtworkUrl} alt="" width="900" height="335" />
           </div>
         ) : <h1 className="offers-heading">Your offers</h1>}
@@ -5713,13 +5737,6 @@ function ProfilePage({ brand, offerBrandPreview, profile, binding, shopifyStatus
   const profileWordmarkUrl = offerBrandPreview?.wordmarkUrl || brand?.wordmarkUrl || null;
   const previewBrandLogo = profileWordmarkUrl || offerBrandPreview?.logoImage || brand?.logoUrl;
   const showProfileWordmark = Boolean(profileWordmarkUrl);
-  const profileThemeStyle = {
-    '--profile-primary': offerBrandPreview?.colors?.primary || brand?.buttonColor || brand?.primaryColor || '#681cab',
-    '--profile-secondary': offerBrandPreview?.colors?.secondary || brand?.backgroundColor || '#f3eddf',
-    '--profile-on-primary': offerBrandPreview?.colors?.primary
-      ? 'var(--offer-on-primary, #fff)'
-      : 'var(--brand-on-primary, #fff)',
-  };
   const connected = binding?.connected || shopifyStatus === 'connected';
   const accountLabel = connected ? shopifyAccountLabel(binding?.connected ? binding : { connected: true }) : 'Not connected';
   const draftInitial = profileInitial(draft);
@@ -5736,7 +5753,7 @@ function ProfilePage({ brand, offerBrandPreview, profile, binding, shopifyStatus
   }
 
   return (
-    <section className="shopify-account-page profile-page" aria-label="Profile settings" style={profileThemeStyle}>
+    <section className="shopify-account-page profile-page" aria-label="Profile settings">
       <header className="shopify-account-header">
         <div className={`shopify-account-brand${showProfileWordmark ? ' is-wordmark' : ''}`}>
           {previewBrandLogo ? (

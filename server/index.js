@@ -1,5 +1,8 @@
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { handleLogoRelief } from './logo-relief/endpoint.js';
+import { handleProductHero } from './product-hero/endpoint.js';
+import { handleProductPerspective } from './product-hero/perspective.js';
 import { loadProjectEnv } from './load-env.js';
 import { getRuntimeManifest, validateManifestEntry } from './runtime-manifest.js';
 import { splitCouponsIntoPacks } from '../src/api/splitRewardPacks.js';
@@ -579,7 +582,9 @@ function sendBinary(res, status, body, contentType, extraHeaders = {}) {
 
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
-    sendJson(res, 204, null);
+    const headers = req.url?.split('?')[0] === '/api/fc/brand-assets/product-2p5d/edit'
+      ? { 'access-control-allow-headers': 'content-type,authorization' } : {};
+    sendJson(res, 204, null, headers);
     return;
   }
 
@@ -587,6 +592,21 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
     res.setHeader('x-request-id', requestId);
+
+    if (url.pathname === '/api/fc/brand-assets/product-2p5d/edit') {
+      await handleProductPerspective(req, res, { sendJson, sendBinary });
+      return;
+    }
+
+    if (url.pathname === '/api/fc/brand-assets/product-2p5d') {
+      await handleProductHero(req, res, url.searchParams, { sendJson, sendBinary });
+      return;
+    }
+
+    if (url.pathname === '/api/fc/brand-assets/logo-2p5d') {
+      await handleLogoRelief(req, res, url.searchParams, { sendJson, sendBinary });
+      return;
+    }
 
     if (req.method === 'GET' && url.pathname === '/api/fc/health') {
       sendJson(res, 200, {

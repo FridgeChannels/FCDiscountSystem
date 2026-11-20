@@ -53,6 +53,7 @@ export function prefetchMagnetBrandParam(touchId) {
 export function prefetchDtcEntry(touchId, { includeRewardPlan = true } = {}) {
   if (!touchId) return;
   prefetchMagnetBrandParam(touchId);
+  prefetchGet(`/api/fc/coupons/wallet?touchId=${encodeURIComponent(touchId)}`);
   prefetchGet(`/api/fc/shopify-status?touchId=${encodeURIComponent(touchId)}&refresh=1`);
   if (includeRewardPlan) prefetchGet(`/api/fc/reward-plan?touchId=${encodeURIComponent(touchId)}`);
   prefetchGet(`/api/fc/player-profile?touchId=${encodeURIComponent(touchId)}`);

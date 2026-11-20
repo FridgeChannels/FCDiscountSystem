@@ -12,15 +12,10 @@ import { notifyEmbedReady, trackEmbed } from './lib/investorEmbed.js';
 const ReorderApp = lazy(() => import('./reorder/ReorderApp.jsx'));
 
 function bootDtcApp() {
-  // Stylesheet <link>s are inserted in call order; keep this order for the cascade.
   return Promise.all([
-    import('../fc-style.css'),
-    import('../fc-coupons.css'),
-    import('../fc-tiers.css'),
-    import('../fc-leaderboard.css'),
-    import('../fc-coupon-wallet.css'),
+    import('./rewards.css'),
     import('./App.jsx'),
-  ]).then((mods) => mods[mods.length - 1].default);
+  ]).then(([, app]) => app.default);
 }
 
 async function resolveAsinConfiguration(fcId) {
@@ -102,7 +97,7 @@ export default function ExperienceRoot() {
 
   const markContentReady = useCallback((destinationBrand) => {
     if (contentReadyRef.current) return;
-    if (destinationBrand) setLoadingBrand(current => ({ ...openingBrand(destinationBrand), ...current }));
+    if (destinationBrand) setLoadingBrand(current => ({ ...current, ...openingBrand(destinationBrand) }));
     contentReadyRef.current = true;
     setContentReady(true);
   }, []);
@@ -136,17 +131,18 @@ export default function ExperienceRoot() {
         if (seq !== resolveSeqRef.current) return;
 
         const brand = openingBrand(result.experience === 'dtc' && offerBrandPreview ? offerBrandPreview : result);
-        setLoadingBrand(brand);
+        const dtc = result.experience === 'dtc';
+        setLoadingBrand(dtc ? { ...brand, dtc, logoBlendMode: 'normal' } : brand);
 
         // Older router responses contain just the name and logo. Enrich the
         // palette concurrently, and ignore a different brand on a dual-channel SN.
         brandRequest.then((param) => {
-          if (!param || seq !== resolveSeqRef.current) return;
+          if (!param || seq !== resolveSeqRef.current || (dtc && offerBrandPreview)) return;
           const theme = openingBrand(param);
           const sameName = brand.brandName && theme.brandName
             && brand.brandName.trim().toLowerCase() === theme.brandName.trim().toLowerCase();
           if ((brand.brandName || brand.logoUrl) && !sameName && (!brand.logoUrl || brand.logoUrl !== theme.logoUrl)) return;
-          setLoadingBrand(current => ({ ...current, ...theme, ...brand }));
+          setLoadingBrand(current => dtc ? { ...current, ...theme } : { ...current, ...theme, ...brand });
         }).catch(() => {});
 
         if (result.experience === 'asin_plus') {
@@ -224,12 +220,15 @@ export default function ExperienceRoot() {
     );
   }
 
+  // A router response can contain the logo before the SN's actual paper color.
+  // Present the brand only once the two can be painted together.
+  const opening = loadingBrand.dtc && !loadingBrand.secondary && !contentReady ? {} : loadingBrand;
   return (
     <>
       {!loadingOverlayDismissed && (
         <ExperienceLoading
-          key={loadingBrand.logoUrl || loadingBrand.brandName || 'pending'}
-          {...loadingBrand}
+          key={opening.logoUrl || opening.brandName || 'pending'}
+          {...opening}
           destinationRef={destinationRef}
           readyToExit={contentReady}
           onExitComplete={dismissOpening}
@@ -248,7 +247,7 @@ export default function ExperienceRoot() {
             />
           )}
           {phase.status === 'dtc' && phase.App && (
-            <phase.App skipEntryGiftIntro onEntryReady={markContentReady} offerBrandPreview={offerBrandPreview} />
+            <phase.App key={phase.sn} skipEntryGiftIntro onEntryReady={markContentReady} offerBrandPreview={offerBrandPreview} />
           )}
         </Suspense>
       </PendingShell>

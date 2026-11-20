@@ -602,22 +602,20 @@ body {
   white-space: nowrap;
 }
 
-.brand-logo-img,
+.brand-logo-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(98px, 100%);
+  max-height: 44px;
+  object-fit: contain;
+}
+
 .brand-logo-fallback {
   width: 32px;
   height: 32px;
   flex: 0 0 32px;
   border-radius: 50%;
-}
-
-.brand-logo-img {
-  width: 32px;
-  height: 32px;
-  object-fit: contain;
-  object-position: center;
-}
-
-.brand-logo-fallback {
   display: grid;
   place-items: center;
   background: var(--brand-primary);
@@ -3376,10 +3374,10 @@ body {
   width: min(100%, 340px);
   height: 52px;
   margin-top: 18px;
-  border: 1px solid rgba(176, 70, 54, 0.24);
+  border: 0;
   border-radius: 999px;
-  background: rgba(176, 70, 54, 0.08);
-  color: #a23f31;
+  background: #a23f31;
+  color: white;
   font-family: var(--font-sans);
   font-size: 0.98rem;
   font-weight: 800;
@@ -3387,26 +3385,31 @@ body {
 }
 
 /* Profile Page */
+.mobile-viewport:has(> .profile-page) {
+  border-color: var(--offer-background, var(--offer-paper));
+}
+
 .profile-page {
-  --profile-ink: color-mix(in srgb, var(--profile-primary) 20%, #242128);
-  --profile-muted: color-mix(in srgb, var(--profile-ink) 70%, #625f66);
+  --profile-primary: var(--offer-primary, var(--offer-ink));
+  --profile-secondary: var(--offer-background, var(--offer-paper));
+  --profile-on-primary: var(--offer-on-primary, #fff);
+  --profile-ink: #242128;
+  --profile-muted: #5c5760;
   --brand-primary: var(--profile-primary);
   --brand-primary-hover: color-mix(in srgb, var(--profile-primary) 84%, #1d1028);
   --bg-color: var(--profile-secondary);
   --text-primary: var(--profile-ink);
   --text-secondary: var(--profile-muted);
   color: var(--profile-ink);
-  background:
-    radial-gradient(circle at 50% 12%, color-mix(in srgb, var(--profile-secondary) 44%, white) 0%, color-mix(in srgb, var(--profile-secondary) 28%, white) 34%, transparent 62%),
-    linear-gradient(180deg, var(--profile-secondary) 0%, color-mix(in srgb, var(--profile-secondary) 86%, white) 100%);
+  background: var(--profile-secondary);
 }
 
 .profile-page .shopify-account-header {
-  background: color-mix(in srgb, var(--profile-secondary) 84%, white);
+  background: var(--profile-secondary);
   border-bottom-color: color-mix(in srgb, var(--profile-primary) 14%, transparent);
 }
 
-.profile-page .shopify-account-brand-name { color: var(--profile-ink); }
+.profile-page .shopify-account-brand-name { color: var(--offer-on-background, var(--profile-ink)); }
 
 .profile-page .shopify-account-brand.is-wordmark .shopify-account-brand-logo {
   width: 88px;
@@ -3417,8 +3420,8 @@ body {
 
 .profile-page .shopify-account-close {
   border-color: color-mix(in srgb, var(--profile-primary) 16%, transparent);
-  background: color-mix(in srgb, var(--profile-secondary) 76%, white);
-  color: var(--profile-ink);
+  background: var(--profile-close-background, #f3f0f5);
+  color: var(--profile-on-close-background, var(--profile-ink));
   box-shadow: 0 6px 16px color-mix(in srgb, var(--profile-primary) 10%, transparent);
 }
 
@@ -3478,7 +3481,7 @@ body {
 
 .profile-hero h1 {
   margin: 10px 0 0;
-  color: var(--profile-ink);
+  color: var(--offer-on-background, var(--profile-ink));
   font-family: var(--font-serif);
   font-size: 2rem;
   line-height: 1.05;
@@ -3491,7 +3494,7 @@ body {
   padding: 16px;
   border: 1px solid color-mix(in srgb, var(--profile-primary) 14%, transparent);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--profile-secondary) 42%, white);
+  background: color-mix(in srgb, var(--profile-secondary) 16%, white);
   box-shadow: 0 10px 22px color-mix(in srgb, var(--profile-primary) 9%, transparent),
     inset 0 1px 0 #ffffffa8;
 }
@@ -3513,8 +3516,8 @@ body {
 .profile-panel-head small {
   padding: 3px 8px;
   border-radius: 999px;
-  background: rgba(184, 152, 85, 0.12);
-  color: #8a6420;
+  background: #f5f0e4;
+  color: #6d4c12;
   font-size: 0.58rem;
   font-weight: 900;
   letter-spacing: 0.7px;
@@ -3522,13 +3525,13 @@ body {
 }
 
 .shopify-profile-panel.is-connected .profile-panel-head small {
-  background: rgba(94, 142, 62, 0.12);
-  color: #4f7a31;
+  background: #edf4e9;
+  color: #365522;
 }
 
 .shopify-profile-panel.is-unconnected .profile-panel-head small {
-  background: rgba(92, 100, 88, 0.1);
-  color: var(--text-secondary);
+  background: #efefed;
+  color: #4b4b47;
 }
 
 .profile-field {
@@ -3555,7 +3558,7 @@ body {
   box-sizing: border-box;
   border: 1px solid color-mix(in srgb, var(--profile-primary) 18%, transparent);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--profile-secondary) 31%, white);
+  background: color-mix(in srgb, var(--profile-secondary) 12%, white);
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: 0.96rem;
@@ -3694,8 +3697,8 @@ body {
   gap: 8px;
   margin-top: 14px;
   border: 1px solid color-mix(in srgb, var(--profile-primary) 22%, transparent);
-  background: color-mix(in srgb, var(--profile-primary) 8%, var(--profile-secondary));
-  color: var(--profile-primary);
+  background: var(--profile-connect-background, var(--profile-primary));
+  color: var(--profile-on-connect-background, var(--profile-on-primary));
 }
 
 .profile-connect-shopify img {
@@ -3712,7 +3715,7 @@ body {
   box-sizing: border-box;
   min-height: 50px;
   border: none;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--profile-primary) 88%, white), var(--profile-primary));
+  background: var(--profile-primary);
   color: var(--profile-on-primary, #fff);
   box-shadow: 0 12px 26px color-mix(in srgb, var(--profile-primary) 28%, transparent),
     inset 0 1px 0 #ffffff42;
