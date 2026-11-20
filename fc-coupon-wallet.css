@@ -2750,19 +2750,35 @@
   margin: 0;
 }
 .offers-wordmark {
+  container-type: size;
+  flex-shrink: 1;
+  min-height: 44px;
+  max-height: min(145px, 17svh);
+  aspect-ratio: var(--wordmark-ratio);
+  display: grid;
+  place-items: end center;
   width: min(98.5%, 351.2px);
   margin: 0 auto;
   filter: drop-shadow(1px 3px 2px #34104738);
 }
-[data-offers-brand="Gardencup" i] .offers-wordmark {
-  /* The visible lettering ends 7 rows above the bottom of the 163px asset. */
-  --wordmark-bottom-inset: 4.3%;
-}
 .offers-wordmark:has(+ .offers-list > .offer-ticket) {
   z-index: 1;
-  translate: 0 calc(10px + var(--wordmark-bottom-inset, 0%));
+  translate: 0 6px;
 }
-.offers-wordmark img { display: block; width: 100%; height: auto; }
+.offers-wordmark-frame {
+  position: relative;
+  overflow: hidden;
+  width: min(100%, calc(100cqh * var(--wordmark-ratio)));
+  aspect-ratio: var(--wordmark-ratio);
+}
+.offers-wordmark img {
+  position: absolute;
+  inset: 0 auto auto 0;
+  display: block;
+  width: 100%;
+  max-width: none;
+  height: auto;
+}
 .offers-wordmark + .offers-list > .offers-empty { margin-block-start: 16px; }
 .offers-list { display: grid; gap: 17px; isolation: isolate; }
 .offer-ticket {
@@ -3474,6 +3490,12 @@
 .mobile-viewport[data-offers-wallet] .cwallet-empty { color: var(--offer-on-background, var(--home-muted)); }
 :is(.reward-home-content, .mobile-viewport[data-offers-wallet]) .cwallet-section-label { color: var(--offer-on-background, var(--home-ink)); }
 .reward-home-content .accordion-content.open { max-height: none; }
+
+@media (max-height: 700px) {
+  .reward-home-content { padding-block: 10px max(8px, env(safe-area-inset-bottom)); }
+  .reward-home-content .offers-list { gap: 10px; }
+  .reward-home-content .offer-ticket.is-ready .offer-action { min-height: 46px; margin-block: 5px 8px; }
+}
 
 @media (max-width: 360px) {
   .rewards-home .brand-header { padding-inline: 10px; }

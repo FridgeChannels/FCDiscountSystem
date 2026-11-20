@@ -46,4 +46,13 @@ curl --fail --show-error --max-time 260 \
 
 成功时响应为 `200 image/png`。失败时返回 JSON 的 `error` 字段。401 表示调用令牌有误，400/413/415/422 表示输入无效、超限或编辑被拒，429 表示繁忙或上游额度受限，502 表示上游响应失败或结果缺少有效透明度，503 表示服务配置或模型访问权限有问题，504 表示上游超时。
 
+成功响应仍为 PNG 二进制；每次生成的 OpenAI token 用量也会写入服务日志，并通过响应头返回：
+
+- `x-image-usage-total-tokens`
+- `x-image-usage-input-tokens` / `x-image-usage-output-tokens`
+- `x-image-usage-input-image-tokens` / `x-image-usage-input-text-tokens`
+- `x-image-usage-output-image-tokens` / `x-image-usage-output-text-tokens`
+
+浏览器跨域调用可通过 `Access-Control-Expose-Headers` 读取这些响应头。如果上游未返回用量数据，相应 token 响应头会缺失。
+
 如需将得到的透明 PNG 再合成为品牌渐变背景和循环轻晃 WebP，可以把它传给[商品主视觉导出接口](./product-2p5d-api.md)。

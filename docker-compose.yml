@@ -71,6 +71,8 @@ services:
       BFF_PORT: 3001
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PRODUCT_IMAGE_EDIT_TOKEN: ${PRODUCT_IMAGE_EDIT_TOKEN:-}
+      LOGO_IMAGE_EDIT_TOKEN: ${LOGO_IMAGE_EDIT_TOKEN:-}
+      LOGO_USAGE_LOG_DIR: /var/lib/fc/logo-usage
       ENGINE_BASE_URL: http://engine:8787
       ENGINE_TIMEOUT_MS: 30000
       FC_PLATFORM_ROOT: /workspace/fc-platform
@@ -84,6 +86,8 @@ services:
       DASHBOARD_API_BASE_URL: ${DASHBOARD_API_BASE_URL-}
       COUPON_API_BASE_URL: ${COUPON_API_BASE_URL-}
       DASHBOARD_API_TIMEOUT_MS: ${DASHBOARD_API_TIMEOUT_MS:-15000}
+    volumes:
+      - logo_usage:/var/lib/fc/logo-usage
     depends_on:
       engine:
         condition: service_healthy
@@ -132,3 +136,4 @@ networks:
 
 volumes:
   platform_uploaded_games:
+  logo_usage:

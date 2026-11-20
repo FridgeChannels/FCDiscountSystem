@@ -10,3 +10,5 @@ ritual-intro-check.png
 *.log
 .env
 public/reorder/tmp/
+data/logo-usage/
+output/

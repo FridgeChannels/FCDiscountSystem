@@ -62,6 +62,7 @@ import {
 } from './api/walletCoupons.js';
 import PlatformGameModal from './components/PlatformGameModal.jsx';
 import { RewardBrandContext, RewardBrandMark } from './components/RewardBrand.jsx';
+import OfferWordmark from './components/OfferWordmark.jsx';
 import DevToolbar from './components/DevToolbar.jsx';
 import {
   applyDevSceneUi,
@@ -2341,15 +2342,14 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     currentPack,
   ]);
   const planBlocksHome = planLoading && !rewardPlanId;
-  const welcomePackPending = Boolean(currentPack || soleRewardPack) && !readWelcomeCompleted(touchId);
-  // Keep the welcome ritual only until welcome is completed — do not keep it open
-  // solely because wallet packId sync lagged (that made Get More OFF look dead).
-  const initialPackPending = welcomePackPending;
-  const showWelcomeRitual = (replayingDemo ? welcomeStep === 1 : !skipEntryGiftIntro && initialPackPending)
-    && !introActive
+  // First-reward process screen retired: claim in background and go straight home.
+  const showWelcomeRitual = false;
+  const shouldSkipWelcomeRitual = !introActive
     && !returnIntroGate
     && !renewGiftIntro
-    && !planBlocksHome;
+    && !planBlocksHome
+    && welcomeStep > 0
+    && welcomeStep < 3;
   const targetUnlockAcknowledged = Boolean(rewardPlanId) && targetUnlockAckCycleId === rewardPlanId;
   const allRewardsClaimed = singleCouponOnlyMode
     ? solePackClaimed
@@ -4540,6 +4540,11 @@ export default function App({ skipEntryGiftIntro = false, onEntryReady, offerBra
     }
   }, [activePlan?.cycleId, playPendingTapReward, rewardPlanId, singleCouponOnlyMode, touchId, tweenPointsTo, welcomeTargetPoints, devScene]);
 
+  useEffect(() => {
+    if (!shouldSkipWelcomeRitual) return;
+    handleWelcomeRitualComplete();
+  }, [shouldSkipWelcomeRitual, handleWelcomeRitualComplete]);
+
   const isReturnIntro = !skipEntryGiftIntro
     && introActive
     && welcomeStep >= 3
@@ -5220,9 +5225,7 @@ function CouponOffers({
     <>
       <main className="content-area reward-home-content">
         {showWordmark ? (
-          <div className="offers-wordmark" onClick={onLogoSecretTap}>
-            <img src={brandArtworkUrl} alt="" width="900" height="335" />
-          </div>
+          <OfferWordmark key={brandArtworkUrl} src={brandArtworkUrl} onClick={onLogoSecretTap} />
         ) : <h1 className="offers-heading">Your offers</h1>}
         <div className="offers-list">
           {offers.map((offer, index) => (

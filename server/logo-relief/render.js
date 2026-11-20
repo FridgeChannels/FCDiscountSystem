@@ -1,5 +1,4 @@
 import sharp from 'sharp';
-import { prepareLogo } from './prepare.js';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -44,13 +43,13 @@ async function contour(face, width, height, bevelLimit) {
   return { heights: d, bevel };
 }
 
-export async function renderLogo(input, options) {
-  const prepared = await prepareLogo(input, options);
+export async function renderRelief(prepared, options) {
   const { style, box } = prepared;
+  if (!['silhouette', 'flat'].includes(style)) throw new Error('Illustrations require AI rendering.');
   // Reserve space first so the artwork is raster-resized only once and the
   // final image, including both margins, fits the requested longest edge.
   const shortSide = options.size * Math.min(box.width, box.height) / Math.max(box.width, box.height);
-  const maxDepth = style === 'silhouette' ? 0.022 : style === 'flat' ? 0.012 : 0.008;
+  const maxDepth = style === 'silhouette' ? 0.022 : 0.012;
   const depthBudget = Math.round(clamp(shortSide * 0.05, 1, options.size * maxDepth));
   const blur = Math.max(0.6, depthBudget * 0.31);
   const pad = Math.ceil(depthBudget + 4 * blur + 2);
@@ -58,7 +57,7 @@ export async function renderLogo(input, options) {
   const { data: face, info: { width, height } } = await prepared.face
     .resize(faceSize, faceSize, { fit: 'inside' }).raw().toBuffer({ resolveWithObject: true });
   const bevelLimit = style === 'flat' ? Math.max(1, shortSide * 0.007) : Math.max(1, shortSide * 0.07);
-  const relief = style === 'illustration' ? null : await contour(face, width, height, bevelLimit);
+  const relief = await contour(face, width, height, bevelLimit);
   const depth = style === 'silhouette' ? Math.round(clamp(relief.bevel * 0.9, 1, depthBudget)) : depthBudget;
   const outWidth = width + 2 * pad, outHeight = height + 2 * pad;
   const raw = { width: outWidth, height: outHeight, channels: 4 };

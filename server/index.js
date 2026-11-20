@@ -582,7 +582,7 @@ function sendBinary(res, status, body, contentType, extraHeaders = {}) {
 
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
-    const headers = req.url?.split('?')[0] === '/api/fc/brand-assets/product-2p5d/edit'
+    const headers = ['/api/fc/brand-assets/product-2p5d/edit', '/api/fc/brand-assets/logo-2p5d'].includes(req.url?.split('?')[0])
       ? { 'access-control-allow-headers': 'content-type,authorization' } : {};
     sendJson(res, 204, null, headers);
     return;

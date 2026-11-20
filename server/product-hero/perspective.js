@@ -81,7 +81,26 @@ async function editProduct(source, apiKey, signal) {
   const payload = await response.json();
   const png = Buffer.from(payload.data?.[0]?.b64_json || '', 'base64');
   await verifyPng(png);
-  return png;
+  return { png, usage: payload.usage ?? null };
+}
+
+function imageUsageHeaders(usage) {
+  const fields = {
+    'x-image-usage-total-tokens': usage?.total_tokens,
+    'x-image-usage-input-tokens': usage?.input_tokens,
+    'x-image-usage-output-tokens': usage?.output_tokens,
+    'x-image-usage-input-image-tokens': usage?.input_tokens_details?.image_tokens,
+    'x-image-usage-input-text-tokens': usage?.input_tokens_details?.text_tokens,
+    'x-image-usage-output-image-tokens': usage?.output_tokens_details?.image_tokens,
+    'x-image-usage-output-text-tokens': usage?.output_tokens_details?.text_tokens,
+  };
+  const headers = {
+    'access-control-expose-headers': Object.keys(fields).join(', '),
+  };
+  for (const [name, value] of Object.entries(fields)) {
+    if (Number.isFinite(value)) headers[name] = String(value);
+  }
+  return headers;
 }
 
 function digest(value) {
@@ -106,8 +125,16 @@ export async function handleProductPerspective(req, res, { sendJson, sendBinary 
     res.once('close', cancel);
     const source = await sourceForEdit(req);
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]);
-    const png = await editProduct(source, process.env.OPENAI_API_KEY, signal);
-    sendBinary(res, 200, png, 'image/png', { 'cache-control': 'no-store' });
+    const { png, usage } = await editProduct(source, process.env.OPENAI_API_KEY, signal);
+    console.info(JSON.stringify({
+      event: 'product_2p5d_edit_usage',
+      model: MODEL,
+      usage: usage ?? null,
+    }));
+    sendBinary(res, 200, png, 'image/png', {
+      'cache-control': 'no-store',
+      ...imageUsageHeaders(usage),
+    });
   } catch (error) {
     if (res.destroyed) return;
     const timeout = error.name === 'TimeoutError';

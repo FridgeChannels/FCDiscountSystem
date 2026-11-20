@@ -1,4 +1,5 @@
 import { fork } from 'node:child_process';
+import { assertIllustrationAccess, ILLUSTRATION_TIMEOUT_MS, renderIllustration } from './illustration.js';
 
 const MAX_BYTES = 1024 * 1024;
 const FORMATS = new Map([
@@ -60,18 +61,22 @@ function checkType(input, format) {
   if (!valid) throw new RequestError(422, 'Image does not match its Content-Type.');
 }
 
-async function runWorker(input, options) {
+async function runWorker(input, options, signal) {
+  signal.throwIfAborted();
   const child = fork(new URL('./worker.js', import.meta.url), [], {
     serialization: 'advanced', execArgv: [], stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
   });
   let timer;
+  let cancel;
   try {
     return await new Promise((resolve, reject) => {
       timer = setTimeout(() => reject(new RequestError(503, 'Logo render timed out. Try a simpler source.')), 15000);
+      cancel = () => reject(signal.reason);
+      signal.addEventListener('abort', cancel, { once: true });
       child.once('error', reject);
       child.once('exit', () => reject(new Error('Logo renderer stopped early.')));
       child.on('message', reply => {
-        if (reply?.type !== 'rendered') return;
+        if (!['rendered', 'illustration'].includes(reply?.type)) return;
         if (reply.error) reject(new RequestError(reply.status, reply.error));
         else if (Buffer.isBuffer(reply.image) && reply.image.length) resolve(reply);
         else reject(new Error('Empty logo renderer response.'));
@@ -80,6 +85,7 @@ async function runWorker(input, options) {
     });
   } finally {
     clearTimeout(timer);
+    signal.removeEventListener('abort', cancel);
     child.kill('SIGKILL');
   }
 }
@@ -93,20 +99,43 @@ export async function handleLogoRelief(req, res, query, { sendJson, sendBinary }
     return sendJson(res, 429, { error: 'Logo renderer is busy.' }, { 'retry-after': '2' });
   }
   active++;
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  let aiEdit = false;
+  res.once('close', cancel);
   try {
     const options = optionsFrom(req, query);
     const input = await readLogo(req);
     checkType(input, options.inputFormat);
-    const { image, style } = await runWorker(input, options);
+    if (options.style === 'illustration') assertIllustrationAccess(req.headers.authorization);
+    let result = await runWorker(input, options, controller.signal);
+    if (result.style === 'illustration') {
+      assertIllustrationAccess(req.headers.authorization);
+      aiEdit = true;
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(ILLUSTRATION_TIMEOUT_MS)]);
+      result = await renderIllustration(result.image, options, signal);
+    }
+    if (res.destroyed) return;
+    const { image, style } = result;
     sendBinary(res, 200, image, 'image/' + options.format, {
       'cache-control': 'no-store',
       'x-logo-style': style,
-      'access-control-expose-headers': 'X-Logo-Style',
+      'x-logo-renderer': result.renderer || 'local',
+      ...(result.model ? { 'x-logo-model': result.model } : {}),
+      'access-control-expose-headers': 'X-Logo-Style, X-Logo-Renderer, X-Logo-Model',
     });
   } catch (error) {
     req.resume();
-    sendJson(res, error.status || 500, { error: error.status ? error.message : 'Logo rendering failed.' });
+    if (res.destroyed) return;
+    const timeout = error.name === 'TimeoutError';
+    sendJson(res, error.status || (timeout ? 504 : 502), {
+      error: error.status ? error.message : timeout ? 'Logo image edit timed out.' : 'Logo rendering failed.',
+    }, aiEdit ? {
+      'x-logo-style': 'illustration', 'x-logo-renderer': 'ai',
+      'access-control-expose-headers': 'X-Logo-Style, X-Logo-Renderer',
+    } : {});
   } finally {
+    res.removeListener('close', cancel);
     active--;
   }
 }
